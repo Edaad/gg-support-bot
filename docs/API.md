@@ -87,8 +87,6 @@ Prefix: `/api/expenses` — requires Bearer JWT with `role=admin`.
 
 Export returns an XLSX attachment with the same filters applied.
 
-Migration: `DATABASE_URL=… python migrate_expenses.py` (or `heroku run … python migrate_expenses.py`).
-
 ---
 
 ## Weekly stats (Telegram messaging)
@@ -310,13 +308,12 @@ Recommended shape (aligns with weekly `/players` rows and Postgres):
 
 #### Consumer: gg-support-bot (Postgres)
 
-Column: `player_details.gg_nickname` (nullable `varchar(255)`). Migration: [`migrate_player_details_gg_nickname.py`](../migrate_player_details_gg_nickname.py).
+Column: `player_details.gg_nickname` (nullable `varchar(255)`).
 
 | Trigger | Action |
 |---------|--------|
 | Weekly stats page sync | `POST /api/weekly-stats/sync-nicknames` after `POST /process-week/sync` |
 | Bot bind (`/track`, title change, `/override`) | Best-effort `GET /player-details` → update one row |
-| Manual backfill | [`scripts/backfill_player_details_gg_nickname.py`](../scripts/backfill_player_details_gg_nickname.py) |
 
 Slug → Postgres `clubs.id`: [`api/club_slug.py`](../api/club_slug.py) (same mapping as [`dashboard/src/config/clubMap.ts`](../dashboard/src/config/clubMap.ts)).
 
@@ -726,8 +723,6 @@ Query: `club_id`, `chat_id`, `reason`, `episode_id`, `from`, `to`, `limit`, `off
 ### Get episode
 
 `GET /api/escalations/episodes/{id}` — episode row plus events in chronological order.
-
-Run `python migrate_escalation_observability.py` before using.
 
 ---
 

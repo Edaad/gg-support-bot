@@ -192,6 +192,7 @@ class SourceForPathTestCase(unittest.TestCase):
     def test_known_paths(self):
         self.assertEqual(source_for_path("/api/venmo/payments"), "venmo")
         self.assertEqual(source_for_path("/api/stripe/webhook"), "stripe")
+        self.assertEqual(source_for_path("/api/outbound-sends"), "outbound")
         self.assertIsNone(source_for_path("/api/clubs"))
 
 

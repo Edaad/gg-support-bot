@@ -111,5 +111,5 @@ Reset with **`/unbindmethod`** in the group.
 Migration:
 
 ```bash
-DATABASE_URL=... python migrate_zelle_payments.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```

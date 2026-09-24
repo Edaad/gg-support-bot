@@ -56,6 +56,9 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         bot.send_message.assert_awaited_once()
         sent_text = bot.send_message.await_args.kwargs["text"]
         self.assertIn("Hey! Just checking in", sent_text)
+        self.assertIn("<b>automated feeback</b>", sent_text)
+        self.assertIn("just type /earlyrb", sent_text)
+        self.assertEqual(bot.send_message.await_args.kwargs["parse_mode"], "HTML")
         self.assertNotIn(chat_id, deposit_module._DEPOSIT_INFO_MESSAGE_IDS)
 
     async def test_reminder_omits_paypal_from_offered_methods(self):
@@ -717,6 +720,11 @@ class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message.assert_awaited_once()
         body = context.bot.send_message.await_args.kwargs["text"]
         self.assertIn("canceling your request", body)
+        self.assertIn("<b>automated feeback</b>", body)
+        self.assertIn("just type /earlyrb", body)
+        self.assertEqual(
+            context.bot.send_message.await_args.kwargs["parse_mode"], "HTML"
+        )
         abandon.assert_called_once()
 
     async def test_reminder_fires_incomplete_deposit_slack(self):

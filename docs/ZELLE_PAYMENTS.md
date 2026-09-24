@@ -34,7 +34,7 @@ Staff notification gets `⚠️ DO NOT ADD — refund required` for banned memos
 Migration:
 
 ```bash
-DATABASE_URL=... python migrate_zelle_payments.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 Also adds `zelle_payment_id` to `payment_method_bind_attempts` when that column is missing.

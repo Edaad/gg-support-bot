@@ -140,7 +140,7 @@ from bot.services.deposit_funnel_events import (
     STEP_UNION_CHOSEN,
     record_deposit_funnel_event,
 )
-from bot.runtime_config import is_test_bot_worker, use_payment_v2
+from bot.runtime_config import is_test_bot_worker
 from db.connection import get_db
 from db.models import (
     CashAppPayment,
@@ -1615,14 +1615,15 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     text = (
         "Hey! Just checking in \u2014 if you haven\u2019t completed your deposit yet, "
         "feel free to reach out and we\u2019ll help you get it done!\n\n"
-        "You can also start a new deposit anytime with /deposit."
+        "You can also start a new deposit anytime with /deposit.\n\n"
+        "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
     )
     if method_list:
-        text += f"\n\nWe offer: {method_list}."
+        text += f"\n\nWe offer: {html.escape(method_list)}."
     text += "\n\nDeposits are available 24/7!"
 
     try:
-        await context.bot.send_message(chat_id=chat_id, text=text)
+        await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
     except Exception:
         logger.warning(
             "Failed to send deposit reminder to chat_id=%s", chat_id, exc_info=True
@@ -2093,7 +2094,6 @@ async def deposit_amount_priority_handler(
 def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
     if club_id is None:
         return f"No deposit methods available for ${amount}."
-    backend = "v2 club_payment_*" if use_payment_v2() else "legacy payment_methods"
     lowest = get_lowest_minimum(club_id, "deposit")
     if lowest is not None and amount < lowest:
         return (
@@ -2102,8 +2102,8 @@ def _no_deposit_methods_message(club_id: int | None, amount: Decimal) -> str:
         )
     return (
         f"No deposit methods available for ${amount}.\n"
-        f"(club_id={club_id}, backend={backend})\n"
-        "Add methods in the dashboard or run a v2 seed script."
+        f"(club_id={club_id})\n"
+        "Add methods in the dashboard."
     )
 
 
@@ -2334,10 +2334,9 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         )
     except Exception:
         logger.exception(
-            "deposit_amount_received: failed loading methods club_id=%s amount=%s v2=%s",
+            "deposit_amount_received: failed loading methods club_id=%s amount=%s",
             club_id,
             amount,
-            use_payment_v2(),
         )
         await update.message.reply_text(
             "Could not load deposit methods. Check bot logs and DATABASE_URL."
@@ -2345,12 +2344,11 @@ async def deposit_amount_received(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     logger.info(
-        "deposit_amount_received chat_id=%s club_id=%s amount=%s methods=%s v2=%s test=%s",
+        "deposit_amount_received chat_id=%s club_id=%s amount=%s methods=%s test=%s",
         update.effective_chat.id,
         club_id,
         amount,
         [m.get("slug") for m in methods],
-        use_payment_v2(),
         is_test_bot_worker(),
     )
 
@@ -4136,14 +4134,15 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = (
             "We didn\u2019t hear back from you so we are canceling your request. "
-            "No worries \u2014 whenever you\u2019re ready, just type /deposit to start again!"
+            "No worries \u2014 whenever you\u2019re ready, just type /deposit to start again!\n\n"
+            "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
         )
         if method_list:
-            text += f"\n\nWe offer: {method_list}."
+            text += f"\n\nWe offer: {html.escape(method_list)}."
         text += "\n\nDeposits are available 24/7, so feel free to reach out anytime!"
 
         try:
-            kwargs = {}
+            kwargs: dict = {"parse_mode": "HTML"}
             strip = popup_keyboard_svc.pop_strip_reply_markup(context)
             if strip is not None:
                 kwargs["reply_markup"] = strip

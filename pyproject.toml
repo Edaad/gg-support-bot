@@ -6,6 +6,7 @@ include = ["*.py", "*.pyi"]
 extend-exclude = [
     "dashboard",
     "graphify-out",
+    "local",
 ]
 
 [tool.ruff.lint]

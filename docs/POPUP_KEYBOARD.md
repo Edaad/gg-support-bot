@@ -28,10 +28,10 @@ install when the player id is known from recent chat activity.
 
 ```bash
 # Club toggle (if not already applied)
-DATABASE_URL=... python migrate_enable_popup_keyboard.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 
 # Durable installed flag
-DATABASE_URL=... python migrate_popup_keyboard_installed.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ## Single-group verification (TestGGSupportBot)

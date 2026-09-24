@@ -40,8 +40,7 @@ Behavior:
 Worker restart: open episodes restore remaining debounce / silence / hard-cap / staff-unanswered delays.
 
 ```bash
-DATABASE_URL=... python migrate_support_group_idle_episode_state.py
-DATABASE_URL=... python migrate_support_group_idle_staff_unanswered.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 `/earlyrb`:
@@ -181,7 +180,7 @@ From: {name} (@username)
 (no chat id, no numeric user id)
 
 ```bash
-DATABASE_URL=... python migrate_watched_group_escalation_state.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ### Inbound webhook (Make / Zapier → head-admin Slack)
@@ -236,14 +235,7 @@ GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodie
 ## Migration
 
 ```bash
-DATABASE_URL=... python migrate_enable_escalation_notification.py
-DATABASE_URL=... python migrate_escalation_activity_state.py
-DATABASE_URL=... python migrate_escalation_deposit_sent_button_message_id.py
-DATABASE_URL=... python migrate_escalation_post_deposit_idle.py
-DATABASE_URL=... python migrate_support_group_idle_episode_state.py
-DATABASE_URL=... python migrate_escalation_observability.py
-DATABASE_URL=... python migrate_escalation_decision_log.py
-DATABASE_URL=... python migrate_watched_group_escalation_state.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 JWT read API (no dashboard page): `GET /api/escalations/events` and `GET /api/escalations/episodes/{id}`.
@@ -268,7 +260,7 @@ LIMIT 50;
 ```
 
 ```bash
-DATABASE_URL=... python migrate_escalation_decision_log.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 

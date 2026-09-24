@@ -2,7 +2,6 @@
 
 import logging
 import os
-import random
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional, List, Tuple
@@ -15,10 +14,6 @@ from notification.chat_id import telegram_chat_id_variants
 from db.models import (
     Club,
     ClubLinkedAccount,
-    PaymentMethod,
-    PaymentMethodTier,
-    PaymentSubOption,
-    MethodVariant,
     Group,
     CustomCommand,
     PlayerActivity,
@@ -35,10 +30,6 @@ EST = ZoneInfo("America/New_York")
 
 
 def _payment_v2():
-    from bot.runtime_config import use_payment_v2
-
-    if not use_payment_v2():
-        return None
     from bot.services import club_payment_v2
 
     return club_payment_v2
@@ -183,154 +174,30 @@ def get_methods_for_amount(
     Each dict: {id, name, slug, min_amount, max_amount, has_sub_options,
                 response_type, response_text, response_file_id, response_caption}
     """
-    v2 = _payment_v2()
-    if v2:
-        return v2.get_methods_for_amount(club_id, direction, amount)
-    with get_db() as session:
-        q = (
-            session.query(PaymentMethod)
-            .filter_by(club_id=club_id, direction=direction, is_active=True)
-            .order_by(PaymentMethod.sort_order)
-        )
-        methods = q.all()
-        result = []
-        for m in methods:
-            slug = (m.slug or "").strip().lower()
-            if slug in ("applepay", "debitcard"):
-                continue
-            if m.deposit_limit is not None and m.accumulated_amount is not None:
-                if m.accumulated_amount >= m.deposit_limit:
-                    continue
-            if amount is not None:
-                if m.min_amount is not None and amount < m.min_amount:
-                    continue
-                if m.max_amount is not None and amount > m.max_amount:
-                    continue
-            result.append(
-                {
-                    "id": m.id,
-                    "name": m.name,
-                    "slug": m.slug,
-                    "min_amount": m.min_amount,
-                    "max_amount": m.max_amount,
-                    "has_sub_options": m.has_sub_options,
-                    "response_type": m.response_type,
-                    "response_text": m.response_text,
-                    "response_file_id": m.response_file_id,
-                    "response_caption": m.response_caption,
-                    "use_group_checkout_link": bool(
-                        getattr(m, "use_group_checkout_link", False)
-                    ),
-                    "group_checkout_provider": getattr(
-                        m, "group_checkout_provider", None
-                    ),
-                    "hyperlink_text": getattr(m, "hyperlink_text", None),
-                }
-            )
-        return result
+    return _payment_v2().get_methods_for_amount(club_id, direction, amount)
 
 
 def get_deposit_method_names(club_id: int) -> list[str]:
     """Return the names of all active deposit methods for a club."""
-    v2 = _payment_v2()
-    if v2:
-        methods = v2.get_methods_for_amount(club_id, "deposit", None)
-        return [m["name"] for m in methods]
-    with get_db() as session:
-        methods = (
-            session.query(PaymentMethod)
-            .filter_by(club_id=club_id, direction="deposit", is_active=True)
-            .order_by(PaymentMethod.sort_order)
-            .all()
-        )
-        return [
-            m.name
-            for m in methods
-            if (m.slug or "").strip().lower() not in ("applepay", "debitcard")
-        ]
+    methods = _payment_v2().get_methods_for_amount(club_id, "deposit", None)
+    return [m["name"] for m in methods]
 
 
 def record_method_deposit(method_id: int, amount: Decimal) -> None:
     """Atomically add deposit amount to a method's accumulated total."""
-    v2 = _payment_v2()
-    if v2:
-        v2.record_method_deposit(method_id, amount)
-        return
-    with get_db() as session:
-        m = session.query(PaymentMethod).get(method_id)
-        if m:
-            m.accumulated_amount = (m.accumulated_amount or 0) + amount
+    _payment_v2().record_method_deposit(method_id, amount)
 
 
 def get_method_by_id(method_id: int) -> Optional[dict]:
-    v2 = _payment_v2()
-    if v2:
-        return v2.get_method_by_id(method_id)
-    with get_db() as session:
-        m = session.query(PaymentMethod).get(method_id)
-        if not m:
-            return None
-        return {
-            "id": m.id,
-            "name": m.name,
-            "slug": m.slug,
-            "min_amount": m.min_amount,
-            "max_amount": m.max_amount,
-            "has_sub_options": m.has_sub_options,
-            "response_type": m.response_type,
-            "response_text": m.response_text,
-            "response_file_id": m.response_file_id,
-            "response_caption": m.response_caption,
-            "use_group_checkout_link": bool(
-                getattr(m, "use_group_checkout_link", False)
-            ),
-            "group_checkout_provider": getattr(m, "group_checkout_provider", None),
-            "hyperlink_text": getattr(m, "hyperlink_text", None),
-        }
+    return _payment_v2().get_method_by_id(method_id)
 
 
 def get_sub_options(method_id: int) -> List[dict]:
-    v2 = _payment_v2()
-    if v2:
-        return v2.get_sub_options(method_id)
-    with get_db() as session:
-        subs = (
-            session.query(PaymentSubOption)
-            .filter_by(method_id=method_id, is_active=True)
-            .order_by(PaymentSubOption.sort_order)
-            .all()
-        )
-        return [
-            {
-                "id": s.id,
-                "name": s.name,
-                "slug": s.slug,
-                "response_type": s.response_type,
-                "response_text": s.response_text,
-                "response_file_id": s.response_file_id,
-                "response_caption": s.response_caption,
-            }
-            for s in subs
-        ]
+    return _payment_v2().get_sub_options(method_id)
 
 
 def get_sub_option_by_id(sub_id: int) -> Optional[dict]:
-    v2 = _payment_v2()
-    if v2:
-        return v2.get_sub_option_by_id(sub_id)
-    with get_db() as session:
-        s = session.query(PaymentSubOption).get(sub_id)
-        if not s:
-            return None
-        return {
-            "id": s.id,
-            "name": s.name,
-            "slug": s.slug,
-            "response_type": s.response_type,
-            "response_text": s.response_text,
-            "response_file_id": s.response_file_id,
-            "response_caption": s.response_caption,
-        }
+    return _payment_v2().get_sub_option_by_id(sub_id)
 
 
 def get_club_welcome(club_id: int) -> Optional[dict]:
@@ -361,142 +228,22 @@ def get_club_list_content(club_id: int) -> Optional[dict]:
 
 def get_lowest_minimum(club_id: int, direction: str) -> Optional[Decimal]:
     """Return the smallest min_amount across all active methods, or None if none have a minimum."""
-    v2 = _payment_v2()
-    if v2:
-        return v2.get_lowest_minimum(club_id, direction)
-    with get_db() as session:
-        methods = (
-            session.query(PaymentMethod)
-            .filter_by(club_id=club_id, direction=direction, is_active=True)
-            .all()
-        )
-        mins = [m.min_amount for m in methods if m.min_amount is not None]
-        return min(mins) if mins else None
+    return _payment_v2().get_lowest_minimum(club_id, direction)
 
 
 def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
     """Return the response tier matching the amount, or None to use the method default."""
-    v2 = _payment_v2()
-    if v2:
-        return v2.get_tier_for_amount(method_id, amount)
-    with get_db() as session:
-        tiers = (
-            session.query(PaymentMethodTier)
-            .filter_by(method_id=method_id)
-            .order_by(PaymentMethodTier.sort_order)
-            .all()
-        )
-        for t in tiers:
-            if t.min_amount is not None and amount < t.min_amount:
-                continue
-            if t.max_amount is not None and amount > t.max_amount:
-                continue
-            link = bool(getattr(t, "use_group_checkout_link", False))
-            provider = getattr(t, "group_checkout_provider", None)
-            if link and not provider:
-                provider = "stripe"
-            return {
-                "id": t.id,
-                "label": t.label,
-                "min_amount": t.min_amount,
-                "max_amount": t.max_amount,
-                "response_type": t.response_type,
-                "response_text": t.response_text,
-                "response_file_id": t.response_file_id,
-                "response_caption": t.response_caption,
-                "use_group_checkout_link": link,
-                "group_checkout_provider": provider,
-                "hyperlink_text": getattr(t, "hyperlink_text", None),
-            }
-    return None
-
-
-def _variant_response_dict(
-    v: MethodVariant, *, tier_scoped: bool = False, include_ids: bool = False
-) -> dict:
-    link = getattr(v, "use_group_checkout_link", None)
-    if tier_scoped and link is None:
-        link = False
-    provider = getattr(v, "group_checkout_provider", None)
-    if link is True and not provider:
-        provider = "stripe"
-    data = {
-        "response_type": v.response_type,
-        "response_text": v.response_text,
-        "response_file_id": v.response_file_id,
-        "response_caption": v.response_caption,
-        "hyperlink_text": getattr(v, "hyperlink_text", None),
-        "min_amount": v.min_amount,
-        "max_amount": v.max_amount,
-    }
-    if link is not None:
-        data["use_group_checkout_link"] = bool(link)
-    if provider and data.get("use_group_checkout_link"):
-        data["group_checkout_provider"] = provider
-    if include_ids:
-        data["variant_id"] = int(v.id)
-        data["variant_label"] = v.label
-        data["tier_id"] = int(v.tier_id) if v.tier_id else None
-        data["method_id"] = int(v.method_id)
-    return data
-
-
-def _legacy_variant_weight(v: MethodVariant) -> int:
-    return int(v.weight) if v.weight is not None else 1
-
-
-def _pick_weighted_legacy_variant(
-    variants: list[MethodVariant],
-) -> Optional[MethodVariant]:
-    active = [v for v in variants if _legacy_variant_weight(v) > 0]
-    if not active:
-        return None
-    weights = [_legacy_variant_weight(v) for v in active]
-    return random.choices(active, weights=weights, k=1)[0]
+    return _payment_v2().get_tier_for_amount(method_id, amount)
 
 
 def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
     """Return tier variants as response dicts with weight."""
-    v2 = _payment_v2()
-    if v2:
-        return v2.list_tier_variants(method_id, tier_id)
-    with get_db() as session:
-        variants = (
-            session.query(MethodVariant)
-            .filter_by(method_id=int(method_id), tier_id=int(tier_id))
-            .order_by(MethodVariant.sort_order, MethodVariant.id)
-            .all()
-        )
-        out: list[dict] = []
-        for variant in variants:
-            data = _variant_response_dict(variant, tier_scoped=True, include_ids=True)
-            data["weight"] = _legacy_variant_weight(variant)
-            out.append(data)
-        return out
+    return _payment_v2().list_tier_variants(method_id, tier_id)
 
 
 def list_method_variants(method_id: int) -> list[dict]:
     """All variants for a method, including weight 0, with tier ids."""
-    v2 = _payment_v2()
-    if v2:
-        return v2.list_method_variants(method_id)
-    with get_db() as session:
-        variants = (
-            session.query(MethodVariant)
-            .filter_by(method_id=int(method_id))
-            .order_by(
-                MethodVariant.tier_id,
-                MethodVariant.sort_order,
-                MethodVariant.id,
-            )
-            .all()
-        )
-        out: list[dict] = []
-        for variant in variants:
-            data = _variant_response_dict(variant, tier_scoped=True, include_ids=True)
-            data["weight"] = _legacy_variant_weight(variant)
-            out.append(data)
-        return out
+    return _payment_v2().list_method_variants(method_id)
 
 
 def pick_variant(
@@ -513,39 +260,7 @@ def pick_variant(
 
     Returns the chosen variant's response dict, or None if no variants exist.
     """
-    v2 = _payment_v2()
-    if v2:
-        return v2.pick_variant(method_id, tier_id=tier_id, variant_id=variant_id)
-    with get_db() as session:
-        if variant_id is not None:
-            chosen = session.query(MethodVariant).get(int(variant_id))
-            if chosen is None or int(chosen.method_id) != int(method_id):
-                return None
-            if _legacy_variant_weight(chosen) > 0 and (
-                tier_id is None
-                or (chosen.tier_id is not None and int(chosen.tier_id) == int(tier_id))
-            ):
-                return _variant_response_dict(
-                    chosen, tier_scoped=bool(chosen.tier_id), include_ids=True
-                )
-
-        if tier_id is not None:
-            variants = session.query(MethodVariant).filter_by(tier_id=tier_id).all()
-            chosen = _pick_weighted_legacy_variant(variants)
-            if chosen is not None:
-                return _variant_response_dict(
-                    chosen, tier_scoped=True, include_ids=True
-                )
-
-        variants = (
-            session.query(MethodVariant)
-            .filter_by(method_id=method_id, tier_id=None)
-            .all()
-        )
-        chosen = _pick_weighted_legacy_variant(variants)
-        if chosen is None:
-            return None
-        return _variant_response_dict(chosen, tier_scoped=False, include_ids=True)
+    return _payment_v2().pick_variant(method_id, tier_id=tier_id, variant_id=variant_id)
 
 
 def get_custom_command(club_id: int, command_name: str) -> Optional[dict]:

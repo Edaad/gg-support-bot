@@ -17,8 +17,7 @@ Repeat payers (`cashapp_payer_bindings`) auto-bind by **normalized payer name** 
 Native Cash App `$cashtag` instructions stick per support group after the bot first shows them in `/deposit` (same table/migration as Venmo — see [`VENMO_FLOW.md`](VENMO_FLOW.md) Part 4). Stripe checkout is never locked as X. If the locked `$tag` is unavailable for the amount, the bot tries another native variant in that tier, else Stripe, with one head-admin Slack warning while X stays broken. No alternative in the tier → Cash App is hidden. `/unbindmethod` clears stickiness.
 
 ```bash
-DATABASE_URL=... python migrate_deposit_destination_stickiness.py
-DATABASE_URL=... python migrate_deposit_destination_stickiness_fallback.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ## Database tables
@@ -31,7 +30,7 @@ DATABASE_URL=... python migrate_deposit_destination_stickiness_fallback.py
 Migration (run once after deploy):
 
 ```bash
-DATABASE_URL=... python migrate_cashapp_payments.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
 ## Environment
@@ -105,7 +104,7 @@ Stripe Cash App checkout variants are unchanged — they use the Stripe webhook,
 
 ## Zapier cutover
 
-1. Deploy code and run `migrate_cashapp_payments.py`
+1. Deploy code (the release phase applies the schema)
 2. Set `CASHAPP_ZAPIER_WEBHOOK_SECRET` on the web dyno
 3. Update the Cash App Zap: replace the Telegram step with POST to `/api/cashapp/payments`
 4. **Retire** the old Zap that posted directly to Telegram (avoids duplicate notifications)

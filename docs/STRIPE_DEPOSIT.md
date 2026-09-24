@@ -24,11 +24,8 @@ Live group title at confirm time comes from **`groups.name`** (or `support_group
 Migrations:
 
 ```bash
-DATABASE_URL=... python migrate_stripe_deposit_tracking.py
-DATABASE_URL=... python migrate_stripe_checkout_session_lifecycle.py
+alembic upgrade head   # runs automatically in the Heroku release phase
 ```
-
-New installs also get tables from API startup `create_all`.
 
 ## Environment (bot + API)
 
@@ -123,27 +120,7 @@ To remove legacy open rows: `python scripts/cleanup_stripe_open_sessions.py --ap
 
 The Payments page lists rows from `stripe_checkout_sessions` with `status = complete`. Rows are created **only** when Stripe delivers `checkout.session.completed` (or `checkout.session.async_payment_succeeded`) to `POST /api/stripe/webhook` and the session has `metadata.telegram_chat_id`, `metadata.club_id`, and a Stripe customer id.
 
-Payments that completed on Stripe **before** the webhook was configured, or without that metadata, will not appear until backfilled.
-
-### Backfill from Stripe + linked CSV
-
-If you matched Payment Intent ids to group titles in a spreadsheet (e.g. `payments_main_linked`), export it as **CSV** from Numbers, then:
-
-```bash
-STRIPE_SECRET_KEY=... DATABASE_URL=... python scripts/backfill_stripe_payments.py \
-  --csv ~/Downloads/payments_main_linked.csv --dry-run
-
-python scripts/backfill_stripe_payments.py \
-  --csv ~/Downloads/payments_main_linked.csv --apply
-```
-
-The script loads each `pi_…` from Stripe, uses your `group_title` column when session metadata is missing, and calls the same `record_completed_checkout_payment` path as the webhook.
-
-Or backfill every completed Checkout Session in a date range (no CSV):
-
-```bash
-python scripts/backfill_stripe_payments.py --from-stripe --created-gte 2026-05-01 --apply
-```
+Payments that completed on Stripe **before** the webhook was configured, or without that metadata, will not appear.
 
 ## Dashboard: Payments page
 

@@ -15,7 +15,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from api.audit_ledger import (
     _apply_audit_manual_filters,
@@ -32,11 +32,20 @@ from api.payments_helpers import (
 )
 from api.vaughn_methods import normalize_venmo_handle
 from bot.services.payment_method_binding import canonicalize_zelle_recipient
-from db.models import BonusRecord, CryptoPayment, VenmoPayment, ZellePayment
+from db.models import (
+    BonusRecord,
+    CryptoPayment,
+    StaffCashoutMoneySend,
+    StaffCashoutRecord,
+    VenmoPayment,
+    ZellePayment,
+)
 
 from api.audit_reconcile_export import MATCHING_HEADERS
 
 RailBucket = Literal["zelle", "venmo", "crypto", "bonuses"]
+_SHEET_TITLES = ("Processed", "Zelle", "Venmo", "Crypto", "Bonuses", "Cashouts")
+_VAUGHN_SENDER_NEEDLE = "vaughn"
 
 FILENAME_RE = re.compile(
     r"^reconcile-all-clubs-(\d{4}-\d{2}-\d{2})\.xlsx$",
@@ -61,7 +70,8 @@ PROCESSED_HEADERS = [
 
 ZELLE_VENMO_HEADERS = ["Time", "Name", "Amount", "Variant", "Source date"]
 CRYPTO_HEADERS = ["Time", "From", "USD", "Token", "Source date"]
-BONUSES_HEADERS = ["Time", "Player", "Amount", "Source date"]
+BONUSES_HEADERS = ["Time", "Player", "Amount", "Type", "Source date"]
+CASHOUTS_HEADERS = ["Time", "Name", "Amount", "Method", "Sent to", "Source date"]
 
 MISSING_DATA = "Missing data"
 
@@ -106,6 +116,17 @@ class BonusRailRow:
     occurred_at: datetime | None
     player: str
     amount_usd: float
+    bonus_type: str
+
+
+@dataclass(frozen=True)
+class CashoutRailRow:
+    audit_date: date
+    occurred_at: datetime | None
+    name: str
+    amount_usd: float
+    method: str
+    sent_to: str
 
 
 def _display_cell(value: object) -> object:
@@ -328,8 +349,29 @@ def _sort_key_time(value: datetime | None) -> tuple[int, datetime]:
     return (0, value.replace(tzinfo=None) if value.tzinfo else value)
 
 
-def _rail_sort_key(row: PaymentRailRow | BonusRailRow) -> tuple[date, datetime]:
+def _rail_sort_key(
+    row: PaymentRailRow | BonusRailRow | CashoutRailRow,
+) -> tuple[date, datetime]:
     return (row.audit_date, row.occurred_at or datetime.max)
+
+
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _bonus_type_label(record: BonusRecord) -> str:
+    bonus_type = getattr(record, "bonus_type", None)
+    name = (getattr(bonus_type, "name", None) or "").strip()
+    if name:
+        return name
+    desc = (getattr(record, "custom_description", None) or "").strip()
+    if desc:
+        return f"Other — {desc}"
+    return ""
 
 
 def _clubgto_excel_time(occurred_at: datetime | None) -> datetime | None:
@@ -463,6 +505,7 @@ def fetch_clubgto_bonus_rails(
         from_dt, to_dt = audit_day_window_utc(_CLUBGTO_SLUG, audit_date)
         records = (
             session.query(BonusRecord)
+            .options(joinedload(BonusRecord.bonus_type))
             .filter(
                 BonusRecord.club_id == club_id,
                 BonusRecord.issued_at >= from_dt,
@@ -486,6 +529,52 @@ def fetch_clubgto_bonus_rails(
                     occurred_at=_clubgto_excel_time(record.issued_at),
                     player=str(record.player_username).strip(),
                     amount_usd=float(Decimal(str(record.amount))),
+                    bonus_type=_bonus_type_label(record),
+                )
+            )
+    out.sort(key=_rail_sort_key)
+    return out
+
+
+def fetch_vaughn_cashout_rails(
+    session: Session,
+    audit_dates: list[date],
+) -> list[CashoutRailRow]:
+    """Money-sent rows whose sender name contains Vaughn, for ClubGTO audit days."""
+    out: list[CashoutRailRow] = []
+    for audit_date in audit_dates:
+        from_dt, to_dt = audit_day_window_utc(_CLUBGTO_SLUG, audit_date)
+        rows = (
+            session.query(StaffCashoutMoneySend, StaffCashoutRecord)
+            .join(
+                StaffCashoutRecord,
+                StaffCashoutMoneySend.cashout_record_id == StaffCashoutRecord.id,
+            )
+            .filter(
+                StaffCashoutMoneySend.sender_name.ilike(f"%{_VAUGHN_SENDER_NEEDLE}%"),
+                StaffCashoutMoneySend.created_at >= from_dt,
+                StaffCashoutMoneySend.created_at <= to_dt,
+            )
+            .order_by(
+                StaffCashoutMoneySend.created_at.asc(),
+                StaffCashoutMoneySend.id.asc(),
+            )
+            .all()
+        )
+        for send, record in rows:
+            if _VAUGHN_SENDER_NEEDLE not in (send.sender_name or "").casefold():
+                continue
+            created = _as_utc(send.created_at)
+            if created is None or created < from_dt or created > to_dt:
+                continue
+            out.append(
+                CashoutRailRow(
+                    audit_date=audit_date,
+                    occurred_at=_clubgto_excel_time(send.created_at),
+                    name=str(send.sender_name or "").strip(),
+                    amount_usd=float(Decimal(str(send.amount))),
+                    method=str(send.method_display_name or "").strip(),
+                    sent_to=str(record.group_title or "").strip(),
                 )
             )
     out.sort(key=_rail_sort_key)
@@ -590,6 +679,18 @@ def _bonus_rail_tuple(row: BonusRailRow) -> tuple[object, ...]:
         _display_cell(row.occurred_at),
         _display_cell(row.player),
         _display_cell(row.amount_usd),
+        _display_cell(row.bonus_type),
+        row.audit_date.isoformat(),
+    )
+
+
+def _cashout_rail_tuple(row: CashoutRailRow) -> tuple[object, ...]:
+    return (
+        _display_cell(row.occurred_at),
+        _display_cell(row.name),
+        _display_cell(row.amount_usd),
+        _display_cell(row.method),
+        _display_cell(row.sent_to),
         row.audit_date.isoformat(),
     )
 
@@ -654,17 +755,18 @@ def build_gto_weekly_audit_workbook(
 
     payment_rails = fetch_vaughn_payment_rails(session, expected)
     bonus_rails = fetch_clubgto_bonus_rails(session, expected)
+    cashout_rails = fetch_vaughn_cashout_rails(session, expected)
 
     if TEMPLATE_PATH.is_file():
         out_wb = load_workbook(TEMPLATE_PATH)
     else:
         out_wb = Workbook()
         out_wb.active.title = "Processed"
-        for title in ("Zelle", "Venmo", "Crypto", "Bonuses"):
+        for title in _SHEET_TITLES[1:]:
             out_wb.create_sheet(title)
 
     # Ensure sheet order
-    for title in ("Processed", "Zelle", "Venmo", "Crypto", "Bonuses"):
+    for title in _SHEET_TITLES:
         if title not in out_wb.sheetnames:
             out_wb.create_sheet(title)
 
@@ -698,9 +800,15 @@ def build_gto_weekly_audit_workbook(
         amount_col=3,
     )
 
+    _write_rail_sheet(
+        out_wb["Cashouts"],
+        headers=CASHOUTS_HEADERS,
+        rows=[_cashout_rail_tuple(r) for r in cashout_rails],
+        amount_col=3,
+    )
+
     # Reorder sheets
-    desired = ["Processed", "Zelle", "Venmo", "Crypto", "Bonuses"]
-    for idx, title in enumerate(desired):
+    for idx, title in enumerate(_SHEET_TITLES):
         out_wb.move_sheet(title, offset=idx - out_wb.sheetnames.index(title))
 
     buf = io.BytesIO()

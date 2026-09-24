@@ -8,7 +8,7 @@ Telegram bot and web dashboard for club operators: configurable welcome and list
 |-----------|------|
 | **Bot** (`bot/main.py`, `run_bot.py`) | Long-polling Telegram worker: `/start`, `/deposit`, `/cashout`, `/gc` (Telethon-backed megagroups), `/list`, `/set`, linked groups, cooldown bypass, etc. |
 | **GGCashier** (`cashier/main.py`, `run_cashier.py`) | Separate staff bot: cashout wizard in DM, writes the dashboard cashout record, defers group pin/ASAP until completion. |
-| **API** (`api/`, `run_api.py`) | FastAPI backend for the dashboard; creates tables on startup (`Base.metadata.create_all`). |
+| **API** (`api/`, `run_api.py`) | FastAPI backend for the dashboard; refuses to start unless the database is at the Alembic head. |
 | **Dashboard** (`dashboard/`) | React + Vite + Tailwind SPA; in production the API serves `dashboard/dist`. |
 
 Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier` runs GGCashier (see `Procfile`).
@@ -59,18 +59,13 @@ Pre-push runs `ruff check .` and `ruff format --check .` before tests and the da
 
 ### 2. Database
 
-Create a PostgreSQL database and set `DATABASE_URL`. Tables are created automatically when the API or bot starts.
-
-If you are migrating from an older `user_commands` / `group_club` layout, see `db/migrate.py` (run with `DATABASE_URL` set).
-
-To add the `support_group_chats` audit table for `/gc` (idempotent), run:
+Create a PostgreSQL database, set `DATABASE_URL`, and create the schema:
 
 ```bash
-DATABASE_URL=postgresql://... python migrate_support_group_chats.py
-DATABASE_URL=postgresql://... python migrate_support_group_chats_player_dm.py
+alembic upgrade head
 ```
 
-The second script adds player-scoped columns and indexes for **outgoing `/gc` in admin→player DMs** (see below).
+On Heroku the release phase runs this on every deploy. See [docs/DATABASE.md](docs/DATABASE.md#schema-migrations-alembic) for how migrations work.
 
 ### 3. API + dashboard (development)
 
@@ -109,12 +104,6 @@ python run_cashier.py
 ```
 
 Debug stuck Continue/Cancel buttons: set `LOG_LEVEL=DEBUG` and `CASHIER_VERBOSE_LOGS=true`, restart the cashier worker, tap a button, and check stderr for lines like `handler_gc_job_continue`, `sync_wizard_state`, and `job_callback_entry`.
-
-Migrate the jobs table on existing databases:
-
-```bash
-DATABASE_URL=postgresql://... python migrate_cashier_jobs.py
-```
 
 **Flow:** Staff runs `/cash <amount>` in a linked support group → group shows “Working on your cashout” → staff gets a GGCashier DM to complete attestation, method selection, and payout details → on confirm, a Cashout Records row is created on the dashboard and the group gets the pinned owed amount + ASAP message. Staff can also start from scratch with `/cashout` in a private chat with GGCashier (paste group title, then amount).
 
@@ -166,7 +155,7 @@ Shared setup:
 2. **Club tuning** in [`club_gc_settings.py`](club_gc_settings.py): session paths, staff invites, titles, photos, `GC_*` overrides, optional `GC_BOT_ACCOUNT=@Bot`.
 3. **Sessions**: Telethon uses `*.session` under **`sessions/`** (gitignored) and/or Postgres `mtproto_session_credentials` when `GC_MTPROTO_DB_SESSIONS` is on.
 4. **Login**: Use **Dashboard → Telegram login** or optional [`scripts/mtproto_login_cli.py`](scripts/mtproto_login_cli.py). **SMS codes and 2FA secrets are never written to logs or the database.**
-5. **Migrate DB**: run [`migrate_support_group_chats.py`](migrate_support_group_chats.py) and [`migrate_support_group_chats_player_dm.py`](migrate_support_group_chats_player_dm.py) on existing databases.
+5. **Migrate DB**: `alembic upgrade head` (the Heroku release phase runs it on deploy).
 6. **Testing (DM flow)**: Run one worker (listener is on by default), authorize all three MTProto sessions, open a DM from a club admin phone to a player, send exactly `/gc`, confirm the command disappears, the group exists, and the DB row has `player_telegram_user_id` set.
 
 Full operator guide: [`docs/GC.md`](docs/GC.md).
@@ -185,7 +174,3 @@ run_api.py     # Local API entrypoint
 run_bot.py     # Support bot worker entrypoint
 run_cashier.py # GGCashier worker entrypoint
 ```
-
-## Legacy note
-
-`main.py` at the repo root is an older monolithic bot script and is **not** used by `Procfile` or `run_bot.py`. The maintained application is under `bot/` and `api/`.
