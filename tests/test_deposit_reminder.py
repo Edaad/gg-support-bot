@@ -720,6 +720,11 @@ class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message.assert_awaited_once()
         body = context.bot.send_message.await_args.kwargs["text"]
         self.assertIn("canceling your request", body)
+        self.assertIn("<b>automated feeback</b>", body)
+        self.assertIn("just type /earlyrb", body)
+        self.assertEqual(
+            context.bot.send_message.await_args.kwargs["parse_mode"], "HTML"
+        )
         abandon.assert_called_once()
 
     async def test_reminder_fires_incomplete_deposit_slack(self):

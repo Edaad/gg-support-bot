@@ -4134,14 +4134,15 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = (
             "We didn\u2019t hear back from you so we are canceling your request. "
-            "No worries \u2014 whenever you\u2019re ready, just type /deposit to start again!"
+            "No worries \u2014 whenever you\u2019re ready, just type /deposit to start again!\n\n"
+            "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
         )
         if method_list:
-            text += f"\n\nWe offer: {method_list}."
+            text += f"\n\nWe offer: {html.escape(method_list)}."
         text += "\n\nDeposits are available 24/7, so feel free to reach out anytime!"
 
         try:
-            kwargs = {}
+            kwargs: dict = {"parse_mode": "HTML"}
             strip = popup_keyboard_svc.pop_strip_reply_markup(context)
             if strip is not None:
                 kwargs["reply_markup"] = strip
