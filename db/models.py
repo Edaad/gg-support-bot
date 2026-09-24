@@ -3216,3 +3216,43 @@ class DepositMethodAlert(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class OutboundSend(Base):
+    """One amount that left a Venmo or Cash App account, ingested from Zapier."""
+
+    __tablename__ = "outbound_sends"
+    __table_args__ = (
+        CheckConstraint(
+            "method IN ('venmo', 'cashapp')",
+            name="ck_outbound_sends_method",
+        ),
+        CheckConstraint(
+            "method_owner IN ('round-table', 'vaughn', 'mateos')",
+            name="ck_outbound_sends_method_owner",
+        ),
+        CheckConstraint("amount_cents > 0", name="ck_outbound_sends_amount_cents"),
+        Index(
+            "uq_outbound_sends_source_external_id",
+            "source_external_id",
+            unique=True,
+        ),
+        Index("ix_outbound_sends_created_at", "created_at"),
+        Index("ix_outbound_sends_method_created_at", "method", "created_at"),
+        Index("ix_outbound_sends_tag_created_at", "tag", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    method = Column(String(16), nullable=False)
+    tag = Column(String(64), nullable=False)
+    tag_matched = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    method_owner = Column(String(32), nullable=False)
+    recipient = Column(String(255), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    source_external_id = Column(String(255), nullable=False)
+    paid_at = Column(String(255), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

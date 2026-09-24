@@ -121,6 +121,7 @@ def create_app() -> FastAPI:
     from api.routes.group_chat_activity import router as group_chat_activity_router
     from api.routes.head_admin_escalation import router as head_admin_escalation_router
     from api.routes.escalation_events import router as escalation_events_router
+    from api.routes.outbound_sends import router as outbound_sends_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -156,6 +157,7 @@ def create_app() -> FastAPI:
     app.include_router(group_chat_activity_router)
     app.include_router(head_admin_escalation_router)
     app.include_router(escalation_events_router)
+    app.include_router(outbound_sends_router)
 
     @app.api_route(
         "/api/{rest_of_path:path}",
