@@ -275,7 +275,6 @@ export default function Sends({ token }: { token: string }) {
               <thead className="border-b border-border bg-surface-raised text-ink-muted">
                 <tr>
                   <th className="px-4 py-3 font-medium">Created</th>
-                  <th className="px-4 py-3 font-medium">Paid at</th>
                   <th className="px-4 py-3 font-medium">Method</th>
                   <th className="px-4 py-3 font-medium">Tag</th>
                   <th className="px-4 py-3 font-medium">Owner</th>
@@ -291,7 +290,6 @@ export default function Sends({ token }: { token: string }) {
                     <td className="px-4 py-3 whitespace-nowrap">
                       <EasternInstant value={r.created_at} />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-ink-muted">{r.paid_at || '—'}</td>
                     <td className="px-4 py-3">{r.method}</td>
                     <td className="px-4 py-3">{r.tag}</td>
                     <td className="px-4 py-3">{r.method_owner}</td>
