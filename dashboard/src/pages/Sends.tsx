@@ -9,13 +9,22 @@ import {
 } from '../api/client'
 import { fmtMoney } from '../components/CashoutMethodFields'
 import Modal from '../components/Modal'
+import { MethodName } from '../components/PaymentMethodIcon'
 import { useConfirm } from '../components/ConfirmProvider'
 import EasternInstant from '../components/EasternInstant'
 import { easternDayEndIso, easternDayStartIso } from '../lib/easternTime'
 
 const PAGE_SIZE = 50
 const METHODS = ['venmo', 'cashapp'] as const
+const METHOD_LABELS: Record<(typeof METHODS)[number], string> = {
+  venmo: 'Venmo',
+  cashapp: 'Cash App',
+}
 const OWNERS = ['round-table', 'vaughn', 'mateos'] as const
+
+function methodLabel(method: string): string {
+  return METHOD_LABELS[method as keyof typeof METHOD_LABELS] ?? method
+}
 
 const inputClass =
   'w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none'
@@ -184,7 +193,7 @@ export default function Sends({ token }: { token: string }) {
             >
               <option value="">All</option>
               {METHODS.map((m) => (
-                <option key={m} value={m}>{m}</option>
+                <option key={m} value={m}>{METHOD_LABELS[m]}</option>
               ))}
             </select>
           </div>
@@ -248,8 +257,9 @@ export default function Sends({ token }: { token: string }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-semibold text-ink">{r.recipient}</h3>
-                    <p className="mt-0.5 truncate text-sm text-ink-muted">
-                      {r.method} · {r.tag}
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-ink-muted">
+                      <MethodName name={methodLabel(r.method)} slug={r.method} className="shrink-0" />
+                      <span className="truncate">· {r.tag}</span>
                     </p>
                   </div>
                   <p className="shrink-0 text-base font-semibold tabular-nums">{fmtMoney(r.amount_cents / 100)}</p>
@@ -290,7 +300,9 @@ export default function Sends({ token }: { token: string }) {
                     <td className="px-4 py-3 whitespace-nowrap">
                       <EasternInstant value={r.created_at} />
                     </td>
-                    <td className="px-4 py-3">{r.method}</td>
+                    <td className="px-4 py-3">
+                      <MethodName name={methodLabel(r.method)} slug={r.method} />
+                    </td>
                     <td className="px-4 py-3">{r.tag}</td>
                     <td className="px-4 py-3">{r.method_owner}</td>
                     <td className="px-4 py-3">{r.recipient}</td>
@@ -363,7 +375,7 @@ export default function Sends({ token }: { token: string }) {
             <label className="mb-1 block text-xs font-medium text-ink-muted">Method</label>
             <select value={formMethod} onChange={(e) => setFormMethod(e.target.value)} className={inputClass}>
               {METHODS.map((m) => (
-                <option key={m} value={m}>{m}</option>
+                <option key={m} value={m}>{METHOD_LABELS[m]}</option>
               ))}
             </select>
           </div>
