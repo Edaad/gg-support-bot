@@ -14,10 +14,17 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.auth import ROLE_ACCOUNT_MANAGER, ROLE_GTO, create_token
-from api.plaid_bank import decrypt_access_token, encrypt_access_token, status_from_item
+from api.plaid_bank import (
+    apply_transaction_updates,
+    decrypt_access_token,
+    encrypt_access_token,
+    is_zelle_transaction,
+    pull_transaction_updates,
+    status_from_item,
+)
 from api.routes.plaid_items import router
 from db.connection import get_db_dependency
-from db.models import PlaidItem
+from db.models import PlaidItem, PlaidTransaction
 
 TOKEN_KEY = Fernet.generate_key().decode()
 ACCESS_TOKEN = "access-sandbox-test-token"
@@ -41,6 +48,7 @@ def _session_factory():
             )
         )
     PlaidItem.__table__.create(bind=engine)
+    PlaidTransaction.__table__.create(bind=engine)
     return sessionmaker(bind=engine)
 
 
@@ -277,6 +285,103 @@ class PlaidItemsApiTest(unittest.TestCase):
         session = self.factory()
         self.assertEqual(session.query(PlaidItem).count(), 1)
         session.close()
+
+    def test_zelle_fields_and_list(self):
+        zelle = {
+            "transaction_id": "txn-zelle",
+            "account_id": "acc-1",
+            "amount": -200,
+            "date": "2026-09-20",
+            "name": "ZELLE FROM JANE DOE",
+            "original_description": "ZELLE FROM JANE DOE MEMO lunch",
+            "pending": False,
+            "payment_channel": "other",
+            "payment_meta": {
+                "payer": "Jane Doe",
+                "payee": "Club",
+                "reason": "lunch",
+                "payment_method": "Zelle",
+            },
+        }
+        grocery = {
+            "transaction_id": "txn-grocery",
+            "amount": 12.5,
+            "date": "2026-09-21",
+            "name": "GROCERY STORE",
+            "payment_meta": {},
+        }
+        self.assertTrue(is_zelle_transaction(zelle))
+        self.assertFalse(is_zelle_transaction(grocery))
+
+        def fake_post(path, body):
+            self.assertEqual(path, "/transactions/sync")
+            self.assertTrue(body["options"]["include_original_description"])
+            if "cursor" not in body:
+                return {
+                    "added": [zelle],
+                    "modified": [],
+                    "removed": [],
+                    "next_cursor": "cur-1",
+                    "has_more": True,
+                }
+            self.assertEqual(body["cursor"], "cur-1")
+            return {
+                "added": [grocery],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "cur-2",
+                "has_more": False,
+            }
+
+        with patch("api.plaid_bank.plaid_post", side_effect=fake_post):
+            added, _modified, _removed, cursor = pull_transaction_updates(
+                ACCESS_TOKEN, None
+            )
+
+        session = self.factory()
+        item = PlaidItem(
+            club_id=1,
+            item_id="item-zelle",
+            institution_name="Chase",
+            access_token_encrypted=encrypt_access_token(ACCESS_TOKEN),
+        )
+        session.add(item)
+        session.flush()
+        apply_transaction_updates(session, item, added, [], [], cursor)
+        session.commit()
+        self.assertEqual(session.query(PlaidTransaction).count(), 2)
+        saved = (
+            session.query(PlaidTransaction)
+            .filter(PlaidTransaction.transaction_id == "txn-zelle")
+            .one()
+        )
+        self.assertTrue(saved.is_zelle)
+        self.assertEqual(saved.memo, "lunch")
+        self.assertEqual(saved.original_description, "ZELLE FROM JANE DOE MEMO lunch")
+        self.assertEqual(saved.payer, "Jane Doe")
+        session.close()
+
+        listed = self.client.get(
+            "/api/clubs/1/plaid/zelle",
+            headers=self._auth(self.admin),
+        )
+        self.assertEqual(listed.status_code, 200, listed.text)
+        body = listed.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(body["items"][0]["memo"], "lunch")
+        self.assertEqual(
+            body["items"][0]["original_description"],
+            "ZELLE FROM JANE DOE MEMO lunch",
+        )
+        self.assertNotIn(ACCESS_TOKEN, listed.text)
+        self.assertNotIn("access_token", listed.text)
+
+    def test_zelle_account_manager_forbidden(self):
+        response = self.client.get(
+            "/api/clubs/1/plaid/zelle",
+            headers=self._auth(create_token(ROLE_ACCOUNT_MANAGER)),
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -93,6 +93,43 @@ export const exchangePlaidPublicToken = (
     body: JSON.stringify(body),
   }, token)
 
+export type PlaidZelleItem = {
+  id: number
+  institution_name: string
+  txn_date: string
+  amount: number
+  name: string | null
+  payer: string | null
+  payee: string | null
+  memo: string | null
+  original_description: string | null
+  payment_method: string | null
+  payment_channel: string | null
+  pending: boolean
+  detail: Record<string, unknown> | null
+}
+
+export type PlaidZelleList = {
+  total: number
+  offset: number
+  limit: number
+  syncing: boolean
+  sync_error: string | null
+  items: PlaidZelleItem[]
+}
+
+export const listPlaidZelle = (token: string, clubId: number, offset: number) =>
+  request<PlaidZelleList>(
+    `/clubs/${clubId}/plaid/zelle?offset=${offset}&limit=50`,
+    {},
+    token,
+  )
+
+export const startPlaidZelleSync = (token: string, clubId: number) =>
+  request<{ syncing: boolean }>(`/clubs/${clubId}/plaid/zelle/sync`, {
+    method: 'POST',
+  }, token)
+
 export const listLinkedAccounts = (token: string, clubId: number) =>
   request<LinkedAccount[]>(`/clubs/${clubId}/linked-accounts`, {}, token)
 export const addLinkedAccount = (token: string, clubId: number, data: { telegram_user_id: number }) =>

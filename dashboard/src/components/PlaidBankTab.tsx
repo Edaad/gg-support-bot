@@ -12,6 +12,7 @@ import {
   type PlaidBankList,
 } from '../api/client'
 import EasternInstant from './EasternInstant'
+import PlaidZelleList from './PlaidZelleList'
 import { useConfirm } from './ConfirmProvider'
 
 type LinkSession = {
@@ -165,6 +166,7 @@ export default function PlaidBankTab({
   }
 
   return (
+    <>
     <div className="rounded-xl border border-border bg-surface p-6">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-ink-muted">
@@ -233,5 +235,9 @@ export default function PlaidBankTab({
         />
       )}
     </div>
+    {data && data.items.length > 0 && (
+      <PlaidZelleList token={token} clubId={clubId} />
+    )}
+    </>
   )
 }

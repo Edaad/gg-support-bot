@@ -190,8 +190,53 @@ class PlaidItem(Base):
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    transactions_cursor = Column(Text)
+    sync_status = Column(
+        String(16), nullable=False, server_default=text("'idle'"), default="idle"
+    )
+    sync_started_at = Column(DateTime(timezone=True))
+    last_synced_at = Column(DateTime(timezone=True))
+    sync_error = Column(Text)
 
     club = relationship("Club", back_populates="plaid_items")
+    transactions = relationship("PlaidTransaction", back_populates="plaid_item")
+
+
+class PlaidTransaction(Base):
+    """One bank transaction from a Plaid Item. Zelle rows are what the Bank tab lists."""
+
+    __tablename__ = "plaid_transactions"
+    __table_args__ = (
+        Index("ix_plaid_transactions_item_date", "plaid_item_id", "txn_date"),
+        Index("ix_plaid_transactions_zelle_date", "is_zelle", "txn_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    plaid_item_id = Column(
+        Integer, ForeignKey("plaid_items.id", ondelete="RESTRICT"), nullable=False
+    )
+    transaction_id = Column(String(128), nullable=False, unique=True)
+    account_id = Column(String(128))
+    amount = Column(Numeric(14, 2), nullable=False)
+    iso_currency_code = Column(String(8))
+    txn_date = Column(Date, nullable=False)
+    name = Column(Text)
+    merchant_name = Column(Text)
+    original_description = Column(Text)
+    pending = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    payment_channel = Column(String(32))
+    payer = Column(Text)
+    payee = Column(Text)
+    memo = Column(Text)
+    payment_method = Column(Text)
+    is_zelle = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    detail_json = Column(Text)
+
+    plaid_item = relationship("PlaidItem", back_populates="transactions")
 
 
 class ClubPaymentMethod(Base):

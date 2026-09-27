@@ -1,25 +1,30 @@
-"""Plaid Link, Item status, and encrypted access-token storage.
+"""Plaid Link, Item status, and Zelle transaction sync.
 
-The dashboard never receives an access token. Transaction sync is not called here.
+The dashboard never receives an access token.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Optional
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
-from db.models import PlaidItem
+from db.connection import get_db
+from db.models import PlaidItem, PlaidTransaction
 
 logger = logging.getLogger(__name__)
 
 SLOT_CAP = 10
+ZELLE_PAGE_SIZE = 50
+_SYNC_STALE = timedelta(minutes=15)
 
 _PRODUCTION_HOST = "https://production.plaid.com"
 _SANDBOX_HOST = "https://sandbox.plaid.com"
@@ -111,6 +116,7 @@ def link_token_body(club_id: int, access_token: Optional[str] = None) -> dict:
         body["access_token"] = access_token
     else:
         body["products"] = ["transactions"]
+        body["transactions"] = {"days_requested": 730}
     return body
 
 
@@ -239,3 +245,274 @@ def exchange_public_token(
         row.institution_name,
     )
     return row
+
+
+def is_zelle_transaction(txn: dict) -> bool:
+    meta = txn.get("payment_meta") if isinstance(txn.get("payment_meta"), dict) else {}
+    parts: list[str] = []
+    for value in (
+        txn.get("name"),
+        txn.get("merchant_name"),
+        txn.get("original_description"),
+        txn.get("payment_channel"),
+        meta.get("payment_method"),
+        meta.get("payment_processor"),
+        meta.get("reason"),
+        meta.get("payer"),
+        meta.get("payee"),
+    ):
+        if value:
+            parts.append(str(value))
+    for party in txn.get("counterparties") or []:
+        if isinstance(party, dict):
+            if party.get("name"):
+                parts.append(str(party["name"]))
+            if party.get("type"):
+                parts.append(str(party["type"]))
+    return "zelle" in " ".join(parts).lower()
+
+
+def _text(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _detail_json(txn: dict) -> str:
+    meta = txn.get("payment_meta") if isinstance(txn.get("payment_meta"), dict) else {}
+    payload = {
+        "payment_meta": meta,
+        "counterparties": txn.get("counterparties"),
+        "personal_finance_category": txn.get("personal_finance_category"),
+        "payment_channel": txn.get("payment_channel"),
+        "transaction_code": txn.get("transaction_code"),
+    }
+    return json.dumps(payload, default=str)
+
+
+def _apply_txn(row: PlaidTransaction, item_id: int, txn: dict) -> None:
+    meta = txn.get("payment_meta") if isinstance(txn.get("payment_meta"), dict) else {}
+    raw_date = _text(txn.get("date"))
+    row.plaid_item_id = item_id
+    row.transaction_id = str(txn["transaction_id"])
+    row.account_id = _text(txn.get("account_id"))
+    row.amount = Decimal(str(txn.get("amount") or "0")).quantize(Decimal("0.01"))
+    row.iso_currency_code = _text(txn.get("iso_currency_code"))
+    row.txn_date = date.fromisoformat(raw_date) if raw_date else date.today()
+    row.name = _text(txn.get("name"))
+    row.merchant_name = _text(txn.get("merchant_name"))
+    row.original_description = _text(txn.get("original_description"))
+    row.pending = bool(txn.get("pending"))
+    row.payment_channel = _text(txn.get("payment_channel"))
+    row.payer = _text(meta.get("payer"))
+    row.payee = _text(meta.get("payee"))
+    row.memo = _text(meta.get("reason"))
+    row.payment_method = _text(meta.get("payment_method"))
+    row.is_zelle = is_zelle_transaction(txn)
+    row.detail_json = _detail_json(txn)
+
+
+def apply_transaction_updates(
+    db: Session,
+    item: PlaidItem,
+    added: list[dict],
+    modified: list[dict],
+    removed: list[dict],
+    next_cursor: Optional[str],
+) -> None:
+    for txn in list(added) + list(modified):
+        transaction_id = txn.get("transaction_id")
+        if not transaction_id:
+            continue
+        row = (
+            db.query(PlaidTransaction)
+            .filter(PlaidTransaction.transaction_id == str(transaction_id))
+            .one_or_none()
+        )
+        if row is None:
+            row = PlaidTransaction(
+                plaid_item_id=item.id, transaction_id=str(transaction_id)
+            )
+            db.add(row)
+        _apply_txn(row, item.id, txn)
+    for removed_txn in removed:
+        transaction_id = (
+            removed_txn.get("transaction_id") if isinstance(removed_txn, dict) else None
+        )
+        if not transaction_id:
+            continue
+        (
+            db.query(PlaidTransaction)
+            .filter(
+                PlaidTransaction.plaid_item_id == item.id,
+                PlaidTransaction.transaction_id == str(transaction_id),
+            )
+            .delete(synchronize_session=False)
+        )
+    if next_cursor:
+        item.transactions_cursor = next_cursor
+    db.flush()
+
+
+def pull_transaction_updates(
+    access_token: str, cursor: Optional[str]
+) -> tuple[list[dict], list[dict], list[dict], Optional[str]]:
+    """Walk /transactions/sync from cursor. Restart once if a page mutates."""
+    start = cursor or None
+    last_error: Optional[PlaidError] = None
+    for attempt in range(2):
+        page_cursor = start
+        added: list[dict] = []
+        modified: list[dict] = []
+        removed: list[dict] = []
+        next_cursor = start
+        try:
+            has_more = True
+            while has_more:
+                body: dict = {
+                    "access_token": access_token,
+                    "count": 500,
+                    "options": {"include_original_description": True},
+                }
+                if page_cursor:
+                    body["cursor"] = page_cursor
+                data = plaid_post("/transactions/sync", body)
+                added.extend(data.get("added") or [])
+                modified.extend(data.get("modified") or [])
+                removed.extend(data.get("removed") or [])
+                next_cursor = data.get("next_cursor") or next_cursor
+                has_more = bool(data.get("has_more"))
+                page_cursor = data.get("next_cursor")
+                if has_more and not page_cursor:
+                    break
+            return added, modified, removed, next_cursor
+        except PlaidError as exc:
+            last_error = exc
+            if (
+                exc.error_code != "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"
+                or attempt == 1
+            ):
+                raise
+    if last_error is not None:
+        raise last_error
+    return [], [], [], start
+
+
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def club_sync_state(db: Session, club_id: int) -> tuple[bool, Optional[str]]:
+    now = datetime.now(timezone.utc)
+    syncing = False
+    error = None
+    rows = (
+        db.query(PlaidItem.sync_status, PlaidItem.sync_started_at, PlaidItem.sync_error)
+        .filter(PlaidItem.club_id == club_id)
+        .all()
+    )
+    for status, started, sync_error in rows:
+        started_utc = _as_utc(started)
+        if (
+            status == "running"
+            and started_utc is not None
+            and now - started_utc < _SYNC_STALE
+        ):
+            syncing = True
+        elif sync_error and error is None:
+            error = str(sync_error)
+    return syncing, error
+
+
+def list_zelle(
+    db: Session, club_id: int, offset: int, limit: int
+) -> tuple[int, list[tuple[PlaidTransaction, str]]]:
+    query = (
+        db.query(PlaidTransaction, PlaidItem.institution_name)
+        .join(PlaidItem, PlaidTransaction.plaid_item_id == PlaidItem.id)
+        .filter(PlaidItem.club_id == club_id, PlaidTransaction.is_zelle.is_(True))
+        .order_by(PlaidTransaction.txn_date.desc(), PlaidTransaction.id.desc())
+    )
+    total = query.count()
+    rows = query.offset(offset).limit(limit).all()
+    return total, rows
+
+
+def _lock_item(db: Session, item_id: int) -> bool:
+    now = datetime.now(timezone.utc)
+    stale_before = now - _SYNC_STALE
+    updated = (
+        db.query(PlaidItem)
+        .filter(PlaidItem.id == item_id)
+        .filter(
+            (PlaidItem.sync_status != "running")
+            | (PlaidItem.sync_started_at.is_(None))
+            | (PlaidItem.sync_started_at < stale_before)
+        )
+        .update(
+            {"sync_status": "running", "sync_started_at": now, "sync_error": None},
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    return updated == 1
+
+
+def _finish_sync(item_id: int, error: Optional[str]) -> None:
+    with get_db() as db:
+        row = db.query(PlaidItem).filter(PlaidItem.id == item_id).one_or_none()
+        if row is None:
+            return
+        row.sync_status = "idle"
+        row.last_synced_at = datetime.now(timezone.utc)
+        row.sync_error = error
+
+
+def sync_item_transactions(item_id: int) -> None:
+    with get_db() as db:
+        locked = _lock_item(db, item_id)
+    if not locked:
+        return
+    error: Optional[str] = None
+    try:
+        with get_db() as db:
+            row = db.query(PlaidItem).filter(PlaidItem.id == item_id).one()
+            access_token = decrypt_access_token(row.access_token_encrypted)
+            cursor = row.transactions_cursor
+        added, modified, removed, next_cursor = pull_transaction_updates(
+            access_token, cursor
+        )
+        with get_db() as db:
+            row = db.query(PlaidItem).filter(PlaidItem.id == item_id).one()
+            apply_transaction_updates(db, row, added, modified, removed, next_cursor)
+    except PlaidError as exc:
+        logger.info(
+            "plaid sync failed item_row=%s code=%s",
+            item_id,
+            exc.error_code,
+        )
+        error = exc.error_message
+    except PlaidConfigError:
+        logger.info("plaid sync failed item_row=%s config", item_id)
+        error = "Could not read the saved bank login"
+    except Exception:
+        logger.exception("plaid sync failed item_row=%s", item_id)
+        error = "Could not refresh transactions"
+    _finish_sync(item_id, error)
+
+
+def sync_club_transactions(club_id: int) -> None:
+    with get_db() as db:
+        ids = [
+            row_id
+            for (row_id,) in db.query(PlaidItem.id)
+            .filter(PlaidItem.club_id == club_id)
+            .all()
+        ]
+    for item_id in ids:
+        sync_item_transactions(item_id)
