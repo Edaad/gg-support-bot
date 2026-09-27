@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import time
 import unittest
+from datetime import datetime, timezone
+from decimal import Decimal
 from unittest.mock import patch
 
+import jwt
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import ec
+from jwt.algorithms import ECAlgorithm
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -22,7 +30,9 @@ from api.plaid_bank import (
     pull_transaction_updates,
     status_from_item,
 )
+from api.plaid_webhook import PlaidWebhookError, verify_plaid_webhook
 from api.routes.plaid_items import router
+from api.routes.plaid_webhook import router as plaid_webhook_router
 from db.connection import get_db_dependency
 from db.models import PlaidItem, PlaidTransaction
 
@@ -382,6 +392,135 @@ class PlaidItemsApiTest(unittest.TestCase):
             headers=self._auth(create_token(ROLE_ACCOUNT_MANAGER)),
         )
         self.assertEqual(response.status_code, 403)
+
+    def _aware(self, value):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def test_incremental_first_seen_is_kept(self):
+        detected = datetime(2026, 9, 27, 18, 0, tzinfo=timezone.utc)
+        later = datetime(2026, 9, 27, 19, 0, tzinfo=timezone.utc)
+        session = self.factory()
+        item = PlaidItem(
+            club_id=1,
+            item_id="item-seen",
+            institution_name="Chase",
+            access_token_encrypted=encrypt_access_token(ACCESS_TOKEN),
+            transactions_cursor="cur-existing",
+        )
+        session.add(item)
+        session.commit()
+        txn = {
+            "transaction_id": "txn-seen",
+            "amount": -10,
+            "date": "2026-09-27",
+            "name": "ZELLE FROM A B",
+            "payment_meta": {},
+        }
+        apply_transaction_updates(
+            session, item, [txn], [], [], "cur-2", detected_at=detected
+        )
+        session.commit()
+        row = session.query(PlaidTransaction).one()
+        self.assertEqual(self._aware(row.first_seen_at), detected)
+        changed = dict(txn)
+        changed["amount"] = -11
+        apply_transaction_updates(
+            session, item, [], [changed], [], "cur-3", detected_at=later
+        )
+        session.commit()
+        session.refresh(row)
+        self.assertEqual(self._aware(row.first_seen_at), detected)
+        self.assertEqual(row.amount, Decimal("-11.00"))
+        session.close()
+
+    def test_initial_sync_is_not_timed(self):
+        detected = datetime(2026, 9, 27, 18, 0, tzinfo=timezone.utc)
+        session = self.factory()
+        item = PlaidItem(
+            club_id=1,
+            item_id="item-backfill",
+            institution_name="Chase",
+            access_token_encrypted=encrypt_access_token(ACCESS_TOKEN),
+        )
+        session.add(item)
+        session.commit()
+        txn = {
+            "transaction_id": "txn-old",
+            "amount": -10,
+            "date": "2026-09-01",
+            "name": "ZELLE FROM A B",
+            "payment_meta": {},
+        }
+        apply_transaction_updates(
+            session, item, [txn], [], [], "cur-1", detected_at=detected
+        )
+        session.commit()
+        row = session.query(PlaidTransaction).one()
+        self.assertIsNone(row.first_seen_at)
+        session.close()
+
+
+def _es256_jwk():
+    private = ec.generate_private_key(ec.SECP256R1())
+    jwk = json.loads(ECAlgorithm.to_jwk(private.public_key()))
+    jwk["kid"] = "test-key"
+    jwk["alg"] = "ES256"
+    return private, jwk
+
+
+class PlaidWebhookTest(unittest.TestCase):
+    def test_verify_accepts_signed_body_and_rejects_tamper(self):
+        private, jwk = _es256_jwk()
+        body = b'{"webhook_type":"TRANSACTIONS","item_id":"item-abc"}'
+        token = jwt.encode(
+            {
+                "request_body_sha256": hashlib.sha256(body).hexdigest(),
+                "iat": int(time.time()),
+            },
+            private,
+            algorithm="ES256",
+            headers={"kid": "test-key"},
+        )
+        with patch("api.plaid_webhook.plaid_post", return_value={"key": jwk}):
+            verify_plaid_webhook(body, token)
+            with self.assertRaises(PlaidWebhookError):
+                verify_plaid_webhook(body + b"x", token)
+
+    def test_webhook_rejects_bad_signature(self):
+        app = FastAPI()
+        app.include_router(plaid_webhook_router)
+        client = TestClient(app)
+        response = client.post(
+            "/api/plaid/webhook",
+            content=b"{}",
+            headers={"Plaid-Verification": "not-a-jwt"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_verified_webhook_starts_sync(self):
+        app = FastAPI()
+        app.include_router(plaid_webhook_router)
+        client = TestClient(app)
+        with (
+            patch("api.routes.plaid_webhook.verify_plaid_webhook"),
+            patch("api.routes.plaid_webhook.sync_for_webhook") as sync,
+        ):
+            response = client.post(
+                "/api/plaid/webhook",
+                json={
+                    "webhook_type": "TRANSACTIONS",
+                    "webhook_code": "SYNC_UPDATES_AVAILABLE",
+                    "item_id": "item-abc",
+                },
+                headers={"Plaid-Verification": "signed"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(sync.call_args.args[0], "item-abc")
+        self.assertIsInstance(sync.call_args.args[1], datetime)
 
 
 if __name__ == "__main__":

@@ -117,7 +117,17 @@ def link_token_body(club_id: int, access_token: Optional[str] = None) -> dict:
     else:
         body["products"] = ["transactions"]
         body["transactions"] = {"days_requested": 730}
+    webhook = plaid_webhook_url()
+    if webhook:
+        body["webhook"] = webhook
     return body
+
+
+def plaid_webhook_url() -> Optional[str]:
+    base = (os.getenv("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/")
+    if not base:
+        return None
+    return f"{base}/api/plaid/webhook"
 
 
 def plaid_post(path: str, body: dict) -> dict:
@@ -320,7 +330,10 @@ def apply_transaction_updates(
     modified: list[dict],
     removed: list[dict],
     next_cursor: Optional[str],
+    detected_at: Optional[datetime] = None,
 ) -> None:
+    had_cursor = bool(item.transactions_cursor)
+    stamp = detected_at or datetime.now(timezone.utc)
     for txn in list(added) + list(modified):
         transaction_id = txn.get("transaction_id")
         if not transaction_id:
@@ -330,12 +343,25 @@ def apply_transaction_updates(
             .filter(PlaidTransaction.transaction_id == str(transaction_id))
             .one_or_none()
         )
-        if row is None:
+        is_new = row is None
+        if is_new:
             row = PlaidTransaction(
                 plaid_item_id=item.id, transaction_id=str(transaction_id)
             )
             db.add(row)
         _apply_txn(row, item.id, txn)
+        if is_new and had_cursor:
+            row.first_seen_at = stamp
+            logger.info(
+                "plaid transaction first_seen_at=%s item_id=%s institution=%s "
+                "transaction_id=%s amount=%s is_zelle=%s",
+                stamp.isoformat(),
+                item.item_id,
+                item.institution_name,
+                row.transaction_id,
+                row.amount,
+                row.is_zelle,
+            )
     for removed_txn in removed:
         transaction_id = (
             removed_txn.get("transaction_id") if isinstance(removed_txn, dict) else None
@@ -473,7 +499,9 @@ def _finish_sync(item_id: int, error: Optional[str]) -> None:
         row.sync_error = error
 
 
-def sync_item_transactions(item_id: int) -> None:
+def sync_item_transactions(
+    item_id: int, detected_at: Optional[datetime] = None
+) -> None:
     with get_db() as db:
         locked = _lock_item(db, item_id)
     if not locked:
@@ -489,7 +517,9 @@ def sync_item_transactions(item_id: int) -> None:
         )
         with get_db() as db:
             row = db.query(PlaidItem).filter(PlaidItem.id == item_id).one()
-            apply_transaction_updates(db, row, added, modified, removed, next_cursor)
+            apply_transaction_updates(
+                db, row, added, modified, removed, next_cursor, detected_at=detected_at
+            )
     except PlaidError as exc:
         logger.info(
             "plaid sync failed item_row=%s code=%s",
@@ -504,6 +534,55 @@ def sync_item_transactions(item_id: int) -> None:
         logger.exception("plaid sync failed item_row=%s", item_id)
         error = "Could not refresh transactions"
     _finish_sync(item_id, error)
+
+
+def sync_for_webhook(plaid_item_id: str, detected_at: datetime) -> None:
+    with get_db() as db:
+        row = (
+            db.query(PlaidItem).filter(PlaidItem.item_id == plaid_item_id).one_or_none()
+        )
+        if row is None:
+            logger.info("plaid webhook unknown item_id=%s", plaid_item_id)
+            return
+        item_row_id = row.id
+    sync_item_transactions(item_row_id, detected_at=detected_at)
+
+
+def register_saved_item_webhooks() -> None:
+    """Point every saved login at this app. Safe to run more than once."""
+    webhook = plaid_webhook_url()
+    if not webhook:
+        logger.info("plaid webhook skipped: DASHBOARD_PUBLIC_URL unset")
+        return
+    try:
+        require_plaid_config()
+    except PlaidConfigError:
+        logger.info("plaid webhook skipped: Plaid config missing")
+        return
+    try:
+        with get_db() as db:
+            rows = [
+                (row.id, decrypt_access_token(row.access_token_encrypted))
+                for row in db.query(PlaidItem).all()
+            ]
+    except Exception:
+        logger.exception("plaid webhook register failed to read logins")
+        return
+    for item_row_id, access_token in rows:
+        try:
+            plaid_post(
+                "/item/webhook/update",
+                {"access_token": access_token, "webhook": webhook},
+            )
+            logger.info("plaid webhook registered item_row=%s", item_row_id)
+        except PlaidError as exc:
+            logger.info(
+                "plaid webhook register failed item_row=%s code=%s",
+                item_row_id,
+                exc.error_code,
+            )
+        except PlaidConfigError:
+            logger.info("plaid webhook register failed item_row=%s config", item_row_id)
 
 
 def sync_club_transactions(club_id: int) -> None:

@@ -235,6 +235,7 @@ class PlaidTransaction(Base):
         Boolean, nullable=False, server_default=text("false"), default=False
     )
     detail_json = Column(Text)
+    first_seen_at = Column(DateTime(timezone=True))
 
     plaid_item = relationship("PlaidItem", back_populates="transactions")
 

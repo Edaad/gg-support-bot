@@ -64,6 +64,15 @@ def create_app() -> FastAPI:
     def on_startup():
         engine = init_engine()
         ensure_schema_at_head(engine)
+        import threading
+
+        from api.plaid_bank import register_saved_item_webhooks
+
+        threading.Thread(
+            target=register_saved_item_webhooks,
+            name="plaid-webhook-register",
+            daemon=True,
+        ).start()
 
     # ── Auth route (no token required) ────────────────────────────────────
     from api.auth import resolve_role, create_token
@@ -123,6 +132,7 @@ def create_app() -> FastAPI:
     from api.routes.escalation_events import router as escalation_events_router
     from api.routes.outbound_sends import router as outbound_sends_router
     from api.routes.plaid_items import router as plaid_items_router
+    from api.routes.plaid_webhook import router as plaid_webhook_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -160,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(escalation_events_router)
     app.include_router(outbound_sends_router)
     app.include_router(plaid_items_router)
+    app.include_router(plaid_webhook_router)
 
     @app.api_route(
         "/api/{rest_of_path:path}",
