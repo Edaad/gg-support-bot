@@ -12,6 +12,7 @@ import {
   type BroadcastRequest, type BroadcastJob, type BroadcastGroupT,
 } from '../api/client'
 import V2MethodEditor from '../components/V2MethodEditor'
+import PlaidBankTab from '../components/PlaidBankTab'
 import ResponseEditor from '../components/ResponseEditor'
 import { useConfirm } from '../components/ConfirmProvider'
 import EasternInstant from '../components/EasternInstant'
@@ -56,11 +57,16 @@ function ClubSection({
   )
 }
 
-const TABS = ['General', 'Deposit Methods', 'Cashout Methods', 'Custom Commands', 'Broadcast', 'Groups'] as const
+const TABS = ['General', 'Deposit Methods', 'Cashout Methods', 'Custom Commands', 'Broadcast', 'Groups', 'Bank'] as const
 type Tab = (typeof TABS)[number]
 
 function clubTabId(t: Tab): string {
   return `club-tab-${t.toLowerCase().replace(/\s+/g, '-')}`
+}
+
+function visibleTabs(role: DashboardRole): Tab[] {
+  if (role === 'account_manager') return TABS.filter((t) => t !== 'Bank')
+  return [...TABS]
 }
 
 export default function ClubDetail({
@@ -76,6 +82,7 @@ export default function ClubDetail({
   const [tab, setTab] = useState<Tab>('General')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const tabs = visibleTabs(role)
   const [loadError, setLoadError] = useState('')
   const tabListRef = useRef<HTMLDivElement>(null)
 
@@ -122,7 +129,7 @@ export default function ClubDetail({
         aria-label="Club sections"
         className="tab-scroller mb-6"
       >
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             type="button"
@@ -170,6 +177,7 @@ export default function ClubDetail({
       {tab === 'Custom Commands' && <CommandsTab token={token} clubId={clubId} />}
       {tab === 'Broadcast' && <BroadcastTab token={token} clubId={clubId} groupCount={club.group_count} />}
       {tab === 'Groups' && <GroupsTab token={token} clubId={clubId} />}
+      {tab === 'Bank' && <PlaidBankTab token={token} clubId={clubId} />}
       </div>
     </div>
   )

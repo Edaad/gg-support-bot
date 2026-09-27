@@ -138,6 +138,7 @@ class Club(Base):
     club_payment_methods = relationship(
         "ClubPaymentMethod", back_populates="club", cascade="all, delete-orphan"
     )
+    plaid_items = relationship("PlaidItem", back_populates="club", passive_deletes=True)
 
 
 class PaymentQuickLink(Base):
@@ -170,6 +171,27 @@ class ClubLinkedAccount(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     club = relationship("Club", back_populates="linked_accounts")
+
+
+class PlaidItem(Base):
+    """One Plaid Item (bank login) for a club. Access token is Fernet-encrypted."""
+
+    __tablename__ = "plaid_items"
+    __table_args__ = (Index("ix_plaid_items_club_id", "club_id"),)
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="RESTRICT"), nullable=False
+    )
+    item_id = Column(String(128), nullable=False, unique=True)
+    institution_id = Column(String(64))
+    institution_name = Column(String(255), nullable=False)
+    access_token_encrypted = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    club = relationship("Club", back_populates="plaid_items")
 
 
 class ClubPaymentMethod(Base):

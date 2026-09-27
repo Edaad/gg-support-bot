@@ -47,6 +47,52 @@ export const updateClub = (token: string, id: number, data: Partial<Club>) =>
 export const deleteClub = (token: string, id: number) =>
   request<void>(`/clubs/${id}`, { method: 'DELETE' }, token)
 
+export type PlaidBankItem = {
+  id: number
+  institution_name: string
+  institution_id: string | null
+  status: 'connected' | 'needs_sign_in'
+  error_code: string | null
+  created_at: string
+}
+
+export type PlaidBankList = {
+  slots_used: number
+  slot_cap: number
+  items: PlaidBankItem[]
+}
+
+export const listPlaidItems = (token: string, clubId: number) =>
+  request<PlaidBankList>(`/clubs/${clubId}/plaid/items`, {}, token)
+
+export const createPlaidLinkToken = (
+  token: string,
+  clubId: number,
+  itemId?: number,
+) =>
+  request<{ link_token: string }>(
+    `/clubs/${clubId}/plaid/link-token`,
+    {
+      method: 'POST',
+      body: JSON.stringify(itemId != null ? { item_id: itemId } : {}),
+    },
+    token,
+  )
+
+export const exchangePlaidPublicToken = (
+  token: string,
+  clubId: number,
+  body: {
+    public_token: string
+    institution_id?: string | null
+    institution_name?: string | null
+  },
+) =>
+  request<PlaidBankItem>(`/clubs/${clubId}/plaid/items`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, token)
+
 export const listLinkedAccounts = (token: string, clubId: number) =>
   request<LinkedAccount[]>(`/clubs/${clubId}/linked-accounts`, {}, token)
 export const addLinkedAccount = (token: string, clubId: number, data: { telegram_user_id: number }) =>

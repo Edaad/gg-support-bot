@@ -14,7 +14,7 @@ from api.schemas import (
     LinkedAccountRead,
 )
 from db.connection import get_db_dependency
-from db.models import Club, ClubLinkedAccount
+from db.models import Club, ClubLinkedAccount, PlaidItem
 
 router = APIRouter(
     prefix="/api/clubs", tags=["clubs"], dependencies=[Depends(get_current_admin)]
@@ -229,6 +229,11 @@ def delete_club(
     club = db.query(Club).get(club_id)
     if not club:
         raise HTTPException(404, "Club not found")
+    if db.query(PlaidItem.id).filter(PlaidItem.club_id == club_id).first():
+        raise HTTPException(
+            409,
+            "This club has a saved bank login, so it cannot be deleted.",
+        )
     db.delete(club)
 
 
