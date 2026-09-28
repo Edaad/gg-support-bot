@@ -1,4 +1,4 @@
-"""Ingest and list outbound Venmo and Cash App sends."""
+"""Ingest and list outbound Venmo, Cash App, and crypto sends."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from bot.services.venmo_payments import parse_amount_cents
 from bot.services.venmo_variant_fields import normalize_venmo_tag
 from db.models import ClubPaymentMethod, ClubPaymentTierVariant, OutboundSend
 
-METHODS = frozenset({"venmo", "cashapp"})
+METHODS = frozenset({"venmo", "cashapp", "crypto"})
 NO_MATCHING_TAG = "no matching tag found"
 
 
@@ -35,12 +35,16 @@ def normalize_method(value: str) -> str:
 
 
 def normalize_tag(method: str, raw: str) -> str:
-    if method == "venmo":
+    if method == "crypto":
+        tag = " ".join((raw or "").split())
+    elif method == "venmo":
         tag = normalize_venmo_tag(raw)
     else:
         tag = normalize_cashapp_tag(raw)
     if not tag or tag in {"@", "$"}:
         raise ValueError("tag is required")
+    if len(tag) > 64:
+        raise ValueError("tag is too long")
     return tag
 
 
@@ -66,6 +70,8 @@ def parse_positive_amount_cents(amount: str | int | float) -> int:
 
 
 def tag_matches_deposit_variant(db: Session, *, method: str, tag: str) -> bool:
+    if method == "crypto":
+        return False
     column = (
         ClubPaymentTierVariant.venmo_tag
         if method == "venmo"
@@ -283,7 +289,9 @@ def list_outbound_sends(
 
 def _filter_tag(method: str | None, raw: str) -> str | None:
     """Return a stored tag, or None when the filter is only a prefix."""
-    if method == "cashapp":
+    if method == "crypto":
+        chosen = "crypto"
+    elif method == "cashapp":
         chosen = "cashapp"
     elif method == "venmo":
         chosen = "venmo"

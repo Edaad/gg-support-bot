@@ -3287,12 +3287,12 @@ class DepositMethodAlert(Base):
 
 
 class OutboundSend(Base):
-    """One amount that left a Venmo or Cash App account, ingested from Zapier."""
+    """One amount that left a Venmo, Cash App, or crypto account."""
 
     __tablename__ = "outbound_sends"
     __table_args__ = (
         CheckConstraint(
-            "method IN ('venmo', 'cashapp')",
+            "method IN ('venmo', 'cashapp', 'crypto')",
             name="ck_outbound_sends_method",
         ),
         CheckConstraint(

@@ -15,10 +15,11 @@ import EasternInstant from '../components/EasternInstant'
 import { easternDayEndIso, easternDayStartIso } from '../lib/easternTime'
 
 const PAGE_SIZE = 50
-const METHODS = ['venmo', 'cashapp'] as const
+const METHODS = ['venmo', 'cashapp', 'crypto'] as const
 const METHOD_LABELS: Record<(typeof METHODS)[number], string> = {
   venmo: 'Venmo',
   cashapp: 'Cash App',
+  crypto: 'Crypto',
 }
 const OWNERS = ['round-table', 'vaughn', 'mateos'] as const
 

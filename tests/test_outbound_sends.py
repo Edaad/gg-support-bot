@@ -94,6 +94,25 @@ class OutboundSendServiceTestCase(unittest.TestCase):
         self.assertEqual(row.tag, "@jagger4444")
         self.assertEqual(row.amount_cents, 5025)
 
+    def test_crypto_keeps_wallet_tag_unmatched(self):
+        result = ingest_outbound_send(
+            self.session,
+            method="crypto",
+            tag="0xc50b01cAa68EcB657807b198E1C3360fAC3CBA96",
+            method_owner="round-table",
+            recipient="0x1C9d6017Ca7c9EF73a29E895325333Da1b418244",
+            amount="56.01",
+            source_external_id="tx-1",
+            paid_at="2026-09-27T18:54:47Z",
+        )
+        self.session.commit()
+        self.assertTrue(result.created)
+        self.assertFalse(result.tag_matched)
+        row = list_outbound_sends(self.session, method="crypto")[0][0]
+        self.assertEqual(row.tag, "0xc50b01cAa68EcB657807b198E1C3360fAC3CBA96")
+        self.assertEqual(row.amount_cents, 5601)
+        self.assertEqual(row.method, "crypto")
+
     def test_unknown_tag_still_saves(self):
         result = ingest_outbound_send(
             self.session,
