@@ -288,10 +288,9 @@ export default function Sends({ token }: { token: string }) {
                   <th className="px-4 py-3 font-medium">Created</th>
                   <th className="px-4 py-3 font-medium">Method</th>
                   <th className="px-4 py-3 font-medium">Tag</th>
-                  <th className="px-4 py-3 font-medium">Owner</th>
-                  <th className="px-4 py-3 font-medium">Recipient</th>
                   <th className="px-4 py-3 font-medium">Amount</th>
-                  <th className="px-4 py-3 font-medium">Matched</th>
+                  <th className="px-4 py-3 font-medium">Recipient</th>
+                  <th className="px-4 py-3 font-medium">Owner</th>
                   <th className="px-4 py-3 font-medium" />
                 </tr>
               </thead>
@@ -305,20 +304,9 @@ export default function Sends({ token }: { token: string }) {
                       <MethodName name={methodLabel(r.method)} slug={r.method} />
                     </td>
                     <td className="px-4 py-3">{r.tag}</td>
-                    <td className="px-4 py-3">{r.method_owner}</td>
-                    <td className="px-4 py-3">{r.recipient}</td>
                     <td className="px-4 py-3 font-medium whitespace-nowrap">{fmtMoney(r.amount_cents / 100)}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          r.tag_matched
-                            ? 'rounded-md bg-control px-2 py-0.5 text-xs font-medium text-ink-muted'
-                            : 'rounded-md bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning-ink'
-                        }
-                      >
-                        {r.tag_matched ? 'Yes' : 'No'}
-                      </span>
-                    </td>
+                    <td className="px-4 py-3">{r.recipient}</td>
+                    <td className="px-4 py-3">{r.method_owner}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-right">
                       <button type="button" className="btn-secondary-sm mr-2" onClick={() => openEdit(r)}>
                         Edit
