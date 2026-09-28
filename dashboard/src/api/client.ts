@@ -4,7 +4,10 @@ import { clearAuthSession } from '../lib/authStorage'
 const BASE = '/api'
 
 async function request<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...opts.headers as Record<string, string> }
+  // FormData bodies set their own multipart boundary header.
+  const jsonHeader: Record<string, string> =
+    opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }
+  const headers: Record<string, string> = { ...jsonHeader, ...opts.headers as Record<string, string> }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(apiUrl(`${BASE}${path}`), { ...opts, headers })
@@ -502,6 +505,12 @@ export interface StaffCashoutSendT {
   payment_method_id: number | null
   payment_sub_option_id: number | null
   method_display_name: string
+  notify_player: boolean
+  notify_status: 'pending' | 'sent' | 'failed' | null
+  notify_error: string | null
+  notified_at: string | null
+  proof_link: string | null
+  has_proof: boolean
   created_at: string | null
 }
 
@@ -540,6 +549,9 @@ export interface StaffCashoutRecordT {
   sent: number
   remaining: number
   status: 'active' | 'cleared' | 'oversent'
+  chat_connected: boolean
+  owed_clear_status: 'pending' | 'done' | 'failed' | null
+  owed_clear_error: string | null
   created_at: string | null
   updated_at: string | null
   payments: StaffCashoutPaymentT[]
@@ -793,12 +805,43 @@ export const addCashoutSend = (
     payment_method_id?: number | null
     payment_sub_option_id?: number | null
     method_display_name?: string | null
+    notify_player?: boolean
+    proof_link?: string | null
+    proof?: File | null
   },
-) =>
-  request<StaffCashoutRecordT>(`/cashout-records/${recordId}/sends`, {
+) => {
+  const form = new FormData()
+  form.append('sender_name', data.sender_name)
+  form.append('amount', String(data.amount))
+  if (data.payment_method_id != null) form.append('payment_method_id', String(data.payment_method_id))
+  if (data.payment_sub_option_id != null) form.append('payment_sub_option_id', String(data.payment_sub_option_id))
+  if (data.method_display_name) form.append('method_display_name', data.method_display_name)
+  form.append('notify_player', data.notify_player ? 'true' : 'false')
+  if (data.proof_link) form.append('proof_link', data.proof_link)
+  if (data.proof) form.append('proof', data.proof)
+  return request<StaffCashoutRecordT>(`/cashout-records/${recordId}/sends`, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: form,
   }, token)
+}
+
+/** Fetch a money-send screenshot (auth header required) as an object URL. */
+export async function fetchCashoutSendProofUrl(
+  token: string,
+  recordId: number,
+  sendId: number,
+): Promise<string> {
+  const res = await fetch(apiUrl(`${BASE}/cashout-records/${recordId}/sends/${sendId}/proof`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 401) {
+    clearAuthSession()
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) throw new Error(`Could not load screenshot (HTTP ${res.status})`)
+  return URL.createObjectURL(await res.blob())
+}
 
 export const updateCashoutSend = (
   token: string,

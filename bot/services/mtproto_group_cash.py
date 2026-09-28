@@ -89,14 +89,41 @@ def format_cash_owed(amount: Decimal) -> str:
     return f"{_format_money(amount)} owed"
 
 
+def format_sent_caption(amount: Decimal) -> str:
+    """``Sent $200!`` — keeps cents when present (``Sent $200.50!``)."""
+    amt = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+    if amt == amt.to_integral_value():
+        return f"Sent ${int(amt):,}!"
+    return f"Sent ${amt:,.2f}!"
+
+
+def _save_owed_message_id(record_id: int, message_id: int) -> None:
+    from db.connection import get_db
+    from db.models import StaffCashoutRecord
+
+    try:
+        with get_db() as session:
+            record = session.get(StaffCashoutRecord, int(record_id))
+            if record is not None:
+                record.owed_message_id = int(message_id)
+    except Exception:
+        logger.exception(
+            "group_cash: saving owed_message_id failed record_id=%s", record_id
+        )
+
+
 async def _execute_cash_flow(
     cfg: ClubGcConfig,
     chat_id: int,
     amount: Decimal,
     *,
     send_asap: bool = True,
+    record_id: int | None = None,
 ) -> None:
     """Pin owed amount and optionally send ASAP (called after wizard completes).
+
+    With ``record_id``, the owed message id is saved on the staff cashout record so
+    the bot worker can later edit it to ``$0 owed`` and unpin it once fully sent.
 
     Reuse the live dm/gc listener client when it's connected (same process, e.g. the
     automated player cashout) so we never open a second connection on the club's auth
@@ -120,6 +147,8 @@ async def _execute_cash_flow(
                 )
                 return
             owed_msg = await client.send_message(chat_id, owed_text)
+            if record_id is not None:
+                _save_owed_message_id(record_id, owed_msg.id)
             try:
                 await owed_msg.pin(notify=False)
             except Exception as e:
@@ -142,6 +171,7 @@ def schedule_cash_flow_from_club(
     club_id: int,
     amount: Decimal,
     send_asap: bool = True,
+    record_id: int | None = None,
 ) -> None:
     """Run cash flow from the club MTProto user (not the bot)."""
     cfg = get_club_gc_config_by_link_club_id(int(club_id))
@@ -158,7 +188,9 @@ def schedule_cash_flow_from_club(
     from bot.services.mtproto_dm_gc_listener import _loop_holder
 
     mtproto_loop = _loop_holder.get("loop")
-    coro = _execute_cash_flow(cfg, chat_id, amount, send_asap=send_asap)
+    coro = _execute_cash_flow(
+        cfg, chat_id, amount, send_asap=send_asap, record_id=record_id
+    )
     if mtproto_loop and mtproto_loop.is_running():
         asyncio.run_coroutine_threadsafe(coro, mtproto_loop)
     else:

@@ -6,7 +6,9 @@ import logging
 from decimal import Decimal
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from api.auth import ROLE_ADMIN, ROLE_GTO, get_current_admin, require_admin
@@ -43,6 +45,7 @@ from api.schemas import (
     StaffCashoutSlackReminderUpdate,
 )
 from bot.services.staff_cashout_records import (
+    MAX_PROOF_BYTES,
     CashoutRecordNotActive,
     add_staff_cashout_payment,
     add_staff_cashout_send,
@@ -51,6 +54,7 @@ from bot.services.staff_cashout_records import (
     delete_staff_cashout_record,
     delete_staff_cashout_send,
     get_staff_cashout_record,
+    get_staff_cashout_send_proof,
     list_money_send_method_names,
     list_staff_cashout_money_sends,
     list_staff_cashout_records,
@@ -97,6 +101,9 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
         sent=sent,
         remaining=remaining,
         status=str(data.get("status") or "cleared"),
+        chat_connected=bool(data.get("chat_connected")),
+        owed_clear_status=data.get("owed_clear_status"),
+        owed_clear_error=data.get("owed_clear_error"),
         created_at=data.get("created_at"),
         updated_at=data.get("updated_at"),
         payments=[
@@ -573,23 +580,98 @@ def remove_payment(
     return _to_read(data, _club_name_map(db))
 
 
+def _form_optional(form, key: str) -> Optional[str]:
+    value = form.get(key)
+    if value is None or not isinstance(value, str) or value.strip() == "":
+        return None
+    return value
+
+
+async def _send_create_from_form(form) -> tuple[dict, Optional[dict]]:
+    proof = None
+    raw = {
+        "sender_name": form.get("sender_name") or "",
+        "amount": form.get("amount") or "0",
+        "payment_method_id": _form_optional(form, "payment_method_id"),
+        "payment_sub_option_id": _form_optional(form, "payment_sub_option_id"),
+        "method_display_name": _form_optional(form, "method_display_name"),
+        "notify_player": (form.get("notify_player") or "").lower()
+        in ("1", "true", "yes", "on"),
+        "proof_link": _form_optional(form, "proof_link"),
+    }
+    upload = form.get("proof")
+    if upload is not None and not isinstance(upload, str):
+        content = await upload.read(MAX_PROOF_BYTES + 1)
+        if content:
+            proof = {
+                "content": content,
+                "content_type": upload.content_type or "",
+                "filename": upload.filename or "screenshot",
+            }
+    return raw, proof
+
+
+async def _read_send_create(request: Request) -> dict:
+    """Money-send body: JSON, or multipart when a proof screenshot is attached."""
+    content_type = request.headers.get("content-type", "")
+    proof = None
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        try:
+            raw, proof = await _send_create_from_form(form)
+        finally:
+            await form.close()
+    else:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid request body") from exc
+    try:
+        body = StaffCashoutSendCreate.model_validate(raw)
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors(include_url=False)) from exc
+    data = body.model_dump()
+    data["proof"] = proof
+    return data
+
+
 @router.post(
     "/{record_id}/sends", response_model=StaffCashoutRecordRead, status_code=201
 )
-def add_send(
+async def add_send(
     record_id: int,
-    body: StaffCashoutSendCreate,
+    request: Request,
     role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
-    _load_and_assert_gto(record_id, role, db)
+    await run_in_threadpool(_load_and_assert_gto, record_id, role, db)
+    pdata = await _read_send_create(request)
     try:
-        data = add_staff_cashout_send(record_id, body.model_dump())
+        data = await run_in_threadpool(add_staff_cashout_send, record_id, pdata)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if not data:
         raise HTTPException(404, "Cashout record not found")
-    return _to_read(data, _club_name_map(db))
+    names = await run_in_threadpool(_club_name_map, db)
+    return _to_read(data, names)
+
+
+@router.get("/{record_id}/sends/{send_id}/proof")
+def get_send_proof(
+    record_id: int,
+    send_id: int,
+    role: str = Depends(get_current_admin),
+    db: Session = Depends(get_db_dependency),
+):
+    _load_and_assert_gto(record_id, role, db)
+    proof = get_staff_cashout_send_proof(record_id, send_id)
+    if not proof:
+        raise HTTPException(404, "Screenshot not found")
+    return Response(
+        content=proof["content"],
+        media_type=proof["content_type"],
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.patch("/{record_id}/sends/{send_id}", response_model=StaffCashoutRecordRead)

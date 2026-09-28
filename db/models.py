@@ -1123,6 +1123,12 @@ class StaffCashoutRecord(Base):
     )
     last_slack_reminder_at = Column(DateTime, nullable=True)
     create_notified_at = Column(DateTime, nullable=True)
+    # Club MTProto "$X owed" pin in the player's group; edited to "$0 owed" and
+    # unpinned by the bot worker once the cashout is fully sent.
+    owed_message_id = Column(BigInteger, nullable=True)
+    owed_clear_status = Column(String(20), nullable=True)  # pending | done | failed
+    owed_clear_error = Column(Text, nullable=True)
+    owed_cleared_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -1239,6 +1245,7 @@ class StaffCashoutMoneySend(Base):
     __table_args__ = (
         Index("ix_staff_cashout_money_sends_record_id", "cashout_record_id"),
         Index("ix_staff_cashout_money_sends_created_at", "created_at"),
+        Index("ix_staff_cashout_money_sends_notify_status", "notify_status"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -1252,9 +1259,47 @@ class StaffCashoutMoneySend(Base):
     payment_method_id = Column(Integer, nullable=True)
     payment_sub_option_id = Column(Integer, nullable=True)
     method_display_name = Column(String(100), nullable=False)
+    # Player notify: posted by the club MTProto account from the bot worker queue.
+    notify_player = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    notify_status = Column(String(20), nullable=True)  # pending | sent | failed
+    notify_error = Column(Text, nullable=True)
+    notified_at = Column(DateTime, nullable=True)
+    proof_link = Column(Text, nullable=True)  # crypto transaction link
+    has_proof = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at = Column(DateTime, server_default=func.now())
 
     cashout_record = relationship("StaffCashoutRecord", back_populates="money_sends")
+    proof = relationship(
+        "StaffCashoutSendProof",
+        back_populates="money_send",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="noload",
+    )
+
+
+class StaffCashoutSendProof(Base):
+    """Screenshot proof for a money send (kept apart so ledger reads skip the bytes)."""
+
+    __tablename__ = "staff_cashout_send_proofs"
+
+    id = Column(Integer, primary_key=True)
+    money_send_id = Column(
+        Integer,
+        ForeignKey("staff_cashout_money_sends.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    filename = Column(String(255), nullable=False)
+    content_type = Column(String(128), nullable=False)
+    content = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    money_send = relationship("StaffCashoutMoneySend", back_populates="proof")
 
 
 class SupportGroupChat(Base):

@@ -114,6 +114,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         setup_inactive_group_outreach_dm_job(app)
 
+        from bot.services.cashout_send_notify import setup_cashout_send_notify_job
+
+        setup_cashout_send_notify_job(app)
+
         from bot.services.group_photo_backfill import setup_group_photo_backfill_job
 
         setup_group_photo_backfill_job(app)

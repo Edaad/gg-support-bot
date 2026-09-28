@@ -15,18 +15,26 @@ from bot.services.club import (
     get_sub_option_by_id,
 )
 from bot.services.player_details import parse_tracking_title
+from club_gc_settings import get_club_gc_config_by_link_club_id
 from db.connection import get_db
 from db.models import (
     Club,
     StaffCashoutMoneySend,
     StaffCashoutPayment,
     StaffCashoutRecord,
+    StaffCashoutSendProof,
 )
 
 logger = logging.getLogger(__name__)
 
 STATUSES = ("active", "cleared", "oversent", "do_not_send")
 LEDGER_STATUSES = ("active", "cleared", "oversent")
+
+PROOF_IMAGE_CONTENT_TYPES: frozenset[str] = frozenset(
+    {"image/jpeg", "image/png", "image/webp", "image/gif"}
+)
+MAX_PROOF_BYTES = 5 * 1024 * 1024
+MAX_PROOF_LINK_LEN = 2000
 
 
 class CashoutRecordNotActive(ValueError):
@@ -69,8 +77,21 @@ def _send_to_dict(row: StaffCashoutMoneySend) -> dict[str, Any]:
         "payment_method_id": row.payment_method_id,
         "payment_sub_option_id": row.payment_sub_option_id,
         "method_display_name": row.method_display_name,
+        "notify_player": bool(row.notify_player),
+        "notify_status": row.notify_status,
+        "notify_error": row.notify_error,
+        "notified_at": row.notified_at,
+        "proof_link": row.proof_link,
+        "has_proof": bool(row.has_proof),
         "created_at": row.created_at,
     }
+
+
+def record_chat_connected(club_id: Any, chat_id: Any) -> bool:
+    """True when the club MTProto account can post in this record's group chat."""
+    if chat_id is None or club_id is None:
+        return False
+    return get_club_gc_config_by_link_club_id(int(club_id)) is not None
 
 
 def compute_ledger(
@@ -124,6 +145,9 @@ def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
         "sending": bool(getattr(record, "sending", False)),
         "do_not_send": bool(getattr(record, "do_not_send", False)),
         "audited": bool(getattr(record, "audited", False)),
+        "chat_connected": record_chat_connected(record.club_id, record.chat_id),
+        "owed_clear_status": record.owed_clear_status,
+        "owed_clear_error": record.owed_clear_error,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
         "payments": payments,
@@ -137,6 +161,70 @@ def _record_dict_reloaded(session, record: StaffCashoutRecord) -> dict[str, Any]
     session.flush()
     session.expire(record, ["payments", "money_sends"])
     return _record_to_dict(record)
+
+
+def _sync_owed_clear(session, record: StaffCashoutRecord) -> None:
+    """Queue the owed-pin clear once money sent covers the cashout.
+
+    Only a cashout that reaches $0 remaining is queued (partial sends never touch the
+    pin). A still-pending clear is withdrawn if an edit/delete reopens the balance; a
+    finished one is left alone.
+    """
+    session.flush()
+    session.expire(record, ["money_sends"])
+    sends = [{"amount": s.amount} for s in record.money_sends]
+    ledger = compute_ledger(bool(record.tracks_money_sent), record.amount, sends)
+    covered = bool(record.tracks_money_sent) and ledger["status"] in (
+        "cleared",
+        "oversent",
+    )
+    if covered and record.chat_id is not None and record.owed_clear_status is None:
+        record.owed_clear_status = "pending"
+        record.owed_clear_error = None
+    elif not covered and record.owed_clear_status == "pending":
+        record.owed_clear_status = None
+
+
+def _is_crypto_method(method_id: Optional[int], display: str) -> bool:
+    if method_id is not None:
+        method = get_method_by_id(method_id) or {}
+        slug = (method.get("slug") or "").strip().lower()
+        if slug:
+            return slug.startswith("crypto")
+    return (display or "").strip().lower().startswith("crypto")
+
+
+def _validate_proof(
+    *, is_crypto: bool, proof_link: Any, proof: Optional[dict[str, Any]]
+) -> tuple[Optional[str], Optional[dict[str, Any]]]:
+    link = (proof_link or "").strip() or None
+    if is_crypto:
+        if proof:
+            raise ValueError("Crypto sends take a transaction link, not a screenshot")
+        if link is not None:
+            if not link.lower().startswith(("http://", "https://")):
+                raise ValueError("Transaction link must start with http:// or https://")
+            if len(link) > MAX_PROOF_LINK_LEN:
+                raise ValueError("Transaction link is too long")
+        return link, None
+    if link is not None:
+        raise ValueError("Only crypto sends take a transaction link")
+    if not proof:
+        return None, None
+    content = proof.get("content") or b""
+    content_type = (proof.get("content_type") or "").strip().lower()
+    if not content:
+        raise ValueError("Screenshot is empty")
+    if content_type not in PROOF_IMAGE_CONTENT_TYPES:
+        raise ValueError("Screenshot must be a JPEG, PNG, WebP or GIF image")
+    if len(content) > MAX_PROOF_BYTES:
+        raise ValueError("Screenshot must be 5 MB or smaller")
+    filename = (proof.get("filename") or "screenshot").strip()[:255] or "screenshot"
+    return None, {
+        "content": content,
+        "content_type": content_type,
+        "filename": filename,
+    }
 
 
 def _validate_method_choice(
@@ -456,6 +544,8 @@ def update_staff_cashout_record(
                 raise ValueError("Audited can only be set when remaining is zero")
             record.audited = bool(audited)
         record.updated_at = datetime.utcnow()
+        if amount is not None:
+            _sync_owed_clear(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -597,18 +687,57 @@ def add_staff_cashout_send(
             payout_details=None,
             require_payout_details=False,
         )
-        session.add(
-            StaffCashoutMoneySend(
-                cashout_record_id=int(record_id),
-                sender_name=sender,
-                amount=amount,
-                payment_method_id=method_id,
-                payment_sub_option_id=sub_id,
-                method_display_name=display,
-            )
+        link, proof = _validate_proof(
+            is_crypto=_is_crypto_method(method_id, display),
+            proof_link=pdata.get("proof_link"),
+            proof=pdata.get("proof"),
         )
+        notify = bool(pdata.get("notify_player")) and record_chat_connected(
+            record.club_id, record.chat_id
+        )
+        row = StaffCashoutMoneySend(
+            cashout_record_id=int(record_id),
+            sender_name=sender,
+            amount=amount,
+            payment_method_id=method_id,
+            payment_sub_option_id=sub_id,
+            method_display_name=display,
+            notify_player=notify,
+            notify_status="pending" if notify else None,
+            proof_link=link,
+            has_proof=proof is not None,
+        )
+        if proof is not None:
+            row.proof = StaffCashoutSendProof(**proof)
+        session.add(row)
         record.updated_at = datetime.utcnow()
+        _sync_owed_clear(session, record)
         return _record_dict_reloaded(session, record)
+
+
+def get_staff_cashout_send_proof(
+    record_id: int, send_id: int
+) -> Optional[dict[str, Any]]:
+    with get_db() as session:
+        proof = (
+            session.query(StaffCashoutSendProof)
+            .join(
+                StaffCashoutMoneySend,
+                StaffCashoutMoneySend.id == StaffCashoutSendProof.money_send_id,
+            )
+            .filter(
+                StaffCashoutMoneySend.id == int(send_id),
+                StaffCashoutMoneySend.cashout_record_id == int(record_id),
+            )
+            .first()
+        )
+        if not proof:
+            return None
+        return {
+            "content": bytes(proof.content),
+            "content_type": proof.content_type,
+            "filename": proof.filename,
+        }
 
 
 def update_staff_cashout_send(
@@ -665,6 +794,7 @@ def update_staff_cashout_send(
             row.payment_sub_option_id = sub_id
             row.method_display_name = display
         record.updated_at = datetime.utcnow()
+        _sync_owed_clear(session, record)
         return _record_dict_reloaded(session, record)
 
 
@@ -678,6 +808,7 @@ def delete_staff_cashout_send(record_id: int, send_id: int) -> Optional[dict[str
             return None
         session.delete(row)
         record.updated_at = datetime.utcnow()
+        _sync_owed_clear(session, record)
         return _record_dict_reloaded(session, record)
 
 

@@ -679,6 +679,12 @@ class StaffCashoutSendRead(BaseModel):
     payment_method_id: Optional[int] = None
     payment_sub_option_id: Optional[int] = None
     method_display_name: str
+    notify_player: bool = False
+    notify_status: Optional[str] = None
+    notify_error: Optional[str] = None
+    notified_at: Optional[datetime] = None
+    proof_link: Optional[str] = None
+    has_proof: bool = False
     created_at: Optional[datetime] = None
 
 
@@ -717,6 +723,9 @@ class StaffCashoutRecordRead(BaseModel):
     sent: Decimal = Decimal("0")
     remaining: Decimal = Decimal("0")
     status: str = "cleared"
+    chat_connected: bool = False
+    owed_clear_status: Optional[str] = None
+    owed_clear_error: Optional[str] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     payments: List[StaffCashoutPaymentRead] = []
@@ -816,6 +825,8 @@ class StaffCashoutSendCreate(BaseModel):
     payment_method_id: Optional[int] = None
     payment_sub_option_id: Optional[int] = None
     method_display_name: Optional[str] = None
+    notify_player: bool = False
+    proof_link: Optional[str] = None
 
 
 class StaffCashoutSendUpdate(BaseModel):

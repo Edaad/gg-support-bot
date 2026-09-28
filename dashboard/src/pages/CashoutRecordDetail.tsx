@@ -4,6 +4,7 @@ import {
   addCashoutSend,
   deleteCashoutRecord,
   deleteCashoutSend,
+  fetchCashoutSendProofUrl,
   getCashoutRecord,
   replaceCashoutPayments,
   updateCashoutRecord,
@@ -30,6 +31,7 @@ import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import EasternInstant from '../components/EasternInstant'
 import { MethodName } from '../components/PaymentMethodIcon'
+import { hasMethodChoice, isCryptoChoice } from '../lib/cashoutSendProof'
 import type { DashboardRole } from '../lib/rbac'
 
 function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
@@ -111,6 +113,28 @@ function PayoutTag({ value }: { value: string }) {
       </button>
     </div>
   )
+}
+
+const pillClass = 'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium'
+
+function NotifyTag({ send }: { send: StaffCashoutSendT }) {
+  if (send.notify_status === 'sent') {
+    return <span className={`${pillClass} bg-success-bg text-success-ink`}>Notified</span>
+  }
+  if (send.notify_status === 'pending') {
+    return <span className={`${pillClass} bg-warning-bg text-warning-ink`}>Notifying…</span>
+  }
+  if (send.notify_status === 'failed') {
+    return (
+      <span
+        className={`${pillClass} bg-danger-bg text-danger-ink`}
+        title={send.notify_error || 'Notify failed'}
+      >
+        Not Notified
+      </span>
+    )
+  }
+  return <span className={`${pillClass} bg-control text-ink-muted`}>Not Notified</span>
 }
 
 function paymentLabel(p: StaffCashoutPaymentT): string {
@@ -237,6 +261,10 @@ export default function CashoutRecordDetail({
   const [sendChoice, setSendChoice] = useState<MethodChoice>(emptyChoice())
   const [sendName, setSendName] = useState('')
   const [sendAmount, setSendAmount] = useState('')
+  const [sendNotify, setSendNotify] = useState(false)
+  const [sendProof, setSendProof] = useState<File | null>(null)
+  const [sendProofLink, setSendProofLink] = useState('')
+  const proofInputRef = useRef<HTMLInputElement>(null)
 
   const syncDestRows = (next: StaffCashoutRecordT, clubMethods: V2Method[]) => {
     setDestRows(rowsFromPayments(clubMethods, next.payments))
@@ -268,6 +296,19 @@ export default function CashoutRecordDetail({
     load()
   }, [token, recordId])
 
+  // Notifications are posted by the bot worker; poll until pending ones resolve.
+  const hasPendingNotify = Boolean(
+    record?.sends.some((s) => s.notify_status === 'pending') ||
+      record?.owed_clear_status === 'pending',
+  )
+  useEffect(() => {
+    if (!hasPendingNotify) return
+    const id = window.setInterval(() => {
+      void refreshRecord()
+    }, 5000)
+    return () => window.clearInterval(id)
+  }, [hasPendingNotify, token, recordId, methods])
+
   const refreshRecord = async (fallback?: StaffCashoutRecordT) => {
     try {
       const row = await getCashoutRecord(token, recordId)
@@ -297,7 +338,24 @@ export default function CashoutRecordDetail({
     setSendChoice(s ? choiceFromSend(s) : emptyChoice())
     setSendName(s?.sender_name || '')
     setSendAmount(s ? String(s.amount) : '')
+    setSendNotify(!s && Boolean(record?.chat_connected))
+    setSendProof(null)
+    setSendProofLink('')
     setSendOpen(true)
+  }
+
+  const viewProof = async (s: StaffCashoutSendT) => {
+    if (!record) return
+    // Open synchronously so the popup is not blocked, then point it at the blob.
+    const win = window.open('', '_blank')
+    try {
+      const url = await fetchCashoutSendProofUrl(token, record.id, s.id)
+      if (win) win.location.href = url
+      else window.location.href = url
+    } catch (e) {
+      win?.close()
+      setError(e instanceof Error ? e.message : 'Could not load screenshot')
+    }
   }
 
   const toggleSending = async () => {
@@ -435,12 +493,23 @@ export default function CashoutRecordDetail({
       sender_name: sendName.trim(),
       amount,
     }
+    const crypto = isCryptoChoice(sendChoice, methods)
+    const link = sendProofLink.trim()
+    if (!sendEdit && crypto && link && !/^https?:\/\//i.test(link)) {
+      setError('Transaction link must start with http:// or https://')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
       const updated = sendEdit
         ? await updateCashoutSend(token, record.id, sendEdit.id, payload)
-        : await addCashoutSend(token, record.id, payload)
+        : await addCashoutSend(token, record.id, {
+            ...payload,
+            notify_player: record.chat_connected && sendNotify,
+            proof_link: crypto ? link || null : null,
+            proof: crypto ? null : sendProof,
+          })
       await refreshRecord(updated)
       setSendOpen(false)
     } catch (e) {
@@ -556,7 +625,19 @@ export default function CashoutRecordDetail({
       <p className="mt-4 text-sm text-ink-muted">
         <EasternInstant value={record.created_at} />
       </p>
-      <h1 className="mt-1 text-2xl font-bold text-ink">{record.group_title}</h1>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <h1 className="text-2xl font-bold text-ink">{record.group_title}</h1>
+        {record.chat_connected ? (
+          <span className={`${pillClass} bg-success-bg text-success-ink`}>Connected</span>
+        ) : (
+          <span
+            className={`${pillClass} bg-control text-ink-muted`}
+            title="No group chat linked to this cashout"
+          >
+            Not connected
+          </span>
+        )}
+      </div>
       <p className="mt-1 text-base text-ink-muted">{record.club_name || '—'}</p>
 
       {record.do_not_send && (
@@ -693,6 +774,28 @@ export default function CashoutRecordDetail({
                       · <EasternInstant value={s.created_at} />
                     </span>
                   </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <NotifyTag send={s} />
+                    {s.has_proof && (
+                      <button
+                        type="button"
+                        onClick={() => void viewProof(s)}
+                        className="text-xs font-medium text-accent hover:underline"
+                      >
+                        View screenshot
+                      </button>
+                    )}
+                    {s.proof_link && (
+                      <a
+                        href={s.proof_link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-accent hover:underline"
+                      >
+                        Open link
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <SendCardMenu
                   saving={saving}
@@ -764,6 +867,88 @@ export default function CashoutRecordDetail({
             onChange={setSendChoice}
             staffOnlyLabels={['Chips']}
           />
+          {!sendEdit && hasMethodChoice(sendChoice) && (
+            isCryptoChoice(sendChoice, methods) ? (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-ink-muted">
+                  Transaction link (optional)
+                </label>
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={sendProofLink}
+                  onChange={(e) => setSendProofLink(e.target.value)}
+                  placeholder="https://"
+                  className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-ink-muted">
+                  Screenshot (optional)
+                </label>
+                <input
+                  ref={proofInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="sr-only"
+                  onChange={(e) => setSendProof(e.target.files?.[0] ?? null)}
+                />
+                {sendProof ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink">{sendProof.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSendProof(null)
+                        if (proofInputRef.current) proofInputRef.current.value = ''
+                      }}
+                      className="shrink-0 text-xs font-medium text-ink-muted hover:text-ink"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => proofInputRef.current?.click()}
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-dashed border-border px-3 text-sm text-ink-muted hover:bg-control"
+                  >
+                    Upload screenshot
+                  </button>
+                )}
+              </div>
+            )
+          )}
+          {!sendEdit && (
+            <label
+              className={`flex min-h-11 items-center justify-between gap-3 text-sm text-ink ${
+                record.chat_connected ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+              }`}
+            >
+              <span>
+                <span className="block font-medium">Notify Player</span>
+                <span className="block text-xs text-ink-muted">
+                  {record.chat_connected
+                    ? 'Posts "Sent $X!" in the group from the club account.'
+                    : 'No group chat connected.'}
+                </span>
+              </span>
+              <span className="relative inline-flex h-6 w-11 shrink-0 items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  role="switch"
+                  aria-checked={record.chat_connected && sendNotify}
+                  checked={record.chat_connected && sendNotify}
+                  disabled={!record.chat_connected || saving}
+                  onChange={() => setSendNotify((v) => !v)}
+                />
+                <span className="h-6 w-11 rounded-full bg-control transition peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
+                <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow transition peer-checked:translate-x-5" />
+              </span>
+            </label>
+          )}
           <button type="button" onClick={saveSend} disabled={saving} className="btn-primary w-full">
             Save
           </button>
