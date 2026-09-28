@@ -532,20 +532,6 @@ def update_tier(
 @router.delete("/tiers/{tier_id}", status_code=204)
 def delete_tier(tier_id: int, db: Session = Depends(get_db_dependency)):
     tier = _get_tier(db, tier_id)
-    method = _get_method(db, tier.method_id)
-    remaining = (
-        db.query(ClubPaymentTier)
-        .filter_by(method_id=tier.method_id)
-        .filter(ClubPaymentTier.id != tier_id)
-        .count()
-    )
-    if remaining == 0:
-        raise HTTPException(400, "Cannot delete the last tier on a method")
-    if is_primary_tier(tier, list(method.tiers or [])):
-        raise HTTPException(
-            400,
-            "Cannot delete the fallback tier. Delete the other tiers first.",
-        )
     db.delete(tier)
 
 

@@ -56,6 +56,7 @@ export default function V2TierEditor({
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<Partial<V2Tier>>({})
   const [saveError, setSaveError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const [expandedTierIds, setExpandedTierIds] = useState<Set<number>>(() => new Set())
   const [variantRefreshKey, setVariantRefreshKey] = useState(0)
 
@@ -184,16 +185,23 @@ export default function V2TierEditor({
   }
 
   const handleDelete = async (t: V2Tier) => {
-    if (sorted.length <= 1) return
+    const lastTier = sorted.length <= 1
     const ok = await askConfirm({
       title: 'Delete amount tier?',
-      message: 'This tier and its variants will be removed.',
+      message: lastTier
+        ? 'This tier and its variants will be removed. Players will not see this method until you add an amount tier.'
+        : 'This tier and its variants will be removed.',
       confirmLabel: 'Delete tier',
       destructive: true,
     })
     if (!ok) return
-    await deleteV2Tier(token, t.id)
-    load()
+    setDeleteError('')
+    try {
+      await deleteV2Tier(token, t.id)
+      await load()
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete this tier.')
+    }
   }
 
   const groupLinkEnabled = Boolean(form.use_group_checkout_link)
@@ -218,8 +226,15 @@ export default function V2TierEditor({
         </button>
       </div>
 
+      {deleteError && (
+        <p className="mb-3 text-xs text-danger-ink" role="alert">
+          {deleteError}
+        </p>
+      )}
+
       {displayTiers.map((t) => {
         const primary = primaryTierId != null && t.id === primaryTierId
+        const fallback = (t.label || '').trim() === DEFAULT_TIER_LABEL
         const range = amountLabel(t.min_amount, t.max_amount)
         const variantCount = t.variants?.length ?? 0
         const expanded = expandedTierIds.has(t.id)
@@ -248,7 +263,7 @@ export default function V2TierEditor({
                 </span>
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium text-ink">{t.label}</span>
-                  {primary && (
+                  {fallback && (
                     <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">Default</span>
                   )}
                   <span className="ml-2 text-xs text-ink-muted">{range}</span>
@@ -274,16 +289,14 @@ export default function V2TierEditor({
                 >
                   Edit tier
                 </button>
-                {!primary && (
-                  <button
-                    type="button"
-                    onClick={() => { void handleDelete(t) }}
-                    aria-label={`Delete tier ${t.label}`}
-                    className="action-chip text-danger-ink hover:bg-danger-bg"
-                  >
-                    Delete tier
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => { void handleDelete(t) }}
+                  aria-label={`Delete tier ${t.label}`}
+                  className="action-chip text-danger-ink hover:bg-danger-bg"
+                >
+                  Delete tier
+                </button>
               </div>
             </div>
 
@@ -330,8 +343,8 @@ export default function V2TierEditor({
       })}
 
       {sorted.length === 0 && !showAdd && (
-        <p className="py-2 text-center text-xs text-ink-faint">
-          No amount tiers yet. Create a method to seed the default tier.
+        <p className="py-2 text-center text-xs text-ink-muted">
+          No amount tiers. Players will not see this method until you add one.
         </p>
       )}
 

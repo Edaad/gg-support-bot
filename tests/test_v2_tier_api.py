@@ -146,7 +146,27 @@ class V2TierApiTestCase(unittest.TestCase):
         self.assertEqual(clash.status_code, 400)
         self.assertIn("already has", clash.json()["detail"])
 
-    def test_fallback_tier_cannot_be_deleted(self):
+    def test_specific_band_can_be_deleted_without_a_default_tier(self):
+        """ClubGTO Cash App: Under $100 is not a fallback, so it can be removed."""
+        method = self._create_method(slug="cashapp", min_amount=20, max_amount=2000)
+        under = method["tiers"][0]
+        renamed = self.client.put(
+            f"/api/v2/tiers/{under['id']}",
+            json={"label": "Under $100", "max_amount": 99},
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.text)
+        over = self.client.post(
+            f"/api/v2/methods/{method['id']}/tiers",
+            json={"label": "Over $100", "min_amount": 101, "max_amount": 2000},
+        )
+        self.assertEqual(over.status_code, 201, over.text)
+
+        res = self.client.delete(f"/api/v2/tiers/{under['id']}")
+        self.assertEqual(res.status_code, 204, res.text)
+        remaining = self.client.get(f"/api/v2/methods/{method['id']}/tiers").json()
+        self.assertEqual([t["label"] for t in remaining], ["Over $100"])
+
+    def test_fallback_tier_can_be_deleted(self):
         method = self._create_method(slug="zelle", min_amount=20)
         default_tier = method["tiers"][0]
         self.client.post(
@@ -154,8 +174,17 @@ class V2TierApiTestCase(unittest.TestCase):
             json={"label": "$500+", "min_amount": 500},
         )
         res = self.client.delete(f"/api/v2/tiers/{default_tier['id']}")
-        self.assertEqual(res.status_code, 400)
-        self.assertIn("fallback tier", res.json()["detail"])
+        self.assertEqual(res.status_code, 204, res.text)
+        remaining = self.client.get(f"/api/v2/methods/{method['id']}/tiers").json()
+        self.assertEqual([t["label"] for t in remaining], ["$500+"])
+
+    def test_last_tier_can_be_deleted(self):
+        method = self._create_method(slug="zelle", min_amount=20)
+        only = method["tiers"][0]
+        res = self.client.delete(f"/api/v2/tiers/{only['id']}")
+        self.assertEqual(res.status_code, 204, res.text)
+        remaining = self.client.get(f"/api/v2/methods/{method['id']}/tiers").json()
+        self.assertEqual(remaining, [])
 
     def test_venmo_tier_starts_without_an_unusable_variant(self):
         method = self._create_method()

@@ -164,6 +164,41 @@ class TierAmountBandTestCase(unittest.TestCase):
         validate_tier_label("Default", siblings, exclude_tier_id=13)
         validate_tier_label("$100+", siblings)
 
+    def test_raising_method_min_past_specific_tier_does_not_overlap(self):
+        """ClubGTO Cash App: Under $100 / Over $100, no Default tier.
+
+        Raising the method minimum to $100 must not stretch the low band
+        across the high band and then fail the overlap check.
+        """
+        under = _tier(
+            40,
+            "Under $100",
+            Decimal("20"),
+            Decimal("99"),
+            checkout_min_amount=Decimal("20"),
+            checkout_max_amount=Decimal("99"),
+            variants=[],
+        )
+        over = _tier(
+            41,
+            "Over $100",
+            Decimal("101"),
+            Decimal("2000"),
+            sort_order=1,
+            checkout_min_amount=Decimal("101"),
+            checkout_max_amount=Decimal("2000"),
+            variants=[],
+        )
+        method = SimpleNamespace(
+            min_amount=Decimal("100"), max_amount=Decimal("2000"), tiers=[under, over]
+        )
+        sync_method_envelope_side_effects(method)
+        validate_all_method_tiers(method)
+        self.assertEqual(under.min_amount, Decimal("100"))
+        self.assertEqual(under.max_amount, Decimal("100"))
+        self.assertEqual(over.min_amount, Decimal("101"))
+        self.assertEqual(over.max_amount, Decimal("2000"))
+
     def test_raising_method_min_past_default_max_does_not_collapse_band(self):
         default = _tier(
             1,

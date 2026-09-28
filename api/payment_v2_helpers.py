@@ -368,15 +368,20 @@ def sync_method_envelope_side_effects(method: ClubPaymentMethod) -> None:
     """
     siblings = list(method.tiers or [])
     primary = primary_tier_for_method(siblings)
+    fallback = fallback_tier(siblings)
 
     for tier in siblings:
         prior_min = tier.min_amount
         prior_max = tier.max_amount
         if primary is not None and int(tier.id) == int(primary.id):
             tier.min_amount = method.min_amount
-            # Never collapse the fallback into a single-amount band.
+            # Only the real Default fallback may expand to the method max.
+            # A specific band (for example "Under $100") must not be stretched
+            # across the other tiers when the new minimum passes its max.
             if (
-                tier.max_amount is not None
+                fallback is not None
+                and int(tier.id) == int(fallback.id)
+                and tier.max_amount is not None
                 and tier.min_amount is not None
                 and tier.max_amount < tier.min_amount
             ):
