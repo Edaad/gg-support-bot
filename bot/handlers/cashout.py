@@ -420,12 +420,21 @@ async def cashout_simple_amount_received(
 AUTO_CLAIMING_COPY = "Claiming chips...this will just take a minute!"
 AUTO_AGENT_SHORTLY_COPY = "An agent will be with you shortly."
 
+_AUTO_HANDLE_NO_SCREENSHOT = (
+    "\n\nPlease send your method as a message, not a screenshot"
+)
+
 _AUTO_HANDLE_PROMPTS = {
-    "venmo": "Please reply with your Venmo @username or Venmo link.",
-    "cashapp": "Please reply with your Cash App $cashtag or Cash App link.",
-    "zelle": "Please reply with your Zelle phone number or email.",
-    "paypal": "Please reply with your PayPal email or PayPal.me link.",
-    "crypto": "Please reply with your {asset} wallet address.",
+    "venmo": "Please reply with your Venmo @username or Venmo link."
+    + _AUTO_HANDLE_NO_SCREENSHOT,
+    "cashapp": "Please reply with your Cash App $cashtag or Cash App link."
+    + _AUTO_HANDLE_NO_SCREENSHOT,
+    "zelle": "Please reply with your Zelle phone number or email."
+    + _AUTO_HANDLE_NO_SCREENSHOT,
+    "paypal": "Please reply with your PayPal email or PayPal.me link."
+    + _AUTO_HANDLE_NO_SCREENSHOT,
+    "crypto": "Please reply with your {asset} wallet address."
+    + _AUTO_HANDLE_NO_SCREENSHOT,
 }
 
 # Bad Venmo/Cash App replies stay on the handle step. Other methods still escalate.
