@@ -420,9 +420,7 @@ async def cashout_simple_amount_received(
 AUTO_CLAIMING_COPY = "Claiming chips...this will just take a minute!"
 AUTO_AGENT_SHORTLY_COPY = "An agent will be with you shortly."
 
-_AUTO_HANDLE_NO_SCREENSHOT = (
-    "\n\nPlease send your method as a message, not a screenshot"
-)
+_AUTO_HANDLE_NO_SCREENSHOT = "\n\nSend your method as a message, not a screenshot"
 
 _AUTO_HANDLE_PROMPTS = {
     "venmo": "Please reply with your Venmo @username or Venmo link."
