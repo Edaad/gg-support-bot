@@ -58,6 +58,13 @@ export type AlertCondition = {
   summary?: string
 }
 
+export type DisableStatus = 'off' | 'pending_slack' | 'on'
+
+export type AlertClub = {
+  id: number
+  name: string
+}
+
 export type DepositAlert = {
   id: number
   name: string
@@ -65,8 +72,14 @@ export type DepositAlert = {
   variant: string
   is_active: boolean
   conditions: AlertCondition[]
+  disable_enabled: boolean
+  disable_conditions: AlertCondition[]
+  disable_status: DisableStatus | null
+  clubs: AlertClub[]
   last_fired_week_id: string | null
   last_fired_at: string | null
+  last_disable_fired_week_id: string | null
+  last_disable_fired_at: string | null
   week_id: string
   week_volume_cents: number
   week_volume_usd: number
@@ -89,6 +102,8 @@ export type DepositAlertCreate = {
   variant: string
   is_active?: boolean
   conditions: ConditionIn[]
+  disable_enabled?: boolean
+  disable_conditions?: ConditionIn[]
 }
 
 export type DepositAlertUpdate = {
@@ -97,6 +112,8 @@ export type DepositAlertUpdate = {
   variant?: string
   is_active?: boolean
   conditions?: ConditionIn[]
+  disable_enabled?: boolean
+  disable_conditions?: ConditionIn[]
 }
 
 export function listDepositAlerts(token: string) {

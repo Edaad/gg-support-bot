@@ -920,6 +920,19 @@ def _pick_venmo_cashapp_destination_response(
     active = [v for v in all_variants if int(v.get("weight") or 0) > 0]
     native = [v for v in active if not _variant_is_stripe_checkout(v)]
     stripe_variants = [v for v in active if _variant_is_stripe_checkout(v)]
+    if native:
+        from bot.services.deposit_method_alerts import (
+            disabled_destination_keys,
+            is_destination_disabled,
+        )
+        from db.connection import get_db
+
+        with get_db() as session:
+            disabled_keys = disabled_destination_keys(session, slug)
+        if disabled_keys:
+            native = [
+                v for v in native if not is_destination_disabled(slug, v, disabled_keys)
+            ]
 
     sticky_tag: str | None = None
     if chat_id is not None:

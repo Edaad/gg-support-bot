@@ -256,7 +256,16 @@ class DepositStickyInactiveTests(unittest.TestCase):
             patch.object(dep, "get_destination_stickiness", return_value=sticky),
             patch.object(dep, "list_method_variants", return_value=[]),
             patch.object(dep, "_pick_weighted_variant_dicts", return_value=dict(other)),
+            patch(
+                "bot.services.deposit_method_alerts.disabled_destination_keys",
+                return_value=set(),
+            ),
+            patch("db.connection.get_db") as mock_get_db,
         ):
+            cm = MagicMock()
+            cm.__enter__.return_value = MagicMock()
+            cm.__exit__.return_value = False
+            mock_get_db.return_value = cm
             response_data, tier = dep._pick_deposit_variant_response(
                 4,
                 venmo_method,

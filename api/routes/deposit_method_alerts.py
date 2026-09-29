@@ -14,9 +14,11 @@ from api.auth import require_admin
 from bot.services.deposit_method_alerts import (
     ALERT_METHODS,
     CONDITION_REGISTRY,
+    clubs_for_destinations,
     condition_summaries,
     conditions_equal,
     conditions_from_api,
+    disable_status,
     distinct_variants_for_method,
     eastern_week_bounds_utc,
     evaluate_deposit_method_alerts,
@@ -49,6 +51,8 @@ class DepositAlertCreate(BaseModel):
     variant: str = Field(..., min_length=1, max_length=255)
     is_active: bool = True
     conditions: list[ConditionIn]
+    disable_enabled: bool = False
+    disable_conditions: list[ConditionIn] = Field(default_factory=list)
 
 
 class DepositAlertUpdate(BaseModel):
@@ -57,6 +61,13 @@ class DepositAlertUpdate(BaseModel):
     variant: Optional[str] = Field(None, min_length=1, max_length=255)
     is_active: Optional[bool] = None
     conditions: Optional[list[ConditionIn]] = None
+    disable_enabled: Optional[bool] = None
+    disable_conditions: Optional[list[ConditionIn]] = None
+
+
+class DepositAlertClub(BaseModel):
+    id: int
+    name: str
 
 
 class DepositAlertRead(BaseModel):
@@ -66,8 +77,14 @@ class DepositAlertRead(BaseModel):
     variant: str
     is_active: bool
     conditions: list[dict[str, Any]]
+    disable_enabled: bool
+    disable_conditions: list[dict[str, Any]]
+    disable_status: Optional[str] = None
+    clubs: list[DepositAlertClub]
     last_fired_week_id: Optional[str] = None
     last_fired_at: Optional[datetime] = None
+    last_disable_fired_week_id: Optional[str] = None
+    last_disable_fired_at: Optional[datetime] = None
     week_id: str
     week_volume_cents: int
     week_volume_usd: Decimal
@@ -96,7 +113,11 @@ def _to_read(
     week_id: str,
     volume_cents: int,
     tx_count: int,
+    clubs: list[dict] | None = None,
 ) -> DepositAlertRead:
+    from bot.services.deposit_method_alerts import WeekStats
+
+    stats = WeekStats(volume_cents=volume_cents, tx_count=tx_count)
     return DepositAlertRead(
         id=row.id,
         name=row.name,
@@ -104,8 +125,14 @@ def _to_read(
         variant=row.variant,
         is_active=bool(row.is_active),
         conditions=condition_summaries(list(row.conditions or [])),
+        disable_enabled=bool(row.disable_enabled),
+        disable_conditions=condition_summaries(list(row.disable_conditions or [])),
+        disable_status=disable_status(row, stats, week_id),
+        clubs=[DepositAlertClub(**club) for club in (clubs or [])],
         last_fired_week_id=row.last_fired_week_id,
         last_fired_at=row.last_fired_at,
+        last_disable_fired_week_id=row.last_disable_fired_week_id,
+        last_disable_fired_at=row.last_disable_fired_at,
         week_id=week_id,
         week_volume_cents=volume_cents,
         week_volume_usd=(Decimal(volume_cents) / 100).quantize(Decimal("0.01")),
@@ -123,6 +150,12 @@ def _parse_conditions(raw: list[ConditionIn] | None) -> list[dict]:
         )
     except ValueError as exc:
         raise _http_value_error(exc) from exc
+
+
+def _parse_disable_conditions(raw: list[ConditionIn] | None) -> list[dict]:
+    if not raw:
+        return []
+    return _parse_conditions(raw)
 
 
 @router.get("/condition-types", response_model=list[ConditionTypeInfo])
@@ -151,12 +184,14 @@ def list_alerts(db: Session = Depends(get_db_dependency)):
     rows = db.query(DepositMethodAlert).order_by(DepositMethodAlert.id.desc()).all()
     pairs = [(r.method, r.variant) for r in rows]
     stats = week_stats_map(db, pairs, week=week)
+    clubs = clubs_for_destinations(db, pairs)
     return [
         _to_read(
             row,
             week_id=week.week_id,
             volume_cents=stats[(row.method, row.variant)].volume_cents,
             tx_count=stats[(row.method, row.variant)].tx_count,
+            clubs=clubs.get((row.method, row.variant), []),
         )
         for row in rows
     ]
@@ -167,11 +202,13 @@ def _read_with_stats(db: Session, row: DepositMethodAlert) -> DepositAlertRead:
     stats = week_stats_map(db, [(row.method, row.variant)], week=week)[
         (row.method, row.variant)
     ]
+    clubs = clubs_for_destinations(db, [(row.method, row.variant)])
     return _to_read(
         row,
         week_id=week.week_id,
         volume_cents=stats.volume_cents,
         tx_count=stats.tx_count,
+        clubs=clubs.get((row.method, row.variant), []),
     )
 
 
@@ -204,7 +241,13 @@ def _set_method_or_variant(
 def _apply_alert_update(row: DepositMethodAlert, body: DepositAlertUpdate) -> bool:
     """Apply PATCH fields. Returns whether evaluate should run."""
     prev_active = bool(row.is_active)
-    clear_fired = _set_method_or_variant(row, method=body.method, variant=body.variant)
+    identity_changed = _set_method_or_variant(
+        row, method=body.method, variant=body.variant
+    )
+    clear_alert_latch = identity_changed
+    clear_disable_latch = identity_changed
+    disable_conditions_changed = False
+    disable_turned_on = False
 
     if body.name is not None:
         name = body.name.strip()
@@ -216,17 +259,41 @@ def _apply_alert_update(row: DepositMethodAlert, body: DepositAlertUpdate) -> bo
         conditions = _parse_conditions(body.conditions)
         if not conditions_equal(list(row.conditions or []), conditions):
             row.conditions = conditions
-            clear_fired = True
+            clear_alert_latch = True
+
+    if body.disable_conditions is not None:
+        disable_conditions = _parse_disable_conditions(body.disable_conditions)
+        if not conditions_equal(list(row.disable_conditions or []), disable_conditions):
+            row.disable_conditions = disable_conditions
+            disable_conditions_changed = True
+
+    if body.disable_enabled is not None:
+        enabled = bool(body.disable_enabled)
+        if enabled and not bool(row.disable_enabled):
+            disable_turned_on = True
+        row.disable_enabled = enabled
+
+    if row.disable_enabled and not list(row.disable_conditions or []):
+        raise HTTPException(400, "At least one disable condition is required")
 
     if body.is_active is not None:
         row.is_active = bool(body.is_active)
 
-    if clear_fired:
+    if clear_alert_latch:
         row.last_fired_week_id = None
         row.last_fired_at = None
+    if clear_disable_latch:
+        row.last_disable_fired_week_id = None
+        row.last_disable_fired_at = None
 
     becoming_active = bool(row.is_active) and not prev_active
-    return bool(row.is_active) and (becoming_active or clear_fired)
+    return bool(row.is_active) and (
+        becoming_active
+        or clear_alert_latch
+        or clear_disable_latch
+        or disable_turned_on
+        or disable_conditions_changed
+    )
 
 
 @router.post("", response_model=DepositAlertRead)
@@ -247,12 +314,17 @@ async def create_alert(
         raise HTTPException(400, "name is required")
 
     conditions = _parse_conditions(body.conditions)
+    disable_conditions = _parse_disable_conditions(body.disable_conditions)
+    if body.disable_enabled and not disable_conditions:
+        raise HTTPException(400, "At least one disable condition is required")
     row = DepositMethodAlert(
         name=name,
         method=method,
         variant=variant,
         is_active=bool(body.is_active),
         conditions=conditions,
+        disable_enabled=bool(body.disable_enabled),
+        disable_conditions=disable_conditions,
     )
     db.add(row)
     db.flush()

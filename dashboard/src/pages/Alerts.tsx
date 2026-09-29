@@ -34,6 +34,18 @@ function methodLabel(method: string): string {
   return ALERT_METHOD_OPTIONS.find((m) => m.value === method)?.label || method
 }
 
+function disableStatusLabel(status: DepositAlert['disable_status']): string | null {
+  if (status === 'off') return 'Off this week'
+  if (status === 'pending_slack') return 'Cap reached, Slack not sent yet'
+  if (status === 'on') return 'On'
+  return null
+}
+
+function clubsLabel(clubs: DepositAlert['clubs']): string {
+  if (!clubs.length) return 'No club is offering it'
+  return clubs.map((club) => club.name).join(', ')
+}
+
 function newDraftCondition(type = 'weekly_volume'): DraftCondition {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -144,6 +156,20 @@ function AlertCard({
         ))}
       </ul>
 
+      <div className="mb-3 space-y-1 text-sm">
+        {row.disable_enabled && disableStatusLabel(row.disable_status) && (
+          <p className="font-medium text-ink">{disableStatusLabel(row.disable_status)}</p>
+        )}
+        {row.disable_enabled && (
+          <ul className="space-y-1 text-ink-muted">
+            {(row.disable_conditions || []).map((c) => (
+              <li key={`disable-${c.type}`}>{c.summary || c.label || c.type}</li>
+            ))}
+          </ul>
+        )}
+        <p className="text-ink-muted">{clubsLabel(row.clubs || [])}</p>
+      </div>
+
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-ink-muted">
           {row.alerted_this_week ? 'Alerted this week' : '\u00a0'}
@@ -176,6 +202,10 @@ export default function Alerts({ token }: { token: string }) {
   const [variants, setVariants] = useState<string[]>([])
   const [variantsLoading, setVariantsLoading] = useState(false)
   const [conditions, setConditions] = useState<DraftCondition[]>([newDraftCondition()])
+  const [disableEnabled, setDisableEnabled] = useState(false)
+  const [disableConditions, setDisableConditions] = useState<DraftCondition[]>([
+    newDraftCondition(),
+  ])
   const [formError, setFormError] = useState<string | null>(null)
 
   const nameId = useId()
@@ -249,6 +279,8 @@ export default function Alerts({ token }: { token: string }) {
     setMethod('')
     setVariant('')
     setConditions([newDraftCondition()])
+    setDisableEnabled(false)
+    setDisableConditions([newDraftCondition()])
     setFormError(null)
     setModalOpen(true)
   }
@@ -259,6 +291,12 @@ export default function Alerts({ token }: { token: string }) {
     setMethod(row.method as AlertMethod)
     setVariant(row.variant)
     setConditions(conditionsToDraft(row))
+    setDisableEnabled(Boolean(row.disable_enabled))
+    setDisableConditions(
+      row.disable_conditions?.length
+        ? conditionsToDraft({ ...row, conditions: row.disable_conditions })
+        : [newDraftCondition()],
+    )
     setFormError(null)
     setModalOpen(true)
   }
@@ -266,6 +304,11 @@ export default function Alerts({ token }: { token: string }) {
   const usedTypes = useMemo(
     () => new Set(conditions.map((c) => c.type)),
     [conditions],
+  )
+
+  const usedDisableTypes = useMemo(
+    () => new Set(disableConditions.map((c) => c.type)),
+    [disableConditions],
   )
 
   const addCondition = () => {
@@ -276,6 +319,37 @@ export default function Alerts({ token }: { token: string }) {
 
   const removeCondition = (key: string) => {
     setConditions((prev) => (prev.length <= 1 ? prev : prev.filter((c) => c.key !== key)))
+  }
+
+  const addDisableCondition = () => {
+    const next = CONDITION_TYPES.find((t) => !usedDisableTypes.has(t.type))
+    if (!next) return
+    setDisableConditions((prev) => [...prev, newDraftCondition(next.type)])
+  }
+
+  const removeDisableCondition = (key: string) => {
+    setDisableConditions((prev) =>
+      prev.length <= 1 ? prev : prev.filter((c) => c.key !== key),
+    )
+  }
+
+  const validateThresholds = (drafts: DraftCondition[], label: string): boolean => {
+    for (const c of drafts) {
+      const n = Number(c.threshold)
+      if (!Number.isFinite(n)) {
+        setFormError(`${label} needs a valid threshold`)
+        return false
+      }
+      if (c.type === 'weekly_volume' && n < 0.01) {
+        setFormError(`${label} volume must be at least $0.01`)
+        return false
+      }
+      if (c.type === 'weekly_transaction_count' && (!Number.isInteger(n) || n < 1)) {
+        setFormError(`${label} transaction count must be an integer ≥ 1`)
+        return false
+      }
+    }
+    return true
   }
 
   const onSave = async () => {
@@ -296,31 +370,27 @@ export default function Alerts({ token }: { token: string }) {
       setFormError('At least one condition is required')
       return
     }
-    for (const c of conditions) {
-      const n = Number(c.threshold)
-      if (!Number.isFinite(n)) {
-        setFormError('Each condition needs a valid threshold')
-        return
-      }
-      if (c.type === 'weekly_volume' && n < 0.01) {
-        setFormError('Volume must be at least $0.01')
-        return
-      }
-      if (c.type === 'weekly_transaction_count' && (!Number.isInteger(n) || n < 1)) {
-        setFormError('Transaction count must be an integer ≥ 1')
-        return
-      }
+    if (disableEnabled && !disableConditions.length) {
+      setFormError('At least one disable condition is required')
+      return
+    }
+    if (!validateThresholds(conditions, 'Each alert condition')) return
+    if (disableEnabled && !validateThresholds(disableConditions, 'Each disable condition')) {
+      return
     }
 
     setSaving(true)
     try {
       const payloadConditions = draftToPayload(conditions)
+      const payloadDisable = disableEnabled ? draftToPayload(disableConditions) : []
       if (editRow) {
         await updateDepositAlert(token, editRow.id, {
           name: name.trim(),
           method,
           variant,
           conditions: payloadConditions,
+          disable_enabled: disableEnabled,
+          disable_conditions: payloadDisable,
         })
       } else {
         await createDepositAlert(token, {
@@ -329,6 +399,8 @@ export default function Alerts({ token }: { token: string }) {
           variant,
           is_active: true,
           conditions: payloadConditions,
+          disable_enabled: disableEnabled,
+          disable_conditions: payloadDisable,
         })
       }
       setModalOpen(false)
@@ -539,7 +611,7 @@ export default function Alerts({ token }: { token: string }) {
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="label-field-xs mb-0">Conditions (any one is enough)</p>
+              <p className="label-field-xs mb-0">Alert when (any one is enough)</p>
               <button
                 type="button"
                 className="btn-secondary-sm"
@@ -619,6 +691,102 @@ export default function Alerts({ token }: { token: string }) {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="rounded-lg border border-border p-3">
+            <label className="check-hit text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={disableEnabled}
+                onChange={(e) => setDisableEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              Disable this destination when reached
+            </label>
+            {disableEnabled && (
+              <div className="mt-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="label-field-xs mb-0">Disable when (any one is enough)</p>
+                  <button
+                    type="button"
+                    className="btn-secondary-sm"
+                    onClick={addDisableCondition}
+                    disabled={usedDisableTypes.size >= CONDITION_TYPES.length}
+                  >
+                    Add condition
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {disableConditions.map((c) => (
+                    <div
+                      key={c.key}
+                      className="flex flex-wrap items-end gap-2 rounded-lg border border-border p-3"
+                    >
+                      <div className="min-w-[10rem] flex-1">
+                        <label className="label-field-xs">Type</label>
+                        <select
+                          value={c.type}
+                          onChange={(e) => {
+                            const nextType = e.target.value
+                            setDisableConditions((prev) =>
+                              prev.map((item) =>
+                                item.key === c.key
+                                  ? {
+                                      ...item,
+                                      type: nextType,
+                                      threshold: nextType === 'weekly_volume' ? '1000' : '10',
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }}
+                          className="input-field-sm w-full"
+                        >
+                          {CONDITION_TYPES.map((t) => (
+                            <option
+                              key={t.type}
+                              value={t.type}
+                              disabled={usedDisableTypes.has(t.type) && c.type !== t.type}
+                            >
+                              {t.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="min-w-[8rem] flex-1">
+                        <label className="label-field-xs">
+                          {c.type === 'weekly_volume' ? 'At least ($)' : 'At least (count)'}
+                        </label>
+                        <input
+                          type="number"
+                          min={c.type === 'weekly_volume' ? 0.01 : 1}
+                          step={c.type === 'weekly_volume' ? 0.01 : 1}
+                          value={c.threshold}
+                          onChange={(e) =>
+                            setDisableConditions((prev) =>
+                              prev.map((item) =>
+                                item.key === c.key
+                                  ? { ...item, threshold: e.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          className="input-field-sm w-full"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary-sm"
+                        onClick={() => removeDisableCondition(c.key)}
+                        disabled={disableConditions.length <= 1}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

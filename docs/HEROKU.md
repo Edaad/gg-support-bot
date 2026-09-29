@@ -481,7 +481,7 @@ Dashboard **Cashout records** and **Bonuses** pages include CSV export (inclusiv
 
 Dashboard **Expenses** (admin only) uses `expenses` and XLSX export: `GET /api/expenses/export?from=…&to=…` (plus optional `club_id`, `pending`, `q`).
 
-Dashboard **Alerts** (admin only, under More) watches weekly Eastern Mon–Sun volume / transaction counts for a deposit method + destination variant. Fires once per alert per week to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`. Table: `deposit_method_alerts`.
+Dashboard **Alerts** (admin only, under More) watches weekly Eastern Mon–Sun volume / transaction counts for a deposit method + destination variant. Fires once per alert per week to `SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`. Table: `deposit_method_alerts`. Each alert can also disable that destination in every club when a separate condition set is met and the disable Slack post succeeds. Unchecking **Disable this destination when reached** turns it back on. The card shows Off this week, Cap reached / Slack not sent yet, or On, plus the clubs that offer the destination.
 
 Dashboard **Payments** admin settings (gear next to Export) stores quick-access hyperlinks in `payment_quick_links`. Each link has a title, URL, and optional method/club visibility so it only appears between the filters and the table when those filters match (`all` / empty = no restriction).
 

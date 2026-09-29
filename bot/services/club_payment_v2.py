@@ -378,6 +378,17 @@ def list_method_variants(method_id: int) -> list[dict]:
         return out
 
 
+def _disabled_keys_for_method(session, method_id: int) -> tuple[str, set[str]]:
+    """Return (slug, disabled destination keys). Slug is empty when unknown."""
+    method = session.query(ClubPaymentMethod).get(int(method_id))
+    slug = getattr(method, "slug", None)
+    if not isinstance(slug, str) or not slug.strip():
+        return "", set()
+    from bot.services.deposit_method_alerts import disabled_destination_keys
+
+    return slug.strip().lower(), disabled_destination_keys(session, slug)
+
+
 def pick_variant(
     method_id: int,
     tier_id: Optional[int] = None,
@@ -385,12 +396,23 @@ def pick_variant(
     variant_id: Optional[int] = None,
 ) -> Optional[dict]:
     with get_db() as session:
+        slug, disabled = _disabled_keys_for_method(session, method_id)
+
+        def _blocked(variant: ClubPaymentTierVariant) -> bool:
+            if not disabled:
+                return False
+            from bot.services.deposit_method_alerts import is_destination_disabled
+
+            return is_destination_disabled(slug, variant, disabled)
+
         if variant_id is not None:
             chosen = session.query(ClubPaymentTierVariant).get(int(variant_id))
             if chosen is None or int(chosen.method_id) != int(method_id):
                 return None
-            if _variant_weight(chosen) > 0 and (
-                tier_id is None or int(chosen.tier_id) == int(tier_id)
+            if (
+                _variant_weight(chosen) > 0
+                and (tier_id is None or int(chosen.tier_id) == int(tier_id))
+                and not _blocked(chosen)
             ):
                 return _variant_response_dict(chosen, include_ids=True)
 
@@ -401,6 +423,8 @@ def pick_variant(
                 .order_by(ClubPaymentTierVariant.sort_order, ClubPaymentTierVariant.id)
                 .all()
             )
+            if disabled:
+                variants = [v for v in variants if not _blocked(v)]
             chosen = _pick_weighted_variant(variants)
             if chosen is not None:
                 return _variant_response_dict(chosen, include_ids=True)

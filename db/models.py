@@ -3321,8 +3321,16 @@ class DepositMethodAlert(Base):
     conditions = Column(
         JSONB, nullable=False, server_default=text("'[]'"), default=list
     )
+    disable_enabled = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    disable_conditions = Column(
+        JSONB, nullable=False, server_default=text("'[]'"), default=list
+    )
     last_fired_week_id = Column(String(10), nullable=True)
     last_fired_at = Column(DateTime(timezone=True), nullable=True)
+    last_disable_fired_week_id = Column(String(10), nullable=True)
+    last_disable_fired_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

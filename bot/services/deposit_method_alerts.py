@@ -281,24 +281,9 @@ def _dashboard_alerts_url() -> str | None:
     return f"{raw}/alerts"
 
 
-def format_slack_message(
-    alert: DepositMethodAlert,
-    *,
-    stats: WeekStats,
-    week: EasternWeek,
-) -> str:
-    method_label = METHOD_LABELS.get(alert.method, alert.method)
-    lines = [
-        ":bell: Deposit method alert",
-        "",
-        f"*{alert.name}*",
-        f"Method: {method_label}",
-        f"Variant: `{alert.variant}`",
-        f"Week: {week.week_id} (Mon–Sun ET, so far)",
-        "",
-        "Conditions:",
-    ]
-    for cond in alert.conditions or []:
+def _condition_lines(conditions: list | None, stats: WeekStats) -> list[str]:
+    lines: list[str] = []
+    for cond in conditions or []:
         ctype = str(cond.get("type") or "")
         spec = CONDITION_REGISTRY.get(ctype)
         if spec is None:
@@ -310,6 +295,44 @@ def format_slack_message(
             f"• {met} {spec.label}: {spec.format_current(stats)} "
             f"(threshold {spec.format_threshold(threshold)})"
         )
+    return lines
+
+
+def format_slack_message(
+    alert: DepositMethodAlert,
+    *,
+    stats: WeekStats,
+    week: EasternWeek,
+    include_alert: bool = True,
+    include_disable: bool = False,
+) -> str:
+    method_label = METHOD_LABELS.get(alert.method, alert.method)
+    title = (
+        ":bell: Deposit destination disabled"
+        if include_disable and not include_alert
+        else ":bell: Deposit method alert"
+    )
+    lines = [
+        title,
+        "",
+        f"*{alert.name}*",
+        f"Method: {method_label}",
+        f"Variant: `{alert.variant}`",
+        f"Week: {week.week_id} (Mon–Sun ET, so far)",
+    ]
+    if include_alert:
+        lines.extend(["", "Conditions:", *_condition_lines(alert.conditions, stats)])
+    if include_disable:
+        lines.extend(
+            [
+                "",
+                "This destination is off in every club until Monday, or until an "
+                "admin unchecks Disable this destination when reached.",
+                "",
+                "Disable conditions:",
+                *_condition_lines(alert.disable_conditions, stats),
+            ]
+        )
     lines.extend(
         [
             "",
@@ -320,6 +343,33 @@ def format_slack_message(
     if url:
         lines.extend(["", f"<{url}|Open Alerts>"])
     return "\n".join(lines)
+
+
+def disable_conditions_met(alert: DepositMethodAlert, stats: WeekStats) -> bool:
+    if not alert.disable_enabled:
+        return False
+    return conditions_met(list(alert.disable_conditions or []), stats)
+
+
+def disable_status(
+    alert: DepositMethodAlert, stats: WeekStats, week_id: str
+) -> str | None:
+    """Card status: off, pending_slack, on, or None when disable is not in use."""
+    if not alert.is_active or not alert.disable_enabled:
+        return None
+    met = conditions_met(list(alert.disable_conditions or []), stats)
+    latched = alert.last_disable_fired_week_id == week_id
+    if latched and met:
+        return "off"
+    if met:
+        return "pending_slack"
+    return "on"
+
+
+def destination_is_disabled(
+    alert: DepositMethodAlert, stats: WeekStats, week_id: str
+) -> bool:
+    return disable_status(alert, stats, week_id) == "off"
 
 
 async def evaluate_deposit_method_alerts(
@@ -359,30 +409,51 @@ async def evaluate_deposit_method_alerts(
     fired = 0
     fire_at = week.end_utc
     for alert in alerts:
-        if alert.last_fired_week_id == week.week_id:
+        alert_due = alert.last_fired_week_id != week.week_id and conditions_met(
+            list(alert.conditions or []), stats
+        )
+        disable_due = (
+            bool(alert.disable_enabled)
+            and alert.last_disable_fired_week_id != week.week_id
+            and conditions_met(list(alert.disable_conditions or []), stats)
+        )
+        if not alert_due and not disable_due:
             continue
-        conditions = list(alert.conditions or [])
-        if not conditions_met(conditions, stats):
-            continue
-        text = format_slack_message(alert, stats=stats, week=week)
+        text = format_slack_message(
+            alert,
+            stats=stats,
+            week=week,
+            include_alert=alert_due,
+            include_disable=disable_due,
+        )
         ok = await notify_slack_head_admin_escalation(text, source=SLACK_SOURCE)
         if not ok:
             logger.warning(
-                "deposit_method_alert: slack failed alert_id=%s method=%s variant=%r",
+                "deposit_method_alert: slack failed alert_id=%s method=%s variant=%r "
+                "alert_due=%s disable_due=%s",
                 alert.id,
                 method_slug,
                 variant_value,
+                alert_due,
+                disable_due,
             )
             continue
-        alert.last_fired_week_id = week.week_id
-        alert.last_fired_at = fire_at
+        if alert_due:
+            alert.last_fired_week_id = week.week_id
+            alert.last_fired_at = fire_at
+        if disable_due:
+            alert.last_disable_fired_week_id = week.week_id
+            alert.last_disable_fired_at = fire_at
         fired += 1
         logger.info(
-            "deposit_method_alert: fired alert_id=%s week=%s method=%s variant=%r",
+            "deposit_method_alert: fired alert_id=%s week=%s method=%s variant=%r "
+            "alert_due=%s disable_due=%s",
             alert.id,
             week.week_id,
             method_slug,
             variant_value,
+            alert_due,
+            disable_due,
         )
     return fired
 
@@ -413,6 +484,208 @@ async def maybe_evaluate_after_ingest(
             method,
             variant_value,
         )
+
+
+def _variant_field(variant: Any, name: str) -> Any:
+    if isinstance(variant, dict):
+        return variant.get(name)
+    return getattr(variant, name, None)
+
+
+def destination_match_key(method: str, raw: str | None) -> str:
+    """Comparable key for an alert variant string."""
+    method_slug = normalize_method(method)
+    text = raw or ""
+    if method_slug == "venmo":
+        from bot.services.payment_method_binding import _normalize_venmo_handle
+
+        return _normalize_venmo_handle(text)
+    if method_slug == "cashapp":
+        from bot.services.payment_method_binding import _normalize_cashapp_handle
+
+        return _normalize_cashapp_handle(text)
+    if method_slug == "zelle":
+        from bot.services.payment_method_binding import canonicalize_zelle_recipient
+
+        return canonicalize_zelle_recipient(text)
+    if method_slug == "paypal":
+        from bot.services.payment_method_binding import normalize_paypal_email
+
+        return normalize_paypal_email(text)
+    return text.strip().lower()
+
+
+def _variant_text_blob(variant: Any) -> str:
+    parts = [
+        _variant_field(variant, name)
+        for name in (
+            "label",
+            "response_text",
+            "response_caption",
+            "venmo_tag",
+            "venmo_link",
+            "cashapp_tag",
+            "cashapp_link",
+        )
+    ]
+    return "\n".join(str(part) for part in parts if isinstance(part, str))
+
+
+def variant_match_key(method: str, variant: Any) -> str | None:
+    """Destination key stored on a club tier variant, if one can be read."""
+    method_slug = normalize_method(method)
+    if method_slug == "venmo":
+        from bot.services.payment_method_binding import (
+            _normalize_venmo_handle,
+            extract_venmo_handle_from_text,
+        )
+
+        tag = _variant_field(variant, "venmo_tag")
+        if isinstance(tag, str) and tag.strip():
+            handle = extract_venmo_handle_from_text(tag) or _normalize_venmo_handle(tag)
+            return handle or None
+        for name in ("response_text", "response_caption", "venmo_link"):
+            handle = extract_venmo_handle_from_text(_variant_field(variant, name))
+            if handle:
+                return handle
+        return None
+    if method_slug == "cashapp":
+        from bot.services.payment_method_binding import (
+            _normalize_cashapp_handle,
+            extract_cashapp_handle_from_text,
+        )
+
+        tag = _variant_field(variant, "cashapp_tag")
+        if isinstance(tag, str) and tag.strip():
+            return _normalize_cashapp_handle(tag) or None
+        for name in ("response_text", "response_caption", "cashapp_link"):
+            handle = extract_cashapp_handle_from_text(_variant_field(variant, name))
+            if handle:
+                return handle
+        return None
+    if method_slug == "zelle":
+        from bot.services.payment_method_binding import (
+            extract_zelle_recipient_from_text,
+        )
+
+        for name in ("response_text", "response_caption"):
+            recipient = extract_zelle_recipient_from_text(_variant_field(variant, name))
+            if recipient:
+                return recipient
+        return None
+    if method_slug == "paypal":
+        from bot.services.payment_method_binding import extract_paypal_email_from_text
+
+        for name in ("response_text", "response_caption"):
+            email = extract_paypal_email_from_text(_variant_field(variant, name))
+            if email:
+                return email
+        return None
+    return None
+
+
+def destination_matches(method: str, variant: Any, key: str) -> bool:
+    if not key:
+        return False
+    method_slug = normalize_method(method)
+    if method_slug == "crypto":
+        return key in _variant_text_blob(variant).lower()
+    return variant_match_key(method_slug, variant) == key
+
+
+def is_destination_disabled(method: str, variant: Any, disabled_keys: set[str]) -> bool:
+    return any(destination_matches(method, variant, key) for key in disabled_keys)
+
+
+def disabled_destination_keys(
+    session: Session,
+    method: str,
+    *,
+    now: datetime | None = None,
+) -> set[str]:
+    """Keys currently skipped for this method. Empty when nothing is latched and met."""
+    try:
+        method_slug = normalize_method(method)
+    except ValueError:
+        return set()
+    week = eastern_week_bounds_utc(now)
+    rows = (
+        session.query(DepositMethodAlert)
+        .filter(
+            DepositMethodAlert.method == method_slug,
+            DepositMethodAlert.is_active.is_(True),
+            DepositMethodAlert.disable_enabled.is_(True),
+            DepositMethodAlert.last_disable_fired_week_id == week.week_id,
+        )
+        .all()
+    )
+    keys: set[str] = set()
+    for row in rows:
+        stats = week_stats_for(
+            session, method=method_slug, variant=row.variant, week=week
+        )
+        if not conditions_met(list(row.disable_conditions or []), stats):
+            continue
+        key = destination_match_key(method_slug, row.variant)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def clubs_for_destinations(
+    session: Session,
+    pairs: list[tuple[str, str]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Club id/name list for each method+variant pair that a deposit variant matches."""
+    from db.models import Club, ClubPaymentMethod, ClubPaymentTierVariant
+
+    wanted: dict[str, list[tuple[str, str]]] = {}
+    for method, variant in pairs:
+        try:
+            method_slug = normalize_method(method)
+        except ValueError:
+            continue
+        key = destination_match_key(method_slug, variant)
+        wanted.setdefault(method_slug, []).append((variant, key))
+    if not wanted:
+        return {}
+
+    rows = (
+        session.query(
+            Club.id, Club.name, ClubPaymentMethod.slug, ClubPaymentTierVariant
+        )
+        .join(
+            ClubPaymentMethod,
+            ClubPaymentTierVariant.method_id == ClubPaymentMethod.id,
+        )
+        .join(Club, Club.id == ClubPaymentMethod.club_id)
+        .filter(
+            ClubPaymentMethod.direction == "deposit",
+            ClubPaymentMethod.slug.in_(list(wanted)),
+        )
+        .all()
+    )
+    by_slug: dict[str, list[tuple[int, str, Any]]] = {}
+    for club_id, club_name, slug, variant in rows:
+        by_slug.setdefault(str(slug), []).append(
+            (int(club_id), str(club_name), variant)
+        )
+
+    out: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for method_slug, items in wanted.items():
+        for variant, key in items:
+            seen: set[int] = set()
+            clubs: list[dict[str, Any]] = []
+            for club_id, club_name, variant_row in by_slug.get(method_slug, []):
+                if club_id in seen or not destination_matches(
+                    method_slug, variant_row, key
+                ):
+                    continue
+                seen.add(club_id)
+                clubs.append({"id": club_id, "name": club_name})
+            clubs.sort(key=lambda club: club["name"].lower())
+            out[(method_slug, variant)] = clubs
+    return out
 
 
 def conditions_equal(a: list | None, b: list | None) -> bool:
