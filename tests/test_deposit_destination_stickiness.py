@@ -104,6 +104,47 @@ STRIPE_UNDER = {
 
 
 class DestinationStickinessPickTests(unittest.TestCase):
+    def setUp(self):
+        # Deposit picks look up alert-disabled destinations in the DB; stub it
+        # (nothing disabled unless a test sets self.disabled_keys).
+        self.disabled_keys: set[str] = set()
+        for p in (
+            patch("db.connection.get_db", return_value=MagicMock()),
+            patch(
+                "bot.services.deposit_method_alerts.disabled_destination_keys",
+                side_effect=lambda *_a, **_k: set(self.disabled_keys),
+            ),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_skips_alert_disabled_native_tag(self):
+        from bot.services.deposit_method_alerts import variant_match_key
+
+        self.disabled_keys = {variant_match_key("cashapp", NATIVE_A)}
+        with (
+            patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
+            patch.object(
+                dep,
+                "list_tier_variants",
+                return_value=[STRIPE_OVER, NATIVE_A, NATIVE_B],
+            ),
+            patch.object(dep, "get_destination_stickiness", return_value=None),
+            patch.object(
+                dep, "_pick_weighted_variant_dicts", return_value=dict(NATIVE_B)
+            ) as pick_mock,
+        ):
+            dep._pick_deposit_variant_response(
+                4,
+                METHOD_CASHAPP,
+                Decimal("150"),
+                chat_id=-100123,
+                method_slug="cashapp",
+            )
+
+        args = pick_mock.call_args[0][0]
+        self.assertEqual([v["variant_id"] for v in args], [22])
+
     def test_prefers_native_over_stripe_when_no_sticky(self):
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),

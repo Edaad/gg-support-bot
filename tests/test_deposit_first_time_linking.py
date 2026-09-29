@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.handlers import deposit as dep
 
@@ -90,6 +90,20 @@ def _merged_stripe_under():
 
 
 class PickDepositVariantTestCase(unittest.TestCase):
+    def setUp(self):
+        # Deposit picks look up alert-disabled destinations in the DB; stub it
+        # (nothing disabled unless a test sets self.disabled_keys).
+        self.disabled_keys: set[str] = set()
+        for p in (
+            patch("db.connection.get_db", return_value=MagicMock()),
+            patch(
+                "bot.services.deposit_method_alerts.disabled_destination_keys",
+                side_effect=lambda *_a, **_k: set(self.disabled_keys),
+            ),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
     def test_weighted_pick_prefers_native_over_stripe(self):
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
