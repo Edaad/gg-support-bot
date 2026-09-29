@@ -13,7 +13,8 @@ from typing import BinaryIO, Callable
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.worksheet.filters import AutoFilter
+from openpyxl.worksheet.table import Table, TableColumn, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session, joinedload
 
@@ -604,8 +605,16 @@ def _resize_processed_table(ws: Worksheet, last_row: int) -> None:
             showColumnStripes=False,
         )
         ws.add_table(tab)
-        return
-    ws.tables[_PROCESSED_TABLE].ref = ref
+    else:
+        tab = ws.tables[_PROCESSED_TABLE]
+        tab.ref = ref
+    # Keep the column list and filter in step with the range; a table whose ref
+    # spans more columns than it defines makes Excel offer to repair the file.
+    tab.tableColumns = [
+        TableColumn(id=idx, name=header)
+        for idx, header in enumerate(PROCESSED_HEADERS, start=1)
+    ]
+    tab.autoFilter = AutoFilter(ref=ref)
 
 
 def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:

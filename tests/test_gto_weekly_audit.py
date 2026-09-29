@@ -30,6 +30,7 @@ from api.gto_weekly_audit import (
     fetch_vaughn_cashout_rails,
     output_filename,
     parse_clubgto_rows,
+    PROCESSED_HEADERS,
     rail_bucket,
     validate_upload_set,
     _zelle_variant,
@@ -40,6 +41,37 @@ from db.models import CryptoPayment, ZellePayment
 
 TOKEN = create_token()
 MONDAY = date(2026, 8, 10)
+
+
+def _assert_processed_layout(tc: unittest.TestCase, content: bytes, headers) -> None:
+    """ProcessedData table is self-consistent; pivot sits after an empty gap column."""
+    import re
+    from openpyxl.utils import range_boundaries
+
+    with zipfile.ZipFile(io.BytesIO(content)) as z:
+        tables = [
+            z.read(n).decode()
+            for n in z.namelist()
+            if n.startswith("xl/tables/") and n.endswith(".xml")
+        ]
+        pivot = z.read(
+            next(n for n in z.namelist() if n.startswith("xl/pivotTables/pivotTable"))
+        ).decode()
+    table = next(t for t in tables if 'name="ProcessedData"' in t)
+    ref = re.search(r'<table [^>]*\bref="([^"]+)"', table).group(1)
+    min_col, _, max_col, _ = range_boundaries(ref)
+    names = re.findall(r'<tableColumn [^>]*name="([^"]+)"', table)
+    tc.assertEqual(max_col - min_col + 1, len(names))
+    tc.assertEqual(names, list(headers))
+    tc.assertEqual(re.search(r'<autoFilter ref="([^"]+)"', table).group(1), ref)
+
+    location = re.search(r'<location ref="([^"]+)"', pivot).group(1)
+    tc.assertEqual(range_boundaries(location)[0], max_col + 2)  # one empty column
+    tc.assertIn('name="Sum of Amount"', pivot)
+    tc.assertNotIn("Count of Amount", pivot)
+    ws = load_workbook(io.BytesIO(content))["Processed"]
+    tc.assertIsNone(ws.cell(1, max_col + 1).value)
+    tc.assertEqual(ws.cell(1, max_col + 2).value, "Pivot Table")
 
 
 def _matching_xlsx(
@@ -331,6 +363,7 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(content)) as z:
             pivot_parts = [n for n in z.namelist() if "pivotTables/" in n]
             self.assertTrue(pivot_parts, "expected pivot table part in output")
+        _assert_processed_layout(self, content, PROCESSED_HEADERS)
 
     @patch("api.gto_weekly_audit.fetch_vaughn_cashout_rails")
     @patch("api.gto_weekly_audit.fetch_clubgto_bonus_rails")
