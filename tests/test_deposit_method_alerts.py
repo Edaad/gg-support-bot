@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import JSON, create_engine
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -1140,6 +1141,20 @@ class DisablePickTests(unittest.TestCase):
             self.assertIsNone(
                 club_payment_v2.pick_variant(4, tier_id=10, variant_id=99)
             )
+
+    def test_missing_disable_column_leaves_destinations_available(self):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.all.side_effect = (
+            ProgrammingError(
+                "SELECT",
+                {},
+                Exception(
+                    "column deposit_method_alerts.disable_enabled does not exist"
+                ),
+            )
+        )
+        self.assertEqual(disabled_destination_keys(session, "venmo"), set())
+        session.rollback.assert_called_once()
 
     def test_same_handle_matches_every_club_other_handle_does_not(self):
         paused = SimpleNamespace(

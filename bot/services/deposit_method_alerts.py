@@ -10,6 +10,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from api.payments_helpers import (
@@ -609,16 +610,24 @@ def disabled_destination_keys(
     except ValueError:
         return set()
     week = eastern_week_bounds_utc(now)
-    rows = (
-        session.query(DepositMethodAlert)
-        .filter(
-            DepositMethodAlert.method == method_slug,
-            DepositMethodAlert.is_active.is_(True),
-            DepositMethodAlert.disable_enabled.is_(True),
-            DepositMethodAlert.last_disable_fired_week_id == week.week_id,
+    try:
+        rows = (
+            session.query(DepositMethodAlert)
+            .filter(
+                DepositMethodAlert.method == method_slug,
+                DepositMethodAlert.is_active.is_(True),
+                DepositMethodAlert.disable_enabled.is_(True),
+                DepositMethodAlert.last_disable_fired_week_id == week.week_id,
+            )
+            .all()
         )
-        .all()
-    )
+    except ProgrammingError as exc:
+        # Deposit picks run before this revision is applied. A missing column
+        # must not take the method offline; nothing is disabled until it exists.
+        session.rollback()
+        if "disable_enabled" not in str(exc):
+            raise
+        return set()
     keys: set[str] = set()
     for row in rows:
         stats = week_stats_for(
