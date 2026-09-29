@@ -623,10 +623,10 @@ def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
 
-    # Pivot sits to the right of the data table (col H+)
-    if ws["H1"].value is None:
-        ws["H1"] = "Pivot Table"
-        ws["H1"].font = Font(bold=True)
+    # Pivot sits right of the data table, after an empty gap column H (col I+)
+    if ws["I1"].value is None:
+        ws["I1"] = "Pivot Table"
+        ws["I1"].font = Font(bold=True)
 
     for offset, row in enumerate(rows):
         r = offset + 2

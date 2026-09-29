@@ -615,9 +615,9 @@ def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
 
-    if ws["H1"].value is None:
-        ws["H1"] = "Pivot Table"
-        ws["H1"].font = Font(bold=True)
+    if ws["I1"].value is None:
+        ws["I1"] = "Pivot Table"
+        ws["I1"].font = Font(bold=True)
 
     for offset, row in enumerate(rows):
         r = offset + 2
