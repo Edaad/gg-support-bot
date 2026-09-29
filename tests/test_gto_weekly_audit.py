@@ -72,6 +72,18 @@ def _assert_processed_layout(tc: unittest.TestCase, content: bytes, headers) -> 
     ws = load_workbook(io.BytesIO(content))["Processed"]
     tc.assertIsNone(ws.cell(1, max_col + 1).value)
     tc.assertEqual(ws.cell(1, max_col + 2).value, "Pivot Table")
+    # Unticked Excel cell checkbox beside each pivot category row (K3..).
+    categories = {
+        str(ws.cell(r, 6).value).strip().casefold()
+        for r in range(2, ws.max_row + 1)
+        if ws.cell(r, 6).value not in (None, "")
+    }
+    boxes = [r for r in range(1, ws.max_row + 2) if ws.cell(r, 11).value is not None]
+    tc.assertEqual(boxes, list(range(3, 3 + len(categories))))
+    tc.assertTrue(all(ws.cell(r, 11).value is False for r in boxes))
+    with zipfile.ZipFile(io.BytesIO(content)) as z:
+        tc.assertIn("xl/featurePropertyBag/featurePropertyBag.xml", z.namelist())
+        tc.assertIn("xfpb:xfComplement", z.read("xl/styles.xml").decode())
 
 
 def _matching_xlsx(

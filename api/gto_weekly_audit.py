@@ -43,6 +43,7 @@ from db.models import (
 )
 
 from api.audit_reconcile_export import MATCHING_HEADERS
+from api.xlsx_checkboxes import CHECKBOX_NUMBER_FORMAT, apply_cell_checkboxes
 
 RailBucket = Literal["zelle", "venmo", "crypto", "bonuses"]
 _SHEET_TITLES = ("Processed", "Zelle", "Venmo", "Crypto", "Bonuses", "Cashouts")
@@ -81,6 +82,10 @@ _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _CURRENCY_FORMAT = "$#,##0.00;[Red]-$#,##0.00"
 _PROCESSED_TABLE = "ProcessedData"
 _PROCESSED_COL_COUNT = len(PROCESSED_HEADERS)
+# Category pivot (template): header row 2 in column I, one row per category
+# below it, then Grand Total. Checkboxes go in the column right of the pivot.
+_PIVOT_FIRST_ITEM_ROW = 3
+_PIVOT_CHECKBOX_COL = 11  # K
 
 
 class GtoWeeklyAuditError(ValueError):
@@ -659,12 +664,30 @@ def _write_processed(ws: Worksheet, rows: list[MatchingRow]) -> None:
             ws.cell(2, col, MISSING_DATA if col < _PROCESSED_COL_COUNT else None)
         last_row = 2
     _resize_processed_table(ws, last_row)
+    _write_pivot_checkboxes(ws, last_row)
 
     for col in range(1, _PROCESSED_COL_COUNT + 1):
         ws.column_dimensions[get_column_letter(col)].width = 16
     ws.column_dimensions["A"].width = 20
     ws.column_dimensions["F"].width = 18
     ws.column_dimensions["G"].width = 14
+
+
+def _write_pivot_checkboxes(ws: Worksheet, last_row: int) -> None:
+    """Unticked checkbox beside each Category pivot row (not header / Grand Total).
+
+    The pivot is only built when Excel refreshes it on open, so its rows are
+    predicted here: one per distinct Category (Excel groups case-insensitively).
+    """
+    categories = {
+        str(value).strip().casefold()
+        for r in range(2, last_row + 1)
+        if (value := ws.cell(r, 6).value) is not None and str(value).strip()
+    }
+    for offset in range(len(categories)):
+        cell = ws.cell(_PIVOT_FIRST_ITEM_ROW + offset, _PIVOT_CHECKBOX_COL, False)
+        cell.number_format = CHECKBOX_NUMBER_FORMAT
+        cell.alignment = Alignment(horizontal="center", vertical="center")
 
 
 def _as_float(value: Decimal | float | int | None) -> float | None:
@@ -822,7 +845,7 @@ def build_gto_weekly_audit_workbook(
 
     buf = io.BytesIO()
     out_wb.save(buf)
-    return buf.getvalue()
+    return apply_cell_checkboxes(buf.getvalue())
 
 
 def build_gto_weekly_audit_from_uploads(
