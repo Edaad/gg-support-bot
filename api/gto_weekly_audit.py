@@ -70,10 +70,18 @@ PROCESSED_HEADERS = [
     "Source date",
 ]
 
-ZELLE_VENMO_HEADERS = ["Time", "Name", "Amount", "Variant", "Source date"]
-CRYPTO_HEADERS = ["Time", "From", "USD", "Token", "Source date"]
-BONUSES_HEADERS = ["Time", "Player", "Amount", "Type", "Source date"]
-CASHOUTS_HEADERS = ["Time", "Name", "Amount", "Method", "Sent to", "Source date"]
+ZELLE_VENMO_HEADERS = ["Time", "Name", "Amount", "Variant", "Source date", "Notes"]
+CRYPTO_HEADERS = ["Time", "From", "USD", "Token", "Source date", "Notes"]
+BONUSES_HEADERS = ["Time", "Player", "Amount", "Type", "Source date", "Notes"]
+CASHOUTS_HEADERS = [
+    "Time",
+    "Name",
+    "Amount",
+    "Method",
+    "Sent to",
+    "Source date",
+    "Notes",
+]
 
 MISSING_DATA = "Missing data"
 
@@ -758,6 +766,9 @@ def _write_rail_sheet(
 
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(col)].width = 18
+    # Blank Notes column (after Source date) for the auditor to fill in.
+    if headers[-1] == "Notes":
+        ws.column_dimensions[get_column_letter(len(headers))].width = 40
 
 
 def build_gto_weekly_audit_workbook(

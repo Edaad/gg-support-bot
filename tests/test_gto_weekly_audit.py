@@ -446,6 +446,15 @@ class GtoWeeklyAuditUnitTestCase(unittest.TestCase):
         )
         wb = load_workbook(io.BytesIO(content))
 
+        for title in ("Zelle", "Venmo", "Crypto", "Bonuses", "Cashouts"):
+            sheet = wb[title]
+            headers = [sheet.cell(1, c).value for c in range(1, sheet.max_column + 1)]
+            self.assertEqual(headers[-2:], ["Source date", "Notes"], title)
+        processed = wb["Processed"]
+        self.assertNotIn(
+            "Notes",
+            [processed.cell(1, c).value for c in range(1, processed.max_column + 1)],
+        )
         zelle = wb["Zelle"]
         self.assertEqual(zelle.cell(2, 2).value, "Alice Payer")
         self.assertEqual(zelle.cell(2, 5).value, MONDAY.isoformat())

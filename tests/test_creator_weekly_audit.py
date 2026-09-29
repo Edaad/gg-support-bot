@@ -255,6 +255,15 @@ class CreatorWeeklyAuditUnitTestCase(unittest.TestCase):
             MONDAY, files, session=_mock_session()
         )
         wb = load_workbook(io.BytesIO(content))
+        for title in ("Zelle", "Venmo", "Crypto", "Bonuses", "Cashouts"):
+            sheet = wb[title]
+            headers = [sheet.cell(1, c).value for c in range(1, sheet.max_column + 1)]
+            self.assertEqual(headers[-2:], ["Source date", "Notes"], title)
+        processed = wb["Processed"]
+        self.assertNotIn(
+            "Notes",
+            [processed.cell(1, c).value for c in range(1, processed.max_column + 1)],
+        )
 
         self.assertEqual(wb["Zelle"].cell(2, 2).value, "Alice Payer")
         self.assertEqual(wb["Venmo"].cell(2, 4).value, "@mateos-handle")
