@@ -1,14 +1,14 @@
 """Add per-alert destination disable conditions.
 
-Revision ID: 0010_alert_disable
-Revises: 0009_crypto_outbound
+Revision ID: 0011_alert_disable
+Revises: 0010_money_send_notify
 Create Date: 2026-09-28
 """
 
 from migrations import helpers as h
 
-revision = "0010_alert_disable"
-down_revision = "0009_crypto_outbound"
+revision = "0011_alert_disable"
+down_revision = "0010_money_send_notify"
 branch_labels = None
 depends_on = None
 
