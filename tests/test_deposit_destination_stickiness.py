@@ -421,20 +421,20 @@ class DestinationStickinessPickTests(unittest.TestCase):
         pick_mock.assert_not_called()
         self.assertEqual(response_data.get("variant_id"), 31)
 
-    def test_venmo_sticky_falls_back_to_other_tag(self):
+    def test_venmo_ignores_display_sticky(self):
         sticky = SimpleNamespace(destination_tag="@alice", variant_id=31)
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
             patch.object(
                 dep,
                 "list_tier_variants",
-                return_value=[VENMO_B],
+                return_value=[VENMO_A, VENMO_B],
             ),
             patch.object(dep, "get_destination_stickiness", return_value=sticky),
-            patch.object(dep, "list_method_variants", return_value=[]),
+            patch.object(dep, "get_chat_binding", return_value=None),
             patch.object(
                 dep, "_pick_weighted_variant_dicts", return_value=dict(VENMO_B)
-            ),
+            ) as pick_mock,
         ):
             response_data, tier = dep._pick_deposit_variant_response(
                 5,
@@ -444,12 +444,12 @@ class DestinationStickinessPickTests(unittest.TestCase):
                 method_slug="venmo",
             )
 
+        pick_mock.assert_called_once()
+        picked = pick_mock.call_args[0][0]
+        self.assertEqual([v["variant_id"] for v in picked], [31, 32])
         self.assertEqual(response_data.get("variant_id"), 32)
         self.assertEqual(tier, OVER_TIER)
-        meta = response_data[dep._STICKINESS_FALLBACK_KEY]
-        self.assertEqual(meta["bound_tag"], "@alice")
-        self.assertEqual(meta["shown"], "@bob")
-        self.assertEqual(meta["reason"], "does not exist")
+        self.assertNotIn(dep._STICKINESS_FALLBACK_KEY, response_data)
 
     def test_sticky_hides_method_when_no_alternative(self):
         sticky = SimpleNamespace(destination_tag="$eduardok4444", variant_id=21)
@@ -507,6 +507,16 @@ class DestinationStickinessLockTests(unittest.TestCase):
             )
         ensure_mock.assert_not_called()
 
+    def test_no_lock_for_venmo(self):
+        with patch.object(dep, "ensure_destination_stickiness") as ensure_mock:
+            dep._maybe_lock_destination_stickiness(
+                chat_id=-100123,
+                club_id=2,
+                method_slug="venmo",
+                response_data=dict(VENMO_A),
+            )
+        ensure_mock.assert_not_called()
+
 
 class EnsureDestinationStickinessTests(unittest.TestCase):
     def test_insert_if_absent_does_not_overwrite(self):
@@ -551,14 +561,26 @@ class EnsureDestinationStickinessTests(unittest.TestCase):
             row = pmb.ensure_destination_stickiness(
                 telegram_chat_id=-1001,
                 club_id=2,
-                payment_method_slug="venmo",
-                destination_tag="Alice",
+                payment_method_slug="cashapp",
+                destination_tag="$Alice",
                 variant_id=31,
             )
 
         session.add.assert_called_once()
-        self.assertEqual(row.destination_tag, "@alice")
+        self.assertEqual(row.destination_tag, "$alice")
         self.assertEqual(row.variant_id, 31)
+
+    def test_venmo_is_not_locked(self):
+        with patch.object(pmb, "get_db") as get_db_mock:
+            row = pmb.ensure_destination_stickiness(
+                telegram_chat_id=-1001,
+                club_id=2,
+                payment_method_slug="venmo",
+                destination_tag="@alice",
+                variant_id=31,
+            )
+        self.assertIsNone(row)
+        get_db_mock.assert_not_called()
 
 
 class DestinationStickinessFallbackWarningTests(unittest.TestCase):

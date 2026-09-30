@@ -42,7 +42,8 @@ BIND_KIND_SPECIAL_AMOUNT = "special_amount"
 BIND_KIND_MEMO_EMOJI = "memo_emoji"
 
 _BINDABLE_METHOD_SLUGS = frozenset({"venmo", "zelle", "cashapp", "paypal"})
-_DESTINATION_STICKINESS_SLUGS = frozenset({"venmo", "cashapp"})
+# Venmo display-tag stickiness is off. Existing venmo rows are ignored.
+_DESTINATION_STICKINESS_SLUGS = frozenset({"cashapp"})
 
 # Zelle first-time linking uses exact setup amount only (no memo/caption code matching).
 _ZELLE_MEMO_FIRST_TIME_BINDING_ENABLED = False
@@ -626,7 +627,7 @@ def ensure_destination_stickiness(
     destination_tag: str,
     variant_id: int | None = None,
 ) -> DestinationStickiness | None:
-    """Insert-if-absent display stickiness for a native Venmo/Cash App tag.
+    """Insert-if-absent display stickiness for a native Cash App tag.
 
     Never overwrites an existing destination_tag. Returns the row (existing or new),
     or None when the slug/tag is invalid.

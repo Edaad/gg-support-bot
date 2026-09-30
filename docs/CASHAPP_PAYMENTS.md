@@ -14,7 +14,7 @@ Repeat payers (`cashapp_payer_bindings`) auto-bind by **normalized payer name** 
 
 ## Destination tag stickiness
 
-Native Cash App `$cashtag` instructions stick per support group after the bot first shows them in `/deposit` (same table/migration as Venmo — see [`VENMO_FLOW.md`](VENMO_FLOW.md) Part 4). Stripe checkout is never locked as X. If the locked `$tag` is unavailable for the amount, the bot tries another native variant in that tier, else Stripe, with one head-admin Slack warning while X stays broken. No alternative in the tier → Cash App is hidden. `/unbindmethod` clears stickiness.
+Native Cash App `$cashtag` instructions stick per support group after the bot first shows them in `/deposit` (see [`VENMO_FLOW.md`](VENMO_FLOW.md) Part 4). Venmo does not use this lock. Stripe checkout is never locked as X. If the locked `$tag` is unavailable for the amount, the bot tries another native variant in that tier, else Stripe, with one head-admin Slack warning while X stays broken. No alternative in the tier → Cash App is hidden. `/unbindmethod` clears stickiness.
 
 ```bash
 alembic upgrade head   # runs automatically in the Heroku release phase

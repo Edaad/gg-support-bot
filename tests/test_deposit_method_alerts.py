@@ -1002,6 +1002,7 @@ class DisablePickTests(unittest.TestCase):
             ),
             patch.object(dep, "list_tier_variants", return_value=[paused, other]),
             patch.object(dep, "get_destination_stickiness", return_value=sticky),
+            patch.object(dep, "get_chat_binding", return_value=None),
             patch.object(dep, "list_method_variants", return_value=[]),
             patch.object(
                 dep,
@@ -1026,7 +1027,7 @@ class DisablePickTests(unittest.TestCase):
                 method_slug="venmo",
             )
         self.assertEqual(response.get("variant_id"), 2)
-        self.assertIn(dep._STICKINESS_FALLBACK_KEY, response)
+        self.assertNotIn(dep._STICKINESS_FALLBACK_KEY, response)
         self.assertEqual(paused["weight"], 100)
 
     def test_venmo_disabled_with_no_other_variant_hides_method(self):

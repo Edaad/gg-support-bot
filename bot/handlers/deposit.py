@@ -935,7 +935,7 @@ def _pick_venmo_cashapp_destination_response(
             ]
 
     sticky_tag: str | None = None
-    if chat_id is not None:
+    if chat_id is not None and slug == "cashapp":
         sticky = get_destination_stickiness(int(chat_id), slug)
         if sticky and sticky.destination_tag:
             sticky_tag = sticky.destination_tag
@@ -1112,11 +1112,11 @@ def _maybe_lock_destination_stickiness(
     method_slug: str | None,
     response_data: dict | None,
 ) -> None:
-    """Lock native Venmo/Cash App tag after the bot shows destination instructions."""
+    """Lock native Cash App tag after the bot shows destination instructions."""
     if chat_id is None or club_id is None or not response_data:
         return
     slug = (method_slug or "").strip().lower()
-    if slug not in ("venmo", "cashapp"):
+    if slug != "cashapp":
         return
     if _stripe_checkout_enabled(response_data):
         return

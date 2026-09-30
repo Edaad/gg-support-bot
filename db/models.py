@@ -2552,7 +2552,9 @@ class GroupPaymentMethodBinding(Base):
 
 
 class GroupDepositDestinationStickiness(Base):
-    """First bot-shown native Venmo/Cash App destination tag for a support group.
+    """First bot-shown native Cash App destination tag for a support group.
+
+    Venmo rows may still exist from when Venmo stickiness was on. Reads ignore them.
 
     Separate from ``group_payment_method_bindings`` so display stickiness does not
     skip first-time deposit linking.
