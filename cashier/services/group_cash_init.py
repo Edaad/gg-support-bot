@@ -69,6 +69,13 @@ def _claim_failure_note(outcome) -> str:
     )
 
 
+def claim_escalation_source(*, job_id: int, amount, outcome) -> str:
+    """Trace line stored on ``rpa_cashout_*`` events: which /cash job claimed what."""
+    return f"/cash job {int(job_id)} ({amount} chips): claim {outcome.status}" + (
+        f" — {outcome.reason}" if outcome.reason else ""
+    )
+
+
 async def _claim_then_notify(
     *,
     chat_id: int,
@@ -165,6 +172,9 @@ async def _claim_then_notify(
     else:
         note = _claim_failure_note(outcome)
         if outcome.status not in ("disabled", "not_configured"):
+            source = claim_escalation_source(
+                job_id=job_id, amount=amount, outcome=outcome
+            )
             try:
                 if outcome.status == "uncertain":
                     from bot.services.escalation_notification import (
@@ -176,6 +186,7 @@ async def _claim_then_notify(
                         chat_id=int(chat_id),
                         title=group_title,
                         detail=outcome.reason or None,
+                        source=source,
                     )
                 else:
                     from bot.services.escalation_notification import (
@@ -186,6 +197,7 @@ async def _claim_then_notify(
                         club_id=int(club_id),
                         chat_id=int(chat_id),
                         title=group_title,
+                        source=source,
                     )
             except Exception:
                 logger.debug(

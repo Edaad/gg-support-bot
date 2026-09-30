@@ -1112,8 +1112,14 @@ async def notify_rpa_cashout_failed(
     club_id: int | None,
     chat_id: int,
     title: str | None = None,
+    source: str | None = None,
 ) -> None:
-    """Slack when ClubGG auto-claim fails and chips need manual claim."""
+    """Slack when ClubGG auto-claim fails and chips need manual claim.
+
+    ``source`` (e.g. ``/cash job 812: claim fail — …``) is stored on the
+    escalation event so the cashout that caused it can be traced; the Slack
+    text is unchanged.
+    """
     if not escalation_notification_enabled(club_id):
         return
     await notify_escalation_slack(
@@ -1121,6 +1127,7 @@ async def notify_rpa_cashout_failed(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+        trigger_messages=[{"text": source}] if source else None,
     )
 
 
@@ -1130,6 +1137,7 @@ async def notify_rpa_cashout_uncertain(
     chat_id: int,
     title: str | None = None,
     detail: str | None = None,
+    source: str | None = None,
 ) -> None:
     """Slack when ClubGG auto-claim is UNCERTAIN (may have claimed — do not retry)."""
     if not escalation_notification_enabled(club_id):
@@ -1140,6 +1148,7 @@ async def notify_rpa_cashout_uncertain(
         chat_id=int(chat_id),
         title=title,
         message_text=detail,
+        trigger_messages=[{"text": source}] if source else None,
     )
 
 
