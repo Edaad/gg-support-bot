@@ -34,6 +34,79 @@ class DayWindowTest(unittest.TestCase):
         self.assertEqual(fetch.previous_et_activity_date(now), date(2026, 7, 16))
 
 
+class TailWindowTest(unittest.TestCase):
+    def test_tail_is_first_three_hours_of_next_et_day(self):
+        # Day 2026-07-16 ends 04:00 UTC Jul 17; tail runs to 03:00 EDT = 07:00 UTC.
+        start, end = fetch.et_tail_window_utc(date(2026, 7, 16))
+        self.assertEqual(start, datetime(2026, 7, 17, 4, 0, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 7, 17, 7, 0, tzinfo=timezone.utc))
+
+    def test_split_day_and_tail(self):
+        day_end = datetime(2026, 7, 17, 4, 0, tzinfo=timezone.utc)
+        msgs = [
+            {"id": 1, "date": "2026-07-17T03:59:59+00:00"},
+            {"id": 2, "date": "2026-07-17T04:00:00+00:00"},
+            {"id": 3, "date": "2026-07-17T06:30:00+00:00"},
+        ]
+        day, tail = fetch.split_day_and_tail(msgs, day_end_utc=day_end)
+        self.assertEqual([m["id"] for m in day], [1])
+        self.assertEqual([m["id"] for m in tail], [2, 3])
+
+
+class FetchTailTest(unittest.IsolatedAsyncioTestCase):
+    async def test_fetch_stores_day_messages_and_tail_separately(self):
+        def _m(mid, when):
+            return SimpleNamespace(
+                id=mid,
+                date=when,
+                sender_id=1,
+                sender=None,
+                message=f"m{mid}",
+                text=f"m{mid}",
+                reply_to=None,
+                media=None,
+                edit_date=None,
+                action=None,
+            )
+
+        # Newest → oldest, like Telethon iter_messages(offset_date=...).
+        history = [
+            _m(5, datetime(2026, 7, 17, 7, 30, tzinfo=timezone.utc)),  # after tail
+            _m(4, datetime(2026, 7, 17, 6, 0, tzinfo=timezone.utc)),  # tail
+            _m(3, datetime(2026, 7, 17, 3, 0, tzinfo=timezone.utc)),  # day
+            _m(2, datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc)),  # day
+            _m(1, datetime(2026, 7, 16, 3, 0, tzinfo=timezone.utc)),  # previous day
+        ]
+        seen_offset = {}
+
+        async def _iter(chat_id, offset_date=None):
+            seen_offset["offset"] = offset_date
+            for item in history:
+                if offset_date is None or item.date < offset_date:
+                    yield item
+
+        client = SimpleNamespace(iter_messages=_iter)
+        with (
+            patch.object(fetch, "_mark_attempt_start"),
+            patch.object(fetch, "_mark_attempt_complete") as complete,
+        ):
+            result = await fetch.fetch_transcript_for_chat(
+                MagicMock(),
+                chat_id=-100,
+                club_id=2,
+                activity_date=date(2026, 7, 16),
+                client=client,
+            )
+        self.assertEqual(
+            seen_offset["offset"], datetime(2026, 7, 17, 7, 0, tzinfo=timezone.utc)
+        )
+        kwargs = complete.call_args.kwargs
+        self.assertEqual([m["id"] for m in kwargs["messages"]], [2, 3])
+        self.assertEqual([m["id"] for m in kwargs["tail_messages"]], [4])
+        self.assertEqual(result.message_count, 2)
+        self.assertEqual(result.tail_message_count, 1)
+
+
 class SerializeMessageTest(unittest.TestCase):
     def test_serialize_human_message(self):
         sender = SimpleNamespace(
@@ -126,6 +199,10 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=SimpleNamespace(complete=2, failed=0, timed_out=0),
             ) as analyze_mock,
+            patch(
+                "bot.services.response_audit.run_response_audit",
+                return_value=SimpleNamespace(events=4, candidates=1),
+            ) as audit_mock,
         ):
             fetch_mock.return_value = summary
             result = await cron.run_group_chat_transcript_extraction(
@@ -133,6 +210,10 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 budget_seconds=60,
             )
 
+        # Response audit runs after analysis for the same day (force rebuild).
+        audit_mock.assert_called_once_with(date(2026, 7, 16), chat_id=None, force=True)
+        self.assertEqual(result["audit_events"], 4)
+        self.assertEqual(result["audit_candidates"], 1)
         self.assertEqual(result["complete"], 2)
         self.assertEqual(result["failed"], 1)
         self.assertEqual(result["analysis_complete"], 2)
@@ -189,8 +270,15 @@ class CronPauseResumeTest(unittest.IsolatedAsyncioTestCase):
                 new_callable=AsyncMock,
                 return_value=SimpleNamespace(complete=0, failed=0, timed_out=0),
             ),
+            patch(
+                "bot.services.response_audit.run_response_audit",
+                side_effect=RuntimeError("db down"),
+            ),
         ):
-            await cron.run_group_chat_transcript_extraction(bot_token="tok-123")
+            result = await cron.run_group_chat_transcript_extraction(
+                bot_token="tok-123"
+            )
+        self.assertTrue(result["audit_failed"])
 
         start.assert_called_once_with("tok-123")
 

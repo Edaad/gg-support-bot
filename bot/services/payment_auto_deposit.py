@@ -29,6 +29,7 @@ from bot.services.deposit_funnel_events import (
     record_chips_credited_funnel,
     record_payment_funnel_from_ingest,
 )
+from bot.services.automated_staff_messages import KIND_AUTO_ADD_CONFIRMATION
 from bot.services.payment_group_notify import support_bot_tokens_to_try
 from bot.services.player_details import gg_player_id_from_title, parse_group_title_parts
 from club_gc_settings import get_club_gc_config_by_link_club_id
@@ -51,6 +52,15 @@ CREATOR_STAFF_FOOTER_RECENT_ADD = (
     f"last {DEPOSIT_COMMAND_WINDOW_MINUTES} minutes. Chips may already have been "
     "added for this payment; verify before acting."
 )
+
+
+def is_manual_action_staff_notification(text: str | None) -> bool:
+    """True when the staff notification carries a *Manual action required* footer."""
+    body = text or ""
+    return (
+        CREATOR_STAFF_FOOTER_MANUAL in body
+        or CREATOR_STAFF_FOOTER_NO_RECENT_DEPOSIT in body
+    )
 
 
 def is_fully_automatic_staff_notification(text: str | None) -> bool:
@@ -207,7 +217,12 @@ async def _send_add_confirmation(
     cfg = get_club_gc_config_by_link_club_id(int(club_id))
     if cfg:
         try:
-            await _send_add_confirmation_once(cfg, int(telegram_chat_id), text)
+            await _send_add_confirmation_once(
+                cfg,
+                int(telegram_chat_id),
+                text,
+                audit_kind=KIND_AUTO_ADD_CONFIRMATION,
+            )
             logger.info(
                 "payment_auto_deposit: MTProto confirmation sent chat_id=%s club_id=%s",
                 telegram_chat_id,

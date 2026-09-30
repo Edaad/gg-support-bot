@@ -512,12 +512,18 @@ async def ingest_cashapp_payment(
         await deliver_payment_notification(
             setup_warning_text,
             bind_chat_ids=bind_chat_ids,
+            support_chat_id=setup_target_chat_id,
+            support_club_id=setup_club_id,
+            support_group_title=setup_target_title,
         )
 
     notif_posts = await deliver_payment_notification(
         text,
         reply_markup=notif_markup,
         bind_chat_ids=bind_chat_ids,
+        support_chat_id=getattr(payment, "telegram_chat_id", None),
+        support_club_id=getattr(payment, "club_id", None),
+        support_group_title=group_title,
     )
     from notification.payment_notification_posts import (
         record_payment_notification_posts,

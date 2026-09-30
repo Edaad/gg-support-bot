@@ -22,6 +22,7 @@ from club_gc_settings import (
     is_dm_gc_verbose_logging,
 )
 from bot.handlers.groups import send_post_gc_intro_bundle
+from bot.services import automated_staff_messages as asm
 from bot.services.club import ensure_group_chat_linked
 from bot.services.club import get_group_title_for_chat
 from bot.services.mtproto_group_create import (
@@ -256,7 +257,8 @@ async def _send_player_dm_safe(
     client: TelegramClient, player: User, text: str
 ) -> tuple[bool, str | None]:
     try:
-        await client.send_message(player, text)
+        sent = await client.send_message(player, text)
+        await asm.record_sent(sent, kind=asm.KIND_PLAYER_DM_REDIRECT)
         return True, None
     except Exception as e:
         logger.warning("dm_gc player DM failed: %s", type(e).__name__)
@@ -295,7 +297,8 @@ async def _send_staff_gc_confirmation(
     if not _is_outgoing_gc_command(trigger):
         return
     try:
-        await client.send_message(player, text)
+        sent = await client.send_message(player, text)
+        await asm.record_sent(sent, kind=asm.KIND_STAFF_GC_CONFIRMATION)
     except Exception as e:
         logger.warning("dm_gc staff /gc confirmation failed: %s", type(e).__name__)
 

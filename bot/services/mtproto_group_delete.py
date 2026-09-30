@@ -30,6 +30,7 @@ from telethon.tl.types import Channel, Chat, ChatBannedRights
 from telethon.utils import get_input_channel
 
 from club_gc_settings import ClubGcConfig
+from bot.services import automated_staff_messages as asm
 from bot.services.club import get_club_for_chat
 from bot.services.mtproto_group_create import _with_single_flood_retry, get_mtproto_lock
 from bot.services.support_group_chats import (
@@ -67,7 +68,8 @@ async def _notify_delete_failure(
         f"[{cfg.club_display_name}] /delete confirm failed (chat {chat_id}):\n{reason}"
     )[:4096]
     try:
-        await client.send_message(admin_id, text)
+        sent = await client.send_message(admin_id, text)
+        await asm.record_sent(sent, kind=asm.KIND_ADMIN_DM)
     except Exception:
         logger.warning(
             "group_delete: admin DM failed club=%s admin=%s chat_id=%s reason=%s",

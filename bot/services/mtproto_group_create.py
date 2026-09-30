@@ -43,6 +43,7 @@ from club_gc_settings import (
     resolve_link_join_cfg,
 )
 from bot.services.mtproto_session_db import load_session_string_for_club
+from bot.services import automated_staff_messages as asm
 
 
 import os
@@ -815,7 +816,8 @@ async def send_player_dm_via_club(
         try:
             if not await client.is_user_authorized():
                 return False, "not_authorized"
-            await client.send_message(player_user, body)
+            sent = await client.send_message(player_user, body)
+            await asm.record_sent(sent, kind=asm.KIND_PLAYER_DM_REDIRECT)
             return True, None
         except Exception as e:
             logger.warning(
@@ -1051,10 +1053,11 @@ async def create_support_group(
             )
             inner = tmpl.format(invite_link=link_for_tpl, group_title=title_out)
             try:
-                await _with_single_flood_retry(
+                inner_msg = await _with_single_flood_retry(
                     "send_message(inner)",
                     lambda: client.send_message(group_ent, inner),
                 )
+                await asm.record_sent(inner_msg, kind=asm.KIND_GC_INVITE_MESSAGE)
                 initial_sent = True
             except Exception as e:
                 warnings_local.append(

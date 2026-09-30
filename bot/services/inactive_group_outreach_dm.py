@@ -17,6 +17,7 @@ from club_gc_settings import (
     get_inactive_outreach_dm_interval_sec,
     is_inactive_outreach_dm_enabled,
 )
+from bot.services import automated_staff_messages as asm
 from bot.services.inactive_group_outreach_staging import STAGE_STATUS_STAGED
 
 logger = logging.getLogger(__name__)
@@ -305,7 +306,8 @@ async def _send_one_dm(
         raise
 
     async def _send():
-        await client.send_message(player_ent, message)
+        sent = await client.send_message(player_ent, message)
+        await asm.record_sent(sent, kind=asm.KIND_OUTREACH_DM)
 
     try:
         await call_with_flood_retry(

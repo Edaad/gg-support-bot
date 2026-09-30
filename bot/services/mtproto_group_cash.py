@@ -11,6 +11,7 @@ from typing import Any
 from telethon import events
 
 from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
+from bot.services import automated_staff_messages as asm
 from bot.services.club import get_club_for_chat
 from bot.services.mtproto_group_add import _format_money, _parse_money_token
 from bot.services.mtproto_group_create import (
@@ -147,6 +148,7 @@ async def _execute_cash_flow(
                 )
                 return
             owed_msg = await client.send_message(chat_id, owed_text)
+            await asm.record_sent(owed_msg, kind=asm.KIND_CASH_OWED_PIN)
             if record_id is not None:
                 _save_owed_message_id(record_id, owed_msg.id)
             try:
@@ -159,7 +161,8 @@ async def _execute_cash_flow(
                     type(e).__name__,
                 )
             if send_asap:
-                await client.send_message(chat_id, CASH_ASAP_MESSAGE)
+                asap_msg = await client.send_message(chat_id, CASH_ASAP_MESSAGE)
+                await asm.record_sent(asap_msg, kind=asm.KIND_CASH_ASAP)
         finally:
             if owns_client:
                 await client.disconnect()
@@ -281,7 +284,10 @@ async def handle_group_cash_outgoing(
     try:
         chat = await event.get_chat()
         group_title = getattr(chat, "title", None) or group_title
-        await event.client.send_message(chat_id, WORKING_ON_CASHOUT_MESSAGE)
+        working_msg = await event.client.send_message(
+            chat_id, WORKING_ON_CASHOUT_MESSAGE
+        )
+        await asm.record_sent(working_msg, kind=asm.KIND_STAFF_CASH_WORKING)
     except Exception as e:
         logger.exception(
             "group_cash: working message failed club=%s chat_id=%s",

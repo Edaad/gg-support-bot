@@ -10,6 +10,7 @@ from typing import Any
 from telethon import events
 
 from club_gc_settings import ClubGcConfig
+from bot.services import automated_staff_messages as asm
 from bot.services.club import get_club_for_chat
 from bot.services.mtproto_bot_fallback import bot_delete_message
 
@@ -80,7 +81,8 @@ async def handle_group_lmk_outgoing(
     )
 
     try:
-        await event.client.send_message(event.chat_id, LMK_MESSAGE)
+        sent = await event.client.send_message(event.chat_id, LMK_MESSAGE)
+        await asm.record_sent(sent, kind=asm.KIND_STAFF_LMK)
     except Exception:
         logger.exception(
             "group_lmk: send failed club=%s chat_id=%s",

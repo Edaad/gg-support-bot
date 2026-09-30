@@ -1360,6 +1360,10 @@ class SupportGroupChat(Base):
     escalation_post_deposit_idle_pending = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    # Internal / test group: skipped by the response audit (scripts/set_support_group_internal.py).
+    is_internal = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -2260,6 +2264,9 @@ class GroupChatDailyTranscript(Base):
     )
     message_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
     messages = Column(JSONB, nullable=True)
+    # [D+1 00:00, D+1 03:00) ET. Only the response audit reads this; analysis,
+    # activity counts and message_count use ``messages`` (day D) alone.
+    tail_messages = Column(JSONB, nullable=True)
     error = Column(Text, nullable=True)
     attempt_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
     fetched_at = Column(DateTime(timezone=True), nullable=True)
@@ -3379,3 +3386,164 @@ class OutboundSend(Base):
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+# BIGINT/BIGSERIAL in Postgres; INTEGER on SQLite so in-memory unit tests autoincrement.
+_BigIntPk = BigInteger().with_variant(Integer, "sqlite")
+
+
+class AutomatedStaffMessage(Base):
+    """A message the bot sent through a club MTProto (staff) session.
+
+    The response audit uses this to tell a human staff reply apart from an
+    automated post made with the same Telegram account.
+    """
+
+    __tablename__ = "automated_staff_messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "chat_id",
+            "message_id",
+            name="uq_automated_staff_messages_chat_id_message_id",
+        ),
+    )
+
+    id = Column(_BigIntPk, primary_key=True)
+    chat_id = Column(BigInteger, nullable=False)
+    message_id = Column(BigInteger, nullable=False)
+    kind = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class StaffHandleId(Base):
+    """Cached Telegram user id for a GC_USERS_TO_INVITE handle (resolved via MTProto)."""
+
+    __tablename__ = "staff_handle_ids"
+
+    handle = Column(Text, primary_key=True)
+    telegram_user_id = Column(BigInteger, nullable=True)
+    error = Column(Text, nullable=True)
+    resolved_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ResponseEvent(Base):
+    """One moment a human support agent was needed in a player support group."""
+
+    __tablename__ = "response_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "activity_date",
+            "chat_id",
+            "clock_start_msg_id",
+            "start_kind",
+            name="uq_response_events_natural_key",
+        ),
+        CheckConstraint(
+            "start_kind IN ('player_question', 'bot_handoff', "
+            "'slack_escalation', 'crypto_txid')",
+            name="ck_response_events_start_kind",
+        ),
+        Index("ix_response_events_activity_date", "activity_date"),
+        Index("ix_response_events_is_candidate", "is_candidate"),
+    )
+
+    id = Column(_BigIntPk, primary_key=True)
+    activity_date = Column(Date, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    group_title = Column(Text, nullable=True)
+    start_kind = Column(String(32), nullable=False)
+    clock_start_at = Column(DateTime(timezone=True), nullable=False)
+    clock_start_msg_id = Column(BigInteger, nullable=True)
+    escalation_event_id = Column(
+        BigInteger,
+        ForeignKey("escalation_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    clock_stop_at = Column(DateTime(timezone=True), nullable=True)
+    clock_stop_msg_id = Column(BigInteger, nullable=True)
+    responder_telegram_user_id = Column(BigInteger, nullable=True)
+    # NULL = no staff reply by the end of the transcript tail.
+    response_seconds = Column(Integer, nullable=True)
+    is_candidate = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    pre_labels = Column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+    excerpt = Column(JSONB, nullable=True)
+    rule_version = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    verdict = relationship(
+        "ResponseAuditVerdict",
+        back_populates="response_event",
+        uselist=False,
+        passive_deletes=True,
+    )
+
+
+class ResponseAuditVerdict(Base):
+    """External judge's verdict on one candidate response event."""
+
+    __tablename__ = "response_audit_verdicts"
+    __table_args__ = (
+        UniqueConstraint(
+            "response_event_id",
+            name="uq_response_audit_verdicts_response_event_id",
+        ),
+        CheckConstraint(
+            "verdict IN ('BREACH', 'EXCUSED', 'NOT_A_TRIGGER', 'OWNER_COVER', "
+            "'NEEDS_REVIEW')",
+            name="ck_response_audit_verdicts_verdict",
+        ),
+    )
+
+    id = Column(_BigIntPk, primary_key=True)
+    response_event_id = Column(
+        BigInteger,
+        ForeignKey("response_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    verdict = Column(Text, nullable=False)
+    reason_code = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    sling_user_id = Column(BigInteger, nullable=True)
+    agent_name = Column(Text, nullable=True)
+    judge_version = Column(Text, nullable=True)
+    disputed = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    response_event = relationship("ResponseEvent", back_populates="verdict")
+
+
+class ResponseAuditRun(Base):
+    """Last response-audit builder run per ET activity day."""
+
+    __tablename__ = "response_audit_runs"
+
+    activity_date = Column(Date, primary_key=True)
+    ran_at = Column(DateTime(timezone=True), nullable=False)
+    rule_version = Column(Text, nullable=False)
+    chats_scanned = Column(Integer, nullable=False, server_default=text("0"))
+    chats_excluded = Column(Integer, nullable=False, server_default=text("0"))
+    events = Column(Integer, nullable=False, server_default=text("0"))
+    candidates = Column(Integer, nullable=False, server_default=text("0"))
