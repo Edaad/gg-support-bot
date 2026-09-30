@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.services import cashout_handle_validation as cv
+from bot.services import cashout_previous_tags as prev
 from bot.services import clubgg_deposit_api as api
 from bot.handlers import cashout as co
 
@@ -320,6 +321,160 @@ class AutoCashoutConfirmationTests(unittest.TestCase):
             co._auto_cashout_confirmation(2000, "Venmo", hours_range="8 AM - 11 PM"),
             "Your cashout of $2000 via Venmo will be processed "
             "during business hours (8 AM - 11 PM EST).",
+        )
+
+
+class PreviousTagTests(unittest.TestCase):
+    def test_newest_valid_tag_wins_and_duplicates_collapse(self):
+        tags = prev.distinct_valid_tags(
+            ["please use @Jane", "not a tag", "@jane", "@other"],
+            "venmo",
+        )
+        self.assertEqual(tags, ["@jane", "@other"])
+
+    def test_long_address_button_keeps_both_ends(self):
+        tag = "0x" + ("a" * 80)
+        label = co._tag_button_label(tag)
+        self.assertLessEqual(len(label), 64)
+        self.assertTrue(label.startswith(tag[:28]))
+        self.assertTrue(label.endswith(tag[-35:]))
+
+
+class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
+    def _query(self):
+        message = SimpleNamespace(
+            message_id=10,
+            chat=SimpleNamespace(id=-100, send_message=AsyncMock()),
+        )
+        query = SimpleNamespace(
+            data="",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=message,
+        )
+        update = SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=555),
+            effective_chat=SimpleNamespace(id=-100),
+        )
+        context = SimpleNamespace(
+            chat_data={
+                "cashout_club_id": 1,
+                "cashout_chat_id": -100,
+                "cashout_current_method": {"id": 7, "slug": "venmo", "name": "Venmo"},
+                "cashout_payment_sub_option_id": None,
+            }
+        )
+        return update, context
+
+    async def test_no_history_asks_for_a_typed_tag(self):
+        update, context = self._query()
+        with patch(
+            "bot.services.cashout_previous_tags.list_previous_cashout_tags",
+            return_value=[],
+        ):
+            state = await co._auto_continue_after_method(
+                update.callback_query, context, slug="venmo", asset=None
+            )
+        self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
+        text = update.callback_query.edit_message_text.await_args.args[0]
+        self.assertIn("Venmo @username", text)
+        self.assertNotIn("cashout_auto_previous_tags", context.chat_data)
+
+    async def test_history_shows_tags_then_new_tag(self):
+        update, context = self._query()
+        with patch(
+            "bot.services.cashout_previous_tags.list_previous_cashout_tags",
+            return_value=["@jane", "@other"],
+        ) as lookup:
+            state = await co._auto_continue_after_method(
+                update.callback_query, context, slug="venmo", asset=None
+            )
+        self.assertEqual(state, co.CASHOUT_AUTO_PREVIOUS)
+        lookup.assert_called_once_with(
+            club_id=1,
+            chat_id=-100,
+            method_id=7,
+            sub_option_id=None,
+            slug="venmo",
+        )
+        markup = update.callback_query.edit_message_text.await_args.kwargs[
+            "reply_markup"
+        ]
+        labels = [row[0].text for row in markup.inline_keyboard]
+        callbacks = [row[0].callback_data for row in markup.inline_keyboard]
+        self.assertEqual(labels, ["@jane", "@other", "New tag"])
+        self.assertEqual(callbacks, ["coautoprev:0", "coautoprev:1", "coautoprev:new"])
+
+    async def test_lookup_failure_falls_through_to_typing(self):
+        update, context = self._query()
+        with patch(
+            "bot.services.cashout_previous_tags.list_previous_cashout_tags",
+            side_effect=RuntimeError("db down"),
+        ):
+            state = await co._auto_continue_after_method(
+                update.callback_query, context, slug="venmo", asset=None
+            )
+        self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
+
+    async def test_new_tag_asks_them_to_type(self):
+        update, context = self._query()
+        update.callback_query.data = "coautoprev:new"
+        context.chat_data["cashout_auto_previous_tags"] = ["@jane"]
+        context.chat_data["cashout_auto_asset"] = None
+        with patch.object(
+            co, "handle_stale_flow_callback", new=AsyncMock(return_value=False)
+        ):
+            state = await co.cashout_auto_previous_chosen(update, context)
+        self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
+        text = update.callback_query.edit_message_text.await_args.args[0]
+        self.assertIn("Venmo @username", text)
+        self.assertNotIn("cashout_auto_previous_tags", context.chat_data)
+
+    async def test_chosen_tag_is_used_for_the_claim(self):
+        update, context = self._query()
+        update.callback_query.data = "coautoprev:0"
+        context.chat_data["cashout_auto_previous_tags"] = ["@jane", "@other"]
+        with (
+            patch.object(
+                co, "handle_stale_flow_callback", new=AsyncMock(return_value=False)
+            ),
+            patch.object(
+                co,
+                "_auto_run_claim",
+                new=AsyncMock(return_value=co.ConversationHandler.END),
+            ) as claim,
+        ):
+            state = await co.cashout_auto_previous_chosen(update, context)
+        claim.assert_awaited_once()
+        self.assertEqual(context.chat_data["cashout_auto_payout_details"], "@jane")
+        self.assertEqual(
+            update.callback_query.edit_message_text.await_args.args[0],
+            "Using @jane.",
+        )
+        self.assertIs(state, claim.return_value)
+
+    async def test_crypto_coin_is_passed_to_the_lookup(self):
+        update, context = self._query()
+        context.chat_data["cashout_current_method"] = {
+            "id": 9,
+            "slug": "crypto",
+            "name": "Crypto",
+        }
+        context.chat_data["cashout_payment_sub_option_id"] = 42
+        with patch(
+            "bot.services.cashout_previous_tags.list_previous_cashout_tags",
+            return_value=[],
+        ) as lookup:
+            await co._auto_continue_after_method(
+                update.callback_query, context, slug="crypto", asset="ETH"
+            )
+        lookup.assert_called_once_with(
+            club_id=1,
+            chat_id=-100,
+            method_id=9,
+            sub_option_id=42,
+            slug="crypto",
         )
 
 

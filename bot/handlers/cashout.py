@@ -77,7 +77,8 @@ CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
     CASHOUT_AUTO_CHOOSE,
     CASHOUT_AUTO_SUB,
     CASHOUT_AUTO_HANDLE,
-) = range(4, 9)
+    CASHOUT_AUTO_PREVIOUS,
+) = range(4, 10)
 
 
 def _cashout_amount_prompt_kwargs(context):
@@ -813,8 +814,7 @@ async def cashout_auto_method_chosen(update, context):
 
     context.chat_data["cashout_payment_sub_option_id"] = None
     context.chat_data["cashout_method_display_name"] = method["name"]
-    await _auto_prompt_handle(query, slug=slug, asset=None)
-    return CASHOUT_AUTO_HANDLE
+    return await _auto_continue_after_method(query, context, slug=slug, asset=None)
 
 
 async def cashout_auto_sub_chosen(update, context):
@@ -844,8 +844,115 @@ async def cashout_auto_sub_chosen(update, context):
     context.chat_data["cashout_payment_sub_option_id"] = sub_id
     display = f"{method.get('name', '')} \u2014 {sub['name']}"
     context.chat_data["cashout_method_display_name"] = display
-    await _auto_prompt_handle(query, slug=method.get("slug"), asset=sub["name"])
-    return CASHOUT_AUTO_HANDLE
+    return await _auto_continue_after_method(
+        query, context, slug=method.get("slug"), asset=sub["name"]
+    )
+
+
+_TAG_BUTTON_TEXT_MAX = 64
+
+
+def _tag_button_label(tag: str) -> str:
+    """Inline button text is capped at 64 characters. Keep both ends of a long address."""
+    if len(tag) <= _TAG_BUTTON_TEXT_MAX:
+        return tag
+    head = 28
+    tail = _TAG_BUTTON_TEXT_MAX - head - 1
+    return f"{tag[:head]}\u2026{tag[-tail:]}"
+
+
+async def _auto_continue_after_method(query, context, *, slug, asset):
+    """Offer tags we have already sent, or ask them to type one."""
+    context.chat_data["cashout_auto_asset"] = asset
+    tags: list[str] = []
+    club_id = context.chat_data.get("cashout_club_id")
+    chat_id = context.chat_data.get("cashout_chat_id")
+    method = context.chat_data.get("cashout_current_method") or {}
+    method_id = method.get("id")
+    if club_id is not None and chat_id is not None and method_id is not None:
+        try:
+            from bot.services.cashout_previous_tags import list_previous_cashout_tags
+
+            tags = list_previous_cashout_tags(
+                club_id=int(club_id),
+                chat_id=int(chat_id),
+                method_id=int(method_id),
+                sub_option_id=context.chat_data.get("cashout_payment_sub_option_id"),
+                slug=slug or "",
+            )
+        except Exception:
+            logger.exception(
+                "auto cashout: previous tag lookup failed chat_id=%s", chat_id
+            )
+            tags = []
+    if not tags:
+        context.chat_data.pop("cashout_auto_previous_tags", None)
+        await _auto_prompt_handle(query, slug=slug, asset=asset)
+        return CASHOUT_AUTO_HANDLE
+
+    context.chat_data["cashout_auto_previous_tags"] = tags
+    buttons = [
+        [
+            InlineKeyboardButton(
+                _tag_button_label(tag), callback_data=f"coautoprev:{index}"
+            )
+        ]
+        for index, tag in enumerate(tags)
+    ]
+    buttons.append([InlineKeyboardButton("New tag", callback_data="coautoprev:new")])
+    markup = InlineKeyboardMarkup(buttons)
+    text = "Choose a previous tag, or add a new one."
+    try:
+        await query.edit_message_text(text, reply_markup=markup)
+    except Exception:
+        try:
+            sent = await query.message.chat.send_message(text, reply_markup=markup)
+            register_flow_callback_message(context, sent.message_id, flow="cashout")
+        except Exception:
+            pass
+    return CASHOUT_AUTO_PREVIOUS
+
+
+async def cashout_auto_previous_chosen(update, context):
+    query = update.callback_query
+    if not query:
+        return ConversationHandler.END
+    if await handle_stale_flow_callback(
+        update,
+        context,
+        flow="cashout",
+        handler="cashout_auto_previous_chosen",
+        cleanup=_cleanup,
+    ):
+        return ConversationHandler.END
+    await query.answer()
+    data = query.data or ""
+    method = context.chat_data.get("cashout_current_method", {})
+    slug = method.get("slug")
+    asset = context.chat_data.get("cashout_auto_asset")
+    if data == "coautoprev:new":
+        context.chat_data.pop("cashout_auto_previous_tags", None)
+        await _auto_prompt_handle(query, slug=slug, asset=asset)
+        return CASHOUT_AUTO_HANDLE
+
+    tags = context.chat_data.get("cashout_auto_previous_tags") or []
+    try:
+        index = int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        return CASHOUT_AUTO_PREVIOUS
+    if index < 0 or index >= len(tags):
+        return CASHOUT_AUTO_PREVIOUS
+    normalized = validate_cashout_handle(slug, tags[index])
+    if not normalized:
+        context.chat_data.pop("cashout_auto_previous_tags", None)
+        await _auto_prompt_handle(query, slug=slug, asset=asset)
+        return CASHOUT_AUTO_HANDLE
+    context.chat_data["cashout_auto_payout_details"] = normalized
+    try:
+        await query.edit_message_text(f"Using {normalized}.")
+    except Exception:
+        pass
+    return await _auto_run_claim(update, context)
 
 
 async def _auto_prompt_handle(query, *, slug, asset):
@@ -1267,6 +1374,8 @@ def _cleanup(context):
         "cashout_auto_claim_key",
         "cashout_auto_claimed",
         "cashout_auto_payout_details",
+        "cashout_auto_previous_tags",
+        "cashout_auto_asset",
         "cashout_union_shorthand",
         "cashout_method_display_name",
         "cashout_payment_sub_option_id",
@@ -1383,6 +1492,13 @@ def get_cashout_handler() -> ConversationHandler:
             CASHOUT_AUTO_SUB: [
                 CallbackQueryHandler(
                     cashout_auto_sub_chosen, pattern=r"^coautosub:\d+$"
+                ),
+                _CASHOUT_CANCEL,
+                MessageHandler(~filters.COMMAND, cashout_auto_offscript),
+            ],
+            CASHOUT_AUTO_PREVIOUS: [
+                CallbackQueryHandler(
+                    cashout_auto_previous_chosen, pattern=r"^coautoprev:(new|\d+)$"
                 ),
                 _CASHOUT_CANCEL,
                 MessageHandler(~filters.COMMAND, cashout_auto_offscript),
