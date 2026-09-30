@@ -28,6 +28,9 @@ from bot.services.mtproto_group_create import (
 
 logger = logging.getLogger(__name__)
 
+# Every /add confirmation starts with this; the response audit matches on it.
+ADD_CONFIRMATION_PREFIX = "Added "
+
 ADD_CONFIRMATION_MESSAGES = (
     "good luck",
     "best of luck",
@@ -144,16 +147,19 @@ def format_add_confirmation(
     phrase = random.choice(ADD_CONFIRMATION_MESSAGES)
     amt = _format_chips(amount)
     if bonus is not None:
-        core = f"Added {amt} plus {_format_decimal_display(bonus)} bonus, {phrase}"
+        core = (
+            f"{ADD_CONFIRMATION_PREFIX}{amt} plus "
+            f"{_format_decimal_display(bonus)} bonus, {phrase}"
+        )
     else:
-        core = f"Added {amt}, {phrase}"
+        core = f"{ADD_CONFIRMATION_PREFIX}{amt}, {phrase}"
     if name:
         return f"{core} {name}!!"
     return f"{core}!!"
 
 
 def format_bonus_confirmation(amount: Decimal) -> str:
-    return f"Added {_format_chips(amount)} as a bonus!"
+    return f"{ADD_CONFIRMATION_PREFIX}{_format_chips(amount)} as a bonus!"
 
 
 async def _send_add_confirmation_once(

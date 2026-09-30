@@ -1,9 +1,9 @@
 """Flag a support group as internal / test so the response audit skips it.
 
 Usage:
-  python scripts/set_support_group_internal.py --chat-id -100123          # mark internal
-  python scripts/set_support_group_internal.py --chat-id -100123 --off    # clear the flag
-  python scripts/set_support_group_internal.py --list                     # show flagged chats
+  python scripts/set_internal_chat.py --chat-id -100123          # mark internal
+  python scripts/set_internal_chat.py --chat-id -100123 --off    # clear the flag
+  python scripts/set_internal_chat.py --list                     # show flagged chats
 """
 
 from __future__ import annotations

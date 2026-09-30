@@ -27,6 +27,7 @@ CHAT = -1001234567890
 INTERNAL_CHAT = -1001111111111
 TEST_CHAT = -1002222222222
 OPS_CHAT = -1003333333333
+ACCOUNTANT_CHAT = -1004444444444
 PLAYER = 111
 STAFF = 222
 CLUB_ACCOUNT = 333
@@ -132,6 +133,18 @@ class RunResponseAuditTests(unittest.TestCase):
                 self._transcript(s, chat, question)
             # Club-linked but no support row and not a GC title → skipped.
             self._transcript(s, OPS_CHAT, question)
+            # Only non-staff participant is @rtaccountant → skipped.
+            s.add(
+                SupportGroupChat(
+                    club_key="round_table",
+                    club_display_name="Round Table",
+                    telegram_chat_id=ACCOUNTANT_CHAT,
+                    telegram_chat_title="RT / 5555-0000 / Ledger",
+                )
+            )
+            accountant = msg(1, at(10, 0), 9999, "where is the sheet?")
+            accountant["username"] = "rtaccountant"
+            self._transcript(s, ACCOUNTANT_CHAT, [accountant])
             s.add(
                 AutomatedStaffMessage(chat_id=CHAT, message_id=2, kind="cash_owed_pin")
             )
@@ -149,7 +162,7 @@ class RunResponseAuditTests(unittest.TestCase):
     def test_builds_events_skips_internal_test_and_non_support_chats(self):
         summary = ra.run_response_audit(DAY)
         self.assertEqual(summary.chats_scanned, 1)
-        self.assertEqual(summary.chats_excluded, 3)
+        self.assertEqual(summary.chats_excluded, 4)
         self.assertEqual(summary.events, 1)
         self.assertEqual(summary.candidates, 1)
         with self.factory() as s:

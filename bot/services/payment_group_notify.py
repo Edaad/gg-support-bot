@@ -25,13 +25,15 @@ def _format_amount_dollars(amount_cents: int) -> str:
     return f"${dollars:,}"
 
 
+# Parts of the "payment received" line; the response audit matches on these.
+PAYMENT_RECEIVED_PREFIX = "We have received your payment for "
+PAYMENT_RECEIVED_SUFFIX = ", credits will be loaded to your account shortly!!"
+
+
 def format_payment_received_message(amount_cents: int) -> str:
     """Whole-dollar confirmation text for the player's support group."""
     amount = _format_amount_dollars(amount_cents)
-    return (
-        f"We have received your payment for {amount}, "
-        "credits will be loaded to your account shortly!!"
-    )
+    return f"{PAYMENT_RECEIVED_PREFIX}{amount}{PAYMENT_RECEIVED_SUFFIX}"
 
 
 def format_payment_goods_services_refund_message(amount_cents: int) -> str:

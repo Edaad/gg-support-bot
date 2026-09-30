@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from db.connection import get_db_dependency
 from db.models import (
+    AuditShift,
     GroupChatDailyActivity,
     GroupChatDailyTranscript,
     ResponseAuditRun,
@@ -36,6 +37,8 @@ TOKEN_HEADER = "X-Audit-Token"
 _ET = ZoneInfo("America/New_York")
 _PT = ZoneInfo("America/Los_Angeles")
 _FAST_SECONDS = 120
+# An event belongs to the shift on duty at clock start + 5 min (its SLA deadline).
+SHIFT_DEADLINE = timedelta(minutes=5)
 UNATTRIBUTED_AGENT = "Unattributed"
 
 Verdict = Literal["BREACH", "EXCUSED", "NOT_A_TRIGGER", "OWNER_COVER", "NEEDS_REVIEW"]
@@ -145,6 +148,28 @@ class VerdictUpsertResponse(BaseModel):
     missing_event_ids: list[int]
 
 
+class ShiftWrite(BaseModel):
+    sling_shift_id: str = Field(..., min_length=1)
+    sling_user_id: Optional[int] = None
+    agent_name: Optional[str] = None
+    starts_at: datetime
+    ends_at: datetime
+    label: Optional[str] = None
+
+
+class ShiftBatch(BaseModel):
+    shifts: list[ShiftWrite] = Field(..., max_length=5000)
+
+
+class ShiftUpsertResponse(BaseModel):
+    received: int
+    created: int
+    updated: int
+    deleted: int
+    range_start: Optional[datetime] = None
+    range_end: Optional[datetime] = None
+
+
 class BreachRead(BaseModel):
     response_event_id: int
     date: date
@@ -245,6 +270,22 @@ def _week_stats(
         pct_under_120s=(round(100.0 * fast / triggers, 1) if triggers else None),
         breaches=breaches,
     )
+
+
+def _shift_agents(
+    deadline: datetime, shifts: list[tuple[datetime, datetime, str]]
+) -> list[str]:
+    """Agents whose shift covers ``deadline`` (``starts_at <= t < ends_at``).
+
+    A deadline exactly at a shift's end belongs to the next shift. Overlapping
+    shifts credit every agent on duty.
+    """
+
+    names: list[str] = []
+    for starts, ends, name in shifts:
+        if starts <= deadline < ends and name not in names:
+            names.append(name)
+    return names
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -404,10 +445,12 @@ def weekly_report(
     """Per-agent response stats for one Pacific (Mon–Sun) week.
 
     Events are placed in a week by ``clock_start_at`` in America/Los_Angeles and
-    attributed to the verdict's ``agent_name`` (``Unattributed`` when the event
-    has no verdict or no agent). ``NOT_A_TRIGGER`` events are excluded.
-    Unanswered events count as slower than any answered one in the median / p90
-    (which read ``null`` when they land on an unanswered event).
+    attributed to the ``audit_shifts`` agent on duty at clock start + 5 min
+    (``starts_at <= t < ends_at``; overlapping shifts credit each agent).
+    Events with no shift are ``Unattributed``. ``NOT_A_TRIGGER`` verdicts and
+    bot-resolved events are excluded. Unanswered events count as slower than any
+    answered one in the median / p90 (which read ``null`` when they land on an
+    unanswered event). ``overall`` counts each event once.
     """
 
     start_day = _parse_day(week_start, name="week_start")
@@ -431,12 +474,31 @@ def weekly_report(
         .order_by(ResponseEvent.clock_start_at, ResponseEvent.id)
         .all()
     )
-    kept = [(ev, v) for ev, v in rows if v is None or v.verdict != "NOT_A_TRIGGER"]
+    kept = [
+        (ev, v)
+        for ev, v in rows
+        if (v is None or v.verdict != "NOT_A_TRIGGER")
+        and not (isinstance(ev.pre_labels, dict) and ev.pre_labels.get("bot_resolved"))
+    ]
+    shifts = [
+        (
+            _as_utc(sh.starts_at),
+            _as_utc(sh.ends_at),
+            (sh.agent_name or "").strip() or f"sling:{sh.sling_user_id}",
+        )
+        for sh in db.query(AuditShift)
+        .filter(
+            AuditShift.ends_at > start_utc,
+            AuditShift.starts_at < end_utc + SHIFT_DEADLINE,
+        )
+        .all()
+    ]
     by_agent: dict[str, list[tuple[ResponseEvent, Optional[ResponseAuditVerdict]]]]
     by_agent = {}
     for ev, v in kept:
-        name = ((v.agent_name if v is not None else None) or "").strip()
-        by_agent.setdefault(name or UNATTRIBUTED_AGENT, []).append((ev, v))
+        deadline = _as_utc(ev.clock_start_at) + SHIFT_DEADLINE
+        for name in _shift_agents(deadline, shifts) or [UNATTRIBUTED_AGENT]:
+            by_agent.setdefault(name, []).append((ev, v))
     agents = [_week_stats(name, items) for name, items in by_agent.items()]
     agents.sort(key=lambda a: (a.agent_name == UNATTRIBUTED_AGENT, a.agent_name))
     return WeeklyResponse(
@@ -445,4 +507,74 @@ def weekly_report(
         timezone="America/Los_Angeles",
         agents=agents,
         overall=_week_stats("ALL", kept),
+    )
+
+
+@router.post("/shifts", response_model=ShiftUpsertResponse)
+def upsert_shifts(
+    body: ShiftBatch,
+    db: Session = Depends(get_db_dependency),
+):
+    """Upsert Sling shifts by ``sling_shift_id``.
+
+    The payload is the full schedule for the range it covers
+    (earliest ``starts_at`` → latest ``ends_at``): stored shifts starting in that
+    range that are missing from the payload are deleted (swaps / removals).
+    """
+
+    latest: dict[str, ShiftWrite] = {}
+    for item in body.shifts:
+        if _as_utc(item.ends_at) <= _as_utc(item.starts_at):
+            raise HTTPException(
+                400, f"shift {item.sling_shift_id}: ends_at must be after starts_at"
+            )
+        latest[item.sling_shift_id] = item
+    if not latest:
+        return ShiftUpsertResponse(received=0, created=0, updated=0, deleted=0)
+
+    range_start = min(_as_utc(i.starts_at) for i in latest.values())
+    range_end = max(_as_utc(i.ends_at) for i in latest.values())
+    existing = {
+        row.sling_shift_id: row
+        for row in db.query(AuditShift)
+        .filter(AuditShift.sling_shift_id.in_(sorted(latest)))
+        .all()
+    }
+    created = updated = 0
+    now = datetime.now(timezone.utc)
+    for shift_id, item in latest.items():
+        row = existing.get(shift_id)
+        if row is None:
+            row = AuditShift(sling_shift_id=shift_id)
+            db.add(row)
+            created += 1
+        else:
+            updated += 1
+        row.sling_user_id = item.sling_user_id
+        row.agent_name = item.agent_name
+        row.starts_at = _as_utc(item.starts_at)
+        row.ends_at = _as_utc(item.ends_at)
+        row.label = item.label
+        row.updated_at = now
+    db.flush()
+
+    stale = (
+        db.query(AuditShift)
+        .filter(
+            AuditShift.starts_at >= range_start,
+            AuditShift.starts_at < range_end,
+            AuditShift.sling_shift_id.notin_(sorted(latest)),
+        )
+        .all()
+    )
+    for row in stale:
+        db.delete(row)
+    db.flush()
+    return ShiftUpsertResponse(
+        received=len(body.shifts),
+        created=created,
+        updated=updated,
+        deleted=len(stale),
+        range_start=range_start,
+        range_end=range_end,
     )

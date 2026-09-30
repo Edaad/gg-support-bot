@@ -65,7 +65,7 @@ from bot.services.support_group_idle_episode import is_player_gratitude_ack
 
 logger = logging.getLogger(__name__)
 
-RULE_VERSION = "ra-1"
+RULE_VERSION = "ra-2"
 
 START_PLAYER_QUESTION = "player_question"
 START_BOT_HANDOFF = "bot_handoff"
@@ -89,8 +89,7 @@ EXCERPT_BEFORE = timedelta(minutes=20)
 EXCERPT_AFTER = timedelta(minutes=5)
 EXCERPT_MAX_MESSAGES = 60
 
-# escalation_events reasons that start a clock. ``deposit_incomplete`` is the
-# 10-minute "deposit instructions sent, nothing received" follow-up.
+# escalation_events reasons that start a clock.
 SLACK_START_REASONS = frozenset(
     {
         REASON_RPA_DEPOSIT_FAILED,
@@ -98,13 +97,23 @@ SLACK_START_REASONS = frozenset(
         REASON_RPA_DEPOSIT_UNCERTAIN,
         REASON_RPA_CASHOUT_UNCERTAIN,
         REASON_DEPOSIT_SENT_TIMEOUT,
-        REASON_DEPOSIT_INCOMPLETE,
         REASON_DEPOSIT_SENT_UNBOUND,
         REASON_UNION_DEPOSIT_FIRST,
         REASON_UNION_DEPOSIT_REPEAT,
         REASON_PAYMENT_MANUAL_ACTION,
     }
 )
+# Never a trigger (ra-2): ``deposit_incomplete`` is the bot's own 10-minute
+# "Hey! Just checking in…" deposit reminder, not a human-needed moment. A real
+# player message after it still opens its own player_question.
+SLACK_IGNORED_REASONS = frozenset({REASON_DEPOSIT_INCOMPLETE})
+# Slack reasons the bot can resolve itself (payment received / credits added).
+BOT_RESOLVABLE_REASONS = frozenset(
+    {REASON_DEPOSIT_SENT_UNBOUND, REASON_DEPOSIT_SENT_TIMEOUT}
+)
+# Staff message this long before a slack_escalation / bot_handoff = already handled.
+STAFF_LOOKBACK_SECONDS = 120
+BOT_RESOLVE_WINDOW = timedelta(minutes=5)
 # Logged alongside a bot hand-off line; attach to it, never start on their own.
 SLACK_ATTACH_ONLY_REASONS = frozenset(
     {
@@ -117,8 +126,10 @@ FLOW_ANSWER_DECISION_REASONS = frozenset(
     {REASON_EXPECTED_FLOW, REASON_FLOW_CMD, REASON_DEPOSIT_FLOW_ANSWER}
 )
 
-TEST_TITLE_SUBSTRINGS = ("8888-8888", "2222-2222")
+_TEST_TITLE_RE = re.compile(r"/\s*(?:1111-1111|2222-2222|8888-8888)\s*/")
 TEST_TITLE_EXACT = frozenset({"rt/"})
+# A chat whose only non-staff participant is this account is internal.
+INTERNAL_ONLY_USERNAMES = frozenset({"rtaccountant"})
 
 _FLOW_COMMANDS = frozenset({"deposit", "cashout", "transfer", "earlyrb", "cash"})
 _STAFF_WIZARD_COMMANDS = _FLOW_COMMANDS | {"add", "bonus"}
@@ -154,7 +165,10 @@ _SENT_DONE_WORDS = frozenset(
 )
 _NORMALIZE_RE = re.compile(r"[^\w\s]+", re.UNICODE)
 _SPACE_RE = re.compile(r"\s+")
-_GRATITUDE_LEADS = (
+# Closers: a burst made only of these never opens a player_question. This is the
+# one list the audit uses (burst rules and pre-labels); the escalation closer
+# list (support_group_idle_episode.is_player_gratitude_ack) is also accepted.
+GRATITUDE_PHRASES = (
     "thank you",
     "thanks",
     "thank u",
@@ -167,12 +181,42 @@ _GRATITUDE_LEADS = (
     "appreciate you",
     "appreciated",
 )
-# Extensions to the escalation closer list (support_group_idle_episode).
-_EXTRA_CLOSER_TOKENS = frozenset(
-    {"bet", "gl", "ok", "okay", "k", "kk", "cool", "sweet", "perfect", "awesome"}
+CLOSER_PHRASES = GRATITUDE_PHRASES + (
+    "got it",
+    "sounds good",
+    "no rush",
+    "no worries",
+    "all good",
+    "good looks",
 )
-_EXTRA_CLOSER_PHRASES = ("got it", "sounds good", "good looks", "all good")
-_MAX_GRATITUDE_TRAILING_WORDS = 6
+CLOSER_WORDS = frozenset(
+    {
+        "bet",
+        "ok",
+        "okay",
+        "okey",
+        "okk",
+        "okkk",
+        "k",
+        "kk",
+        "gotchu",
+        "gotcha",
+        "perfect",
+        "cool",
+        "nice",
+        "lol",
+        "haha",
+        "gl",
+        "sweet",
+        "awesome",
+    }
+)
+# Closers only when answering a staff message from the previous 5 minutes.
+CONTEXT_CLOSER_WORDS = frozenset({"sure", "yes", "yep", "yup"})
+CONTEXT_CLOSER_WINDOW = timedelta(minutes=5)
+# Trailing words allowed after the closers ("okey boss", "thank you g looks").
+_MAX_TRAILING_AFTER_GRATITUDE = 6
+_MAX_TRAILING_AFTER_CLOSER = 2
 _ASK_WORDS = frozenset(
     {
         "where",
@@ -264,29 +308,36 @@ def is_wizard_answer_text(text: str | None) -> bool:
     )
 
 
-def _strip_closer_lead(words: list[str]) -> list[str]:
-    """Drop leading gratitude / closer tokens and phrases; return the remainder."""
+def _strip_closers(
+    words: list[str], *, replies_to_staff: bool
+) -> tuple[list[str], bool]:
+    """Drop leading closer phrases / words. Returns (remainder, saw_gratitude)."""
 
+    saw_gratitude = False
+    single = CLOSER_WORDS | (CONTEXT_CLOSER_WORDS if replies_to_staff else frozenset())
     changed = True
     while words and changed:
         changed = False
         joined = " ".join(words)
-        for phrase in _GRATITUDE_LEADS + _EXTRA_CLOSER_PHRASES:
+        for phrase in CLOSER_PHRASES:
             if joined == phrase or joined.startswith(phrase + " "):
                 words = words[len(phrase.split()) :]
+                saw_gratitude = saw_gratitude or phrase in GRATITUDE_PHRASES
                 changed = True
                 break
-        if not changed and words and words[0] in _EXTRA_CLOSER_TOKENS:
+        if not changed and words and words[0] in single:
             words = words[1:]
             changed = True
-    return words
+    return words, saw_gratitude
 
 
-def is_gratitude_or_closer(text: str | None) -> bool:
-    """Thanks / ack closer only (escalation list + bet, gl, got it, emoji-only, …).
+def is_gratitude_or_closer(text: str | None, *, replies_to_staff: bool = False) -> bool:
+    """Thanks / ack closer only (``CLOSER_PHRASES`` / ``CLOSER_WORDS``, emoji-only).
 
-    "thank you" / "thanks" may carry a few trailing words ("thank you g looks")
-    as long as they do not read like a question.
+    Case, punctuation and emoji are ignored. "sure" / "yes" / "yep" / "yup" count
+    only with ``replies_to_staff``. A few trailing words are allowed after the
+    closers ("okey boss", "thank you g looks") unless the text reads like a
+    question.
     """
 
     raw = (text or "").strip()
@@ -300,23 +351,55 @@ def is_gratitude_or_closer(text: str | None) -> bool:
         return True
     if "?" in raw or _ASK_WORDS & set(words):
         return False
-    rest = _strip_closer_lead(words)
+    rest, saw_gratitude = _strip_closers(words, replies_to_staff=replies_to_staff)
     if len(rest) == len(words):
         return False
-    if not rest:
-        return True
-    joined = " ".join(words)
-    saw_gratitude = any(lead in joined for lead in _GRATITUDE_LEADS) or bool(
-        {"bet", "gl"} & set(words)
+    limit = (
+        _MAX_TRAILING_AFTER_GRATITUDE
+        if saw_gratitude or {"bet", "gl"} & set(words)
+        else _MAX_TRAILING_AFTER_CLOSER
     )
-    return saw_gratitude and len(rest) <= _MAX_GRATITUDE_TRAILING_WORDS
+    return len(rest) <= limit
 
 
 def is_test_title(title: str | None) -> bool:
     raw = (title or "").strip()
     if raw.casefold() in TEST_TITLE_EXACT:
         return True
-    return any(s in raw for s in TEST_TITLE_SUBSTRINGS)
+    return bool(_TEST_TITLE_RE.search(raw))
+
+
+def only_internal_participants(
+    messages: Iterable[Any],
+    *,
+    staff_ids: frozenset[int],
+    bot_usernames: frozenset[str],
+    chat_id: int,
+    player_username: str | None = None,
+) -> bool:
+    """True when the only non-staff member is an internal account (@rtaccountant).
+
+    Uses the chat's bound player username when set, else the non-staff, non-bot
+    senders seen in the transcript (membership lists are not stored).
+    """
+
+    bound = (player_username or "").strip().lstrip("@").lower()
+    if bound:
+        return bound in INTERNAL_ONLY_USERNAMES
+    others: set[str] = set()
+    for m in messages:
+        if not isinstance(m, dict) or m.get("is_service") or m.get("is_bot"):
+            continue
+        username = (m.get("username") or "").strip().lstrip("@").lower()
+        if username in bot_usernames:
+            continue
+        sender = m.get("sender_id")
+        if sender is not None and (
+            int(sender) in staff_ids or int(sender) == int(chat_id)
+        ):
+            continue
+        others.add(username or f"id:{sender}")
+    return bool(others) and others <= INTERNAL_ONLY_USERNAMES
 
 
 _OWED_RE = re.compile(r"^\$?\s*[\d,]+(?:\.\d+)?\s+owed$", re.IGNORECASE)
@@ -417,17 +500,23 @@ class EventDraft:
     attached: list[dict[str, Any]] = field(default_factory=list)
     pre_labels: dict[str, Any] = field(default_factory=dict)
     excerpt: list[dict[str, Any]] | None = None
+    escalation_reason: str | None = None
+    # Closed by the bot's own "payment received" / "Added N" line (ra-2).
+    bot_resolved: bool = False
 
     @property
     def response_seconds(self) -> int | None:
-        if self.clock_stop_at is None:
+        if self.clock_stop_at is None or self.bot_resolved:
             return None
+        # A staff message just before the start (lookback) yields 0.
         return max(
             0, int(round((self.clock_stop_at - self.clock_start_at).total_seconds()))
         )
 
     @property
     def is_candidate(self) -> bool:
+        if self.bot_resolved:
+            return False
         secs = self.response_seconds
         return secs is None or secs > CANDIDATE_THRESHOLD_SECONDS
 
@@ -480,7 +569,9 @@ def is_automated_staff_post(msg: Mapping[str, Any], inp: ChatAuditInput) -> bool
     )
 
 
-def _player_text_qualifies(msg: Mapping[str, Any], inp: ChatAuditInput) -> bool:
+def _player_text_qualifies(
+    msg: Mapping[str, Any], inp: ChatAuditInput, *, replies_to_staff: bool = False
+) -> bool:
     text = _text(msg)
     if not text:
         return False
@@ -488,7 +579,25 @@ def _player_text_qualifies(msg: Mapping[str, Any], inp: ChatAuditInput) -> bool:
         return False
     if is_bot_command(text) or is_wizard_answer_text(text):
         return False
-    return not is_gratitude_or_closer(text)
+    return not is_gratitude_or_closer(text, replies_to_staff=replies_to_staff)
+
+
+def is_bot_resolution_text(text: str | None) -> bool:
+    """The bot's "We have received your payment…" or "Added N…" line."""
+
+    from bot.services.mtproto_group_add import ADD_CONFIRMATION_PREFIX
+    from bot.services.payment_group_notify import (
+        PAYMENT_RECEIVED_PREFIX,
+        PAYMENT_RECEIVED_SUFFIX,
+    )
+
+    raw = (text or "").strip()
+    if raw.startswith(PAYMENT_RECEIVED_PREFIX) and raw.endswith(
+        PAYMENT_RECEIVED_SUFFIX
+    ):
+        return True
+    rest = raw[len(ADD_CONFIRMATION_PREFIX) :]
+    return raw.startswith(ADD_CONFIRMATION_PREFIX) and rest[:1].isdigit()
 
 
 def _is_txid_prompt(text: str) -> bool:
@@ -516,6 +625,35 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
 
     roles = {int(m["id"]): classify_role(m, inp) for m in msgs}
     by_id = {int(m["id"]): m for m in msgs}
+    # Human staff replies (the only thing that stops a clock).
+    staff_reply_ids = {
+        int(m["id"])
+        for m in msgs
+        if roles[int(m["id"])] == ROLE_STAFF and not is_automated_staff_post(m, inp)
+    }
+    staff_replies = [(_msg_dt(m), m) for m in msgs if int(m["id"]) in staff_reply_ids]
+    resolver_ids = {
+        int(m["id"])
+        for m in msgs
+        if is_bot_resolution_text(_text(m))
+        and (
+            roles[int(m["id"])] == ROLE_BOT
+            or (
+                roles[int(m["id"])] == ROLE_STAFF
+                and int(m["id"]) not in staff_reply_ids
+            )
+        )
+    }
+
+    def _replies_to_staff(m: Mapping[str, Any]) -> bool:
+        reply_to = m.get("reply_to_msg_id")
+        if reply_to is not None and int(reply_to) in staff_reply_ids:
+            return True
+        ts = _msg_dt(m)
+        return any(
+            timedelta(0) <= ts - sts <= CONTEXT_CLOSER_WINDOW
+            for sts, _ in staff_replies
+        )
 
     # Player bursts (bots don't break a burst; staff does).
     bursts: list[list[dict[str, Any]]] = []
@@ -539,7 +677,10 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
     for burst in bursts:
         for m in burst:
             burst_of[int(m["id"])] = burst
-        if any(_player_text_qualifies(m, inp) for m in burst):
+        if any(
+            _player_text_qualifies(m, inp, replies_to_staff=_replies_to_staff(m))
+            for m in burst
+        ):
             qualifying_burst_by_first[int(burst[0]["id"])] = burst
 
     # Bot hand-off lines and TxID prompt → hash replies.
@@ -562,9 +703,12 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
                 txid_hash_ids.add(mid)
                 prompt_at = None
 
-    # Merge messages and Slack escalations into one timeline.
+    # Merge messages and Slack escalations into one timeline. Ignored reasons
+    # (the 10-minute deposit reminder) never enter it.
     timeline: list[tuple[datetime, int, Any]] = [(_msg_dt(m), 1, m) for m in msgs]
     for esc in inp.escalations:
+        if esc.reason in SLACK_IGNORED_REASONS:
+            continue
         if esc.reason in SLACK_START_REASONS or esc.reason in SLACK_ATTACH_ONLY_REASONS:
             timeline.append((_as_utc(esc.created_at), 0, esc))
     timeline.sort(key=lambda t: (t[0], t[1], int(t[2]["id"]) if t[1] else t[2].id))
@@ -575,13 +719,62 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
     def _in_day(ts: datetime) -> bool:
         return day_start <= ts < day_end
 
-    def _attach_target(ts: datetime) -> EventDraft | None:
+    def _close(ev: EventDraft, m: Mapping[str, Any], *, bot: bool = False) -> None:
+        ev.clock_stop_at = _msg_dt(m)
+        ev.clock_stop_msg_id = int(m["id"])
+        ev.bot_resolved = bot
+        ev.responder_telegram_user_id = (
+            None if bot or m.get("sender_id") is None else int(m["sender_id"])
+        )
+        if bot:
+            ev.pre_labels["bot_resolved"] = True
+
+    def _open_player_question() -> bool:
+        return any(ev.start_kind == START_PLAYER_QUESTION for ev in open_events)
+
+    def _attach_target(ts: datetime, *, to_handoff: bool = False) -> EventDraft | None:
+        # Signals attach to an open player_question (ra-2: never the other way
+        # round). The Slack twin of a hand-off line may also attach to it.
+        kinds = {START_PLAYER_QUESTION}
+        if to_handoff:
+            kinds.add(START_BOT_HANDOFF)
         best = None
         for ev in open_events:
+            if ev.start_kind not in kinds:
+                continue
             delta = (ts - ev.clock_start_at).total_seconds()
             if 0 <= delta <= ATTACH_WINDOW_SECONDS:
                 best = ev
         return best
+
+    def _staff_just_before(ts: datetime) -> Mapping[str, Any] | None:
+        """Latest human staff message in the 120 s before ``ts``."""
+        best = None
+        for sts, m in staff_replies:
+            if timedelta(0) <= ts - sts <= timedelta(seconds=STAFF_LOOKBACK_SECONDS):
+                best = m
+        return best
+
+    def _staff_same_second(ts: datetime) -> Mapping[str, Any] | None:
+        second = int(ts.timestamp())
+        for sts, m in staff_replies:
+            if int(sts.timestamp()) == second:
+                return m
+        return None
+
+    def _start(ev: EventDraft) -> None:
+        events.append(ev)
+        if ev.start_kind in (START_SLACK_ESCALATION, START_BOT_HANDOFF):
+            prior = _staff_just_before(ev.clock_start_at)
+            if prior is not None:
+                _close(ev, prior)
+                ev.pre_labels["staff_before_escalation"] = True
+                return
+        same = _staff_same_second(ev.clock_start_at)
+        if same is not None:
+            _close(ev, same)
+            return
+        open_events.append(ev)
 
     def _signal(
         kind: str,
@@ -591,7 +784,10 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
         esc: SlackEscalation | None = None,
         start_allowed: bool = True,
     ) -> None:
-        target = _attach_target(ts)
+        target = _attach_target(
+            ts,
+            to_handoff=esc is not None and esc.reason in SLACK_ATTACH_ONLY_REASONS,
+        )
         if target is not None:
             if esc is not None and target.escalation_event_id is None:
                 target.escalation_event_id = int(esc.id)
@@ -612,13 +808,19 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
             clock_start_at=ts,
             clock_start_msg_id=msg_id,
             escalation_event_id=int(esc.id) if esc else None,
+            escalation_reason=esc.reason if esc else None,
         )
         if msg_id is not None:
             ev.trigger_msg_ids = [msg_id]
         if esc is not None:
             ev.pre_labels["escalation_reason"] = esc.reason
-        events.append(ev)
-        open_events.append(ev)
+        _start(ev)
+
+    def _bot_resolvable(ev: EventDraft) -> bool:
+        return ev.start_kind == START_PLAYER_QUESTION or (
+            ev.start_kind == START_SLACK_ESCALATION
+            and ev.escalation_reason in BOT_RESOLVABLE_REASONS
+        )
 
     for ts, is_msg, item in timeline:
         if not is_msg:
@@ -632,31 +834,31 @@ def build_chat_events(inp: ChatAuditInput) -> list[EventDraft]:
             continue
         m = item
         mid = int(m["id"])
-        role = roles[mid]
-        if role == ROLE_STAFF and not is_automated_staff_post(m, inp):
+        if mid in staff_reply_ids:
             for ev in open_events:
-                ev.clock_stop_at = ts
-                ev.clock_stop_msg_id = mid
-                ev.responder_telegram_user_id = (
-                    int(m["sender_id"]) if m.get("sender_id") is not None else None
-                )
+                _close(ev, m)
             open_events.clear()
             continue
+        if mid in resolver_ids:
+            for ev in list(open_events):
+                if _bot_resolvable(ev) and ts - ev.clock_start_at <= BOT_RESOLVE_WINDOW:
+                    _close(ev, m, bot=True)
+                    open_events.remove(ev)
         if mid in qualifying_burst_by_first:
             carried = inp.carry_open_until is not None and ts < _as_utc(
                 inp.carry_open_until
             )
-            if not open_events and not carried and _in_day(ts):
-                ev = EventDraft(
-                    start_kind=START_PLAYER_QUESTION,
-                    clock_start_at=ts,
-                    clock_start_msg_id=mid,
-                    trigger_msg_ids=[
-                        int(x["id"]) for x in qualifying_burst_by_first[mid]
-                    ],
+            if not _open_player_question() and not carried and _in_day(ts):
+                _start(
+                    EventDraft(
+                        start_kind=START_PLAYER_QUESTION,
+                        clock_start_at=ts,
+                        clock_start_msg_id=mid,
+                        trigger_msg_ids=[
+                            int(x["id"]) for x in qualifying_burst_by_first[mid]
+                        ],
+                    )
                 )
-                events.append(ev)
-                open_events.append(ev)
         if mid in handoff_ids:
             _signal(START_BOT_HANDOFF, ts, msg_id=mid)
         if mid in txid_hash_ids:
@@ -860,6 +1062,15 @@ def _load_chat_inputs(
                 excluded += 1
                 continue
             if is_test_title(title):
+                excluded += 1
+                continue
+            if only_internal_participants(
+                [m for m in (t.messages or []) + (t.tail_messages or [])],
+                staff_ids=staff_ids,
+                bot_usernames=bots,
+                chat_id=cid,
+                player_username=getattr(sgc, "player_username", None),
+            ):
                 excluded += 1
                 continue
             if sgc is None and not is_gc_group_title(title):

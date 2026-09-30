@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from api.routes.response_audit import TOKEN_ENV, router
 from db.connection import get_db_dependency
 from db.models import (
+    AuditShift,
     Club,
     GroupChatDailyActivity,
     GroupChatDailyTranscript,
@@ -26,6 +27,7 @@ TOKEN = "audit-secret"
 HEADERS = {"X-Audit-Token": TOKEN}
 DAY = date(2026, 9, 29)  # Tuesday
 TABLES = [
+    "audit_shifts",
     "clubs",
     "escalation_episodes",
     "escalation_events",
@@ -264,21 +266,42 @@ class ResponseAuditApiTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 400)
 
-    def test_weekly_per_agent(self):
+    # ── shifts + weekly attribution ─────────────────────────────────────
+
+    def _shifts(self, shifts):
+        return self.client.post(
+            "/api/response-audit/shifts", json={"shifts": shifts}, headers=HEADERS
+        )
+
+    @staticmethod
+    def _shift(shift_id, name, start, end, user=1):
+        return {
+            "sling_shift_id": shift_id,
+            "sling_user_id": user,
+            "agent_name": name,
+            "starts_at": start.isoformat(),
+            "ends_at": end.isoformat(),
+            "label": "Support",
+        }
+
+    def test_weekly_per_agent_by_shift(self):
         slow, fast, unanswered = self.event_ids
+        # Events start 14:00 (slow), 14:30 (fast), 15:00 (unanswered) UTC;
+        # attribution uses start + 5 min.
+        self._shifts(
+            [
+                self._shift(
+                    "s1", "Alex", _utc(2026, 9, 29, 13), _utc(2026, 9, 29, 14, 20)
+                ),
+                self._shift(
+                    "s2", "Bea", _utc(2026, 9, 29, 14, 20), _utc(2026, 9, 29, 15)
+                ),
+            ]
+        )
         self._post(
             [
-                {
-                    "response_event_id": slow,
-                    "verdict": "BREACH",
-                    "agent_name": "Alex",
-                    "summary": "slow",
-                },
-                {
-                    "response_event_id": unanswered,
-                    "verdict": "NOT_A_TRIGGER",
-                    "agent_name": "Alex",
-                },
+                {"response_event_id": slow, "verdict": "BREACH", "summary": "slow"},
+                {"response_event_id": unanswered, "verdict": "NOT_A_TRIGGER"},
             ]
         )
         r = self.client.get(
@@ -287,16 +310,106 @@ class ResponseAuditApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         body = r.json()
         agents = {a["agent_name"]: a for a in body["agents"]}
+        self.assertEqual(set(agents), {"Alex", "Bea"})
         self.assertEqual(agents["Alex"]["triggers"], 1)
         self.assertEqual(agents["Alex"]["median_seconds"], 600)
         self.assertEqual(agents["Alex"]["pct_under_120s"], 0.0)
         breach = agents["Alex"]["breaches"][0]
         self.assertEqual(breach["time_et"], "10:00")
         self.assertEqual(breach["summary"], "slow")
-        self.assertEqual(agents["Unattributed"]["triggers"], 1)
+        self.assertEqual(agents["Bea"]["triggers"], 1)
+        self.assertEqual(agents["Bea"]["median_seconds"], 60)
+        self.assertEqual(agents["Bea"]["pct_under_120s"], 100.0)
         self.assertEqual(body["overall"]["triggers"], 2)
         self.assertEqual(body["overall"]["pct_under_120s"], 50.0)
         self.assertEqual(body["overall"]["p90_seconds"], 600)
+
+    def test_no_shift_is_unattributed(self):
+        body = self.client.get(
+            "/api/response-audit/weekly?week_start=2026-09-28", headers=HEADERS
+        ).json()
+        self.assertEqual([a["agent_name"] for a in body["agents"]], ["Unattributed"])
+        self.assertEqual(body["agents"][0]["triggers"], 3)
+
+    def test_deadline_at_shift_end_belongs_to_next_shift(self):
+        # Slow event starts 14:00 UTC → deadline 14:05 == Alex's end == Bea's start.
+        self._shifts(
+            [
+                self._shift(
+                    "a", "Alex", _utc(2026, 9, 29, 12), _utc(2026, 9, 29, 14, 5)
+                ),
+                self._shift(
+                    "b", "Bea", _utc(2026, 9, 29, 14, 5), _utc(2026, 9, 29, 14, 34)
+                ),
+            ]
+        )
+        body = self.client.get(
+            "/api/response-audit/weekly?week_start=2026-09-28", headers=HEADERS
+        ).json()
+        agents = {a["agent_name"]: a for a in body["agents"]}
+        self.assertNotIn("Alex", agents)
+        self.assertEqual(agents["Bea"]["triggers"], 1)
+        self.assertEqual(agents["Bea"]["median_seconds"], 600)
+
+    def test_bot_resolved_events_are_excluded(self):
+        with self.factory() as s:
+            ev = s.get(ResponseEvent, self.event_ids[2])
+            ev.pre_labels = {"bot_resolved": True}
+            s.commit()
+        body = self.client.get(
+            "/api/response-audit/weekly?week_start=2026-09-28", headers=HEADERS
+        ).json()
+        self.assertEqual(body["overall"]["triggers"], 2)
+        self.assertEqual(body["overall"]["unanswered"], 0)
+
+    def test_shifts_require_token(self):
+        r = self.client.post("/api/response-audit/shifts", json={"shifts": []})
+        self.assertEqual(r.status_code, 401)
+
+    def test_shift_upsert_is_idempotent(self):
+        payload = [
+            self._shift("s1", "Alex", _utc(2026, 9, 29, 13), _utc(2026, 9, 29, 21)),
+        ]
+        first = self._shifts(payload).json()
+        self.assertEqual(
+            (first["created"], first["updated"], first["deleted"]), (1, 0, 0)
+        )
+        payload[0]["agent_name"] = "Alex R"
+        second = self._shifts(payload).json()
+        self.assertEqual(
+            (second["created"], second["updated"], second["deleted"]), (0, 1, 0)
+        )
+        with self.factory() as s:
+            rows = s.query(AuditShift).all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].agent_name, "Alex R")
+
+    def test_shift_swap_deletes_missing_rows_in_range(self):
+        day = [
+            self._shift("m", "Alex", _utc(2026, 9, 29, 13), _utc(2026, 9, 29, 21)),
+            self._shift("e", "Bea", _utc(2026, 9, 29, 21), _utc(2026, 9, 30, 5)),
+        ]
+        other_day = [
+            self._shift("x", "Cy", _utc(2026, 10, 2, 13), _utc(2026, 10, 2, 21)),
+        ]
+        self._shifts(day)
+        self._shifts(other_day)
+        # Bea's evening shift swapped to Dee under a new Sling id.
+        swapped = [
+            day[0],
+            self._shift("e2", "Dee", _utc(2026, 9, 29, 21), _utc(2026, 9, 30, 5)),
+        ]
+        r = self._shifts(swapped).json()
+        self.assertEqual(r["deleted"], 1)
+        with self.factory() as s:
+            ids = sorted(row.sling_shift_id for row in s.query(AuditShift))
+        self.assertEqual(ids, ["e2", "m", "x"])
+
+    def test_shift_with_bad_range_is_400(self):
+        r = self._shifts(
+            [self._shift("bad", "Alex", _utc(2026, 9, 29, 13), _utc(2026, 9, 29, 12))]
+        )
+        self.assertEqual(r.status_code, 400)
 
     def test_weekly_uses_pacific_week_boundaries(self):
         # Mon 2026-09-28 00:30 PT = 07:30 UTC (in); Sun 2026-09-27 23:30 PT (out).

@@ -1360,7 +1360,7 @@ class SupportGroupChat(Base):
     escalation_post_deposit_idle_pending = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
-    # Internal / test group: skipped by the response audit (scripts/set_support_group_internal.py).
+    # Internal / test group: skipped by the response audit (scripts/set_internal_chat.py).
     is_internal = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
@@ -3547,3 +3547,26 @@ class ResponseAuditRun(Base):
     chats_excluded = Column(Integer, nullable=False, server_default=text("0"))
     events = Column(Integer, nullable=False, server_default=text("0"))
     candidates = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class AuditShift(Base):
+    """Sling shift pushed by the response-audit judge, for per-agent KPIs."""
+
+    __tablename__ = "audit_shifts"
+    __table_args__ = (
+        Index("ix_audit_shifts_starts_at", "starts_at"),
+        Index("ix_audit_shifts_ends_at", "ends_at"),
+    )
+
+    sling_shift_id = Column(Text, primary_key=True)
+    sling_user_id = Column(BigInteger, nullable=True)
+    agent_name = Column(Text, nullable=True)
+    starts_at = Column(DateTime(timezone=True), nullable=False)
+    ends_at = Column(DateTime(timezone=True), nullable=False)
+    label = Column(Text, nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
