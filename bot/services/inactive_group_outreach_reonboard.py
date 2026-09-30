@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from telethon.tl.types import User
 
 from bot.handlers.groups import send_post_gc_intro_bundle
+from bot.services import automated_staff_messages as asm
 from bot.services.club import ensure_group_chat_linked
 from bot.services.mtproto_group_create import create_support_group
 from bot.services.mtproto_group_delete import erase_group_chat
@@ -31,7 +32,8 @@ async def _send_player_dm_safe(
     client, player: User, body: str
 ) -> tuple[bool, str | None]:
     try:
-        await client.send_message(player, body)
+        sent = await client.send_message(player, body)
+        await asm.record_sent(sent, kind=asm.KIND_OUTREACH_DM)
         return True, None
     except Exception as exc:
         return False, type(exc).__name__

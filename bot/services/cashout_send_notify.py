@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 
+from bot.services import automated_staff_messages as asm
 from club_gc_settings import get_club_gc_config_by_link_club_id
 
 logger = logging.getLogger(__name__)
@@ -182,13 +183,14 @@ async def _post_send(client, send: PendingSend) -> None:
         content, filename, _content_type = proof
         buf = io.BytesIO(content)
         buf.name = filename or "screenshot.jpg"
-        await client.send_file(send.chat_id, buf, caption=caption)
+        sent = await client.send_file(send.chat_id, buf, caption=caption)
     elif send.proof_link:
-        await client.send_message(
+        sent = await client.send_message(
             send.chat_id, f"{caption}\n{send.proof_link}", link_preview=False
         )
     else:
-        await client.send_message(send.chat_id, caption)
+        sent = await client.send_message(send.chat_id, caption)
+    await asm.record_sent(sent, kind=asm.KIND_CASHOUT_SEND_PROOF)
 
 
 async def process_pending_sends() -> dict[str, int]:

@@ -471,7 +471,10 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
                 group_title="CC / 1234-5678 / Jacob",
             )
         mock_mtproto.assert_awaited_once_with(
-            cfg, CHAT_ID, "Added 50 credits, good luck!!"
+            cfg,
+            CHAT_ID,
+            "Added 50 credits, good luck!!",
+            audit_kind="auto_add_confirmation",
         )
 
     async def test_bot_fallback_when_mtproto_unavailable(self) -> None:

@@ -29,6 +29,9 @@ STATUS_PENDING = "pending"
 STATUS_COMPLETE = "complete"
 STATUS_FAILED = "failed"
 
+# Extra hours after day D kept for the response audit (clocks crossing midnight).
+TAIL_HOURS = 3
+
 
 @dataclass(frozen=True)
 class ActivityChatTarget:
@@ -43,6 +46,7 @@ class ChatFetchResult:
     club_id: int
     status: str
     message_count: int = 0
+    tail_message_count: int = 0
     error: str | None = None
 
 
@@ -61,6 +65,33 @@ def et_day_window_utc(activity_date: date) -> tuple[datetime, datetime]:
     start_et = datetime.combine(activity_date, dt_time.min, tzinfo=EST)
     end_et = start_et + timedelta(days=1)
     return start_et.astimezone(timezone.utc), end_et.astimezone(timezone.utc)
+
+
+def et_tail_window_utc(activity_date: date) -> tuple[datetime, datetime]:
+    """Return [D+1 00:00, D+1 03:00) America/New_York as UTC datetimes.
+
+    Stored separately from day D (``tail_messages``) so only the response audit
+    sees it; ``messages`` / ``message_count`` stay day-D only.
+    """
+
+    _day_start, day_end = et_day_window_utc(activity_date)
+    tail_end_et = datetime.combine(
+        activity_date + timedelta(days=1), dt_time(hour=TAIL_HOURS), tzinfo=EST
+    )
+    return day_end, tail_end_et.astimezone(timezone.utc)
+
+
+def split_day_and_tail(
+    messages: list[dict[str, Any]], *, day_end_utc: datetime
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split chronological serialized messages into (day D, tail) at ``day_end_utc``."""
+
+    day: list[dict[str, Any]] = []
+    tail: list[dict[str, Any]] = []
+    for msg in messages:
+        when = datetime.fromisoformat(str(msg["date"]))
+        (tail if when >= day_end_utc else day).append(msg)
+    return day, tail
 
 
 def previous_et_activity_date(now: datetime | None = None) -> date:
@@ -227,6 +258,7 @@ def _mark_attempt_complete(
     chat_id: int,
     club_id: int,
     messages: list[dict[str, Any]],
+    tail_messages: list[dict[str, Any]] | None = None,
 ) -> None:
     now = datetime.now(timezone.utc)
     with get_db() as session:
@@ -244,6 +276,7 @@ def _mark_attempt_complete(
                     status=STATUS_COMPLETE,
                     message_count=len(messages),
                     messages=messages,
+                    tail_messages=tail_messages,
                     error=None,
                     attempt_count=1,
                     fetched_at=now,
@@ -254,6 +287,7 @@ def _mark_attempt_complete(
         row.status = STATUS_COMPLETE
         row.message_count = len(messages)
         row.messages = messages
+        row.tail_messages = tail_messages
         row.error = None
         row.fetched_at = now
 
@@ -317,7 +351,10 @@ async def _iter_day_messages(
     start_utc: datetime,
     end_utc: datetime,
 ) -> list[dict[str, Any]]:
-    """Walk newest→oldest from end_utc until before start_utc; return chronological."""
+    """Walk newest→oldest from end_utc until before start_utc; return chronological.
+
+    Callers pass the tail end (D+1 03:00 ET) as ``end_utc`` and split afterwards.
+    """
 
     try:
         return await _collect_day_messages_once(
@@ -347,14 +384,19 @@ async def fetch_transcript_for_chat(
     activity_date: date,
     client: Any | None = None,
 ) -> ChatFetchResult:
-    """Fetch one chat's day window and upsert the transcript row."""
+    """Fetch one chat's day window plus tail and upsert the transcript row.
+
+    One walk covers [D 00:00, D+1 03:00) ET; the result is split into day-D
+    ``messages`` and ``tail_messages``.
+    """
 
     _mark_attempt_start(
         activity_date=activity_date,
         chat_id=chat_id,
         club_id=club_id,
     )
-    start_utc, end_utc = et_day_window_utc(activity_date)
+    start_utc, day_end_utc = et_day_window_utc(activity_date)
+    _tail_start, end_utc = et_tail_window_utc(activity_date)
 
     owns_client = client is None
     try:
@@ -388,17 +430,22 @@ async def fetch_transcript_for_chat(
                 end_utc=end_utc,
             )
 
+        day_messages, tail_messages = split_day_and_tail(
+            messages, day_end_utc=day_end_utc
+        )
         _mark_attempt_complete(
             activity_date=activity_date,
             chat_id=chat_id,
             club_id=club_id,
-            messages=messages,
+            messages=day_messages,
+            tail_messages=tail_messages,
         )
         return ChatFetchResult(
             chat_id=chat_id,
             club_id=club_id,
             status=STATUS_COMPLETE,
-            message_count=len(messages),
+            message_count=len(day_messages),
+            tail_message_count=len(tail_messages),
         )
     except Exception as exc:
         err = f"{type(exc).__name__}: {exc}"
@@ -497,6 +544,19 @@ async def _fetch_club_chats(
                         )
                     )
                 return results
+
+            try:
+                from bot.services.response_audit_staff import (
+                    resolve_staff_handles_with_client,
+                )
+
+                await resolve_staff_handles_with_client(cfg, client)
+            except Exception:
+                logger.warning(
+                    "group_transcript: staff handle resolution failed club=%s",
+                    cfg.club_key,
+                    exc_info=True,
+                )
 
             for t in targets:
                 if (

@@ -19,6 +19,7 @@ from telegram.ext import (
 )
 
 from config import ADMIN_USER_IDS
+from bot.services.agent_handoff_copy import AGENT_SHORTLY_COPY
 from bot.services.chip_transfer import (
     build_transfer_plan,
     new_transfer_key,
@@ -61,7 +62,6 @@ TRANSFER_DEST, TRANSFER_AMOUNT = range(2)
 
 TIMEOUT_SECONDS = 600
 
-AGENT_SHORTLY_COPY = "An agent will be with you shortly."
 DEST_PROMPT_COPY = "Which club would you like to transfer your chips to?"
 AMOUNT_PROMPT_COPY = "How many chips would you like to transfer to {destination}?"
 

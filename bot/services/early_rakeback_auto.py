@@ -22,6 +22,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from api.club_slug import CLUB_LABEL_TO_SLUG
+from bot.services.agent_handoff_copy import ADMIN_SHORTLY_COPY
 from bot.services import elevate_early_rakeback_api as elevate
 from bot.services.club import (
     get_early_rakeback_max_auto_amount,
@@ -49,7 +50,6 @@ logger = logging.getLogger(__name__)
 
 FINDING_FEE_COPY = "Finding your total fee for this week..."
 CALCULATING_COPY = "Calculating your remaining feeback for this week..."
-ADMIN_SHORTLY_COPY = "An Admin will be with you shortly."
 NO_FEE_COPY = "You don't have any fee recorded for this week yet."
 UPLINE_INELIGIBLE_COPY = (
     "Unfortunately, members under an agency or a super agency are ineligible for "

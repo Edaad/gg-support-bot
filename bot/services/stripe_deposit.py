@@ -644,7 +644,13 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
     from notification.payment_notification_routing import resolve_notification_chat_ids
 
     bind_chat_ids = resolve_notification_chat_ids([group_title])
-    await deliver_payment_notification(text, bind_chat_ids=bind_chat_ids)
+    await deliver_payment_notification(
+        text,
+        bind_chat_ids=bind_chat_ids,
+        support_chat_id=int(chat_id),
+        support_club_id=int(club_id),
+        support_group_title=group_title,
+    )
     await notify_player_group_payment_received(
         telegram_chat_id=int(chat_id),
         amount_cents=amount_cents,

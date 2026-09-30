@@ -50,6 +50,9 @@ REASON_TRANSFER_ESCALATION = "transfer_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 REASON_LARGE_CASHOUT_PAYOUT = "large_cashout_payout"
+# Logged (not Slacked separately) when a payment notification says
+# "Manual action required" for a known support group.
+REASON_PAYMENT_MANUAL_ACTION = "payment_manual_action"
 
 _UNION_DEPOSIT_HEADLINE = "Union method deposit"
 _LARGE_CASHOUT_HEADLINE = "Large cashout payout"
@@ -287,6 +290,33 @@ def _slack_code_span(text: str) -> str:
     """Wrap title in backticks for Slack mobile tap-to-copy; escape inner backticks."""
     safe = (text or "").replace("`", "'")
     return f"`{safe}`"
+
+
+def telegram_chat_link(chat_id: int) -> str | None:
+    """``https://t.me/c/<id>`` for a supergroup (``-100…``) chat id, else None."""
+    raw = str(int(chat_id))
+    if not raw.startswith("-100") or len(raw) <= 4:
+        return None
+    return f"https://t.me/c/{raw[4:]}"
+
+
+def format_chat_ref_line(chat_id: int | None) -> str | None:
+    """``Chat: `-100…` https://t.me/c/…`` line for escalation Slack posts."""
+    if not chat_id:
+        return None
+    line = f"Chat: {_slack_code_span(str(int(chat_id)))}"
+    link = telegram_chat_link(int(chat_id))
+    if link:
+        line = f"{line} {link}"
+    return line
+
+
+def with_chat_ref(text: str, chat_id: int | None) -> str:
+    """Append the chat id / link line once (idempotent)."""
+    line = format_chat_ref_line(chat_id)
+    if not line or line in (text or ""):
+        return text
+    return f"{(text or '').rstrip()}\n{line}"
 
 
 def format_player_message_for_slack(message_text: str | None) -> str | None:
@@ -860,6 +890,7 @@ async def notify_escalation_slack(
         message_text=message_text,
         method_slug=method_slug,
     )
+    text = with_chat_ref(text, chat_id)
     resolved_episode_id = episode_id
     if resolved_episode_id is None:
         resolved_episode_id = live_history_episode_id(int(chat_id))
@@ -931,12 +962,15 @@ async def notify_staff_unanswered_issue_channel(
     )
 
     reason = REASON_PLAYER_IDLE_STAFF_UNANSWERED
-    text = format_escalation_slack_text(
-        reason,
-        club_id=club_id,
-        chat_id=chat_id,
-        title=title,
-        message_text=message_text,
+    text = with_chat_ref(
+        format_escalation_slack_text(
+            reason,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+            message_text=message_text,
+        ),
+        chat_id,
     )
     resolved_episode_id = episode_id
     if resolved_episode_id is None:

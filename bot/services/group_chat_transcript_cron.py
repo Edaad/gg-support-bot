@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import time as dt_time
 from zoneinfo import ZoneInfo
@@ -162,6 +163,22 @@ async def run_group_chat_transcript_extraction(
         summary_dict["analysis_failed"],
         summary_dict["analysis_timed_out"],
     )
+
+    # Response audit: deterministic, Postgres-only; uses the transcript tail.
+    try:
+        from bot.services.response_audit import run_response_audit
+
+        audit = await asyncio.to_thread(
+            run_response_audit, activity_date, chat_id=chat_id, force=True
+        )
+        summary_dict["audit_events"] = audit.events
+        summary_dict["audit_candidates"] = audit.candidates
+    except Exception:
+        logger.exception(
+            "group_transcript_cron: response audit crashed activity_date=%s",
+            activity_date,
+        )
+        summary_dict["audit_failed"] = True
     return summary_dict
 
 

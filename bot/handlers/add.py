@@ -24,6 +24,7 @@ from bot.services.mtproto_bot_fallback import (
     bot_delete_message,
     telethon_missed_command_message,
 )
+from bot.services.automated_staff_messages import KIND_STAFF_BONUS_CONFIRMATION
 from bot.services.mtproto_dm_gc_listener import _clients, get_dm_gc_listener_status
 from bot.services.mtproto_group_add import (
     format_add_confirmation,
@@ -367,6 +368,7 @@ async def _bonus_bot_api_path(
         chat_id=chat.id,
         club_id=club_id,
         text=confirmation,
+        audit_kind=KIND_STAFF_BONUS_CONFIRMATION,
     )
 
     _schedule_auto_chip_add(

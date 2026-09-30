@@ -146,8 +146,11 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                         slack_text=expected,
                     )
         self.assertTrue(ok)
-        normal.assert_awaited_once_with(expected, source=esc.REASON_UNION_DEPOSIT_FIRST)
-        head.assert_awaited_once_with(expected, reason=esc.REASON_UNION_DEPOSIT_FIRST)
+        # Both channels get the same text, including the chat id line.
+        posted = esc.with_chat_ref(expected, 99)
+        self.assertIn("Chat: `99`", posted)
+        normal.assert_awaited_once_with(posted, source=esc.REASON_UNION_DEPOSIT_FIRST)
+        head.assert_awaited_once_with(posted, reason=esc.REASON_UNION_DEPOSIT_FIRST)
 
     async def test_rpa_fans_out_identical_text(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):
@@ -174,8 +177,11 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                         title="CC / 1 / Nick",
                     )
         self.assertTrue(ok)
-        normal.assert_awaited_once_with(expected, source=esc.REASON_RPA_DEPOSIT_FAILED)
-        head.assert_awaited_once_with(expected, reason=esc.REASON_RPA_DEPOSIT_FAILED)
+        # Both channels get the same text, including the chat id line.
+        posted = esc.with_chat_ref(expected, 99)
+        self.assertIn("Chat: `99`", posted)
+        normal.assert_awaited_once_with(posted, source=esc.REASON_RPA_DEPOSIT_FAILED)
+        head.assert_awaited_once_with(posted, reason=esc.REASON_RPA_DEPOSIT_FAILED)
 
     async def test_non_rpa_still_calls_maybe_notify_which_noops(self) -> None:
         with patch.object(esc, "_club_display_name", return_value="Round Table"):

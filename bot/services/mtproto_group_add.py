@@ -12,6 +12,7 @@ from typing import Any
 from telethon import events
 
 from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
+from bot.services import automated_staff_messages as asm
 from bot.services.club import (
     get_club_for_chat,
     invalidate_pending_one_time_bypasses,
@@ -156,7 +157,11 @@ def format_bonus_confirmation(amount: Decimal) -> str:
 
 
 async def _send_add_confirmation_once(
-    cfg: ClubGcConfig, chat_id: int, text: str
+    cfg: ClubGcConfig,
+    chat_id: int,
+    text: str,
+    *,
+    audit_kind: str = asm.KIND_STAFF_ADD_CONFIRMATION,
 ) -> None:
     async with get_mtproto_lock(cfg.club_key):
         client = make_client(cfg)
@@ -167,7 +172,8 @@ async def _send_add_confirmation_once(
                     "group_add: MTProto not authorized club=%s", cfg.club_key
                 )
                 return
-            await client.send_message(chat_id, text)
+            sent = await client.send_message(chat_id, text)
+            await asm.record_sent(sent, kind=audit_kind)
         finally:
             await client.disconnect()
 
@@ -177,8 +183,13 @@ def schedule_send_add_confirmation_from_club(
     chat_id: int,
     club_id: int,
     text: str,
+    audit_kind: str = asm.KIND_STAFF_ADD_CONFIRMATION,
 ) -> None:
-    """Send confirmation from the club MTProto user (not the bot)."""
+    """Send confirmation from the club MTProto user (not the bot).
+
+    ``audit_kind`` tags the post in ``automated_staff_messages``; the default
+    marks it as the echo of a staff ``/add`` (see ``STAFF_ACTION_KINDS``).
+    """
     cfg = get_club_gc_config_by_link_club_id(int(club_id))
     if not cfg:
         logger.warning("group_add: no ClubGcConfig for club_id=%s", club_id)
@@ -193,7 +204,7 @@ def schedule_send_add_confirmation_from_club(
     from bot.services.mtproto_dm_gc_listener import _loop_holder
 
     mtproto_loop = _loop_holder.get("loop")
-    coro = _send_add_confirmation_once(cfg, chat_id, text)
+    coro = _send_add_confirmation_once(cfg, chat_id, text, audit_kind=audit_kind)
     if mtproto_loop and mtproto_loop.is_running():
         asyncio.run_coroutine_threadsafe(coro, mtproto_loop)
     else:
@@ -307,7 +318,8 @@ async def handle_group_add_outgoing(
     )
 
     try:
-        await event.client.send_message(event.chat_id, confirmation)
+        sent = await event.client.send_message(event.chat_id, confirmation)
+        await asm.record_sent(sent, kind=asm.KIND_STAFF_ADD_CONFIRMATION)
         # #region agent log
         agent_debug_log(
             hypothesis_id="C",
@@ -507,7 +519,8 @@ async def handle_group_bonus_outgoing(
     )
 
     try:
-        await event.client.send_message(event.chat_id, confirmation)
+        sent = await event.client.send_message(event.chat_id, confirmation)
+        await asm.record_sent(sent, kind=asm.KIND_STAFF_BONUS_CONFIRMATION)
     except Exception:
         logger.exception(
             "group_bonus: send failed club=%s chat_id=%s",

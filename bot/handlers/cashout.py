@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 from config import ADMIN_USER_IDS
+from bot.services.agent_handoff_copy import AGENT_SHORTLY_COPY
 from bot.services.club import (
     get_club_for_chat,
     get_methods_for_amount,
@@ -419,7 +420,7 @@ async def cashout_simple_amount_received(
 # ---------------------------------------------------------------------------
 
 AUTO_CLAIMING_COPY = "Claiming chips...this will just take a minute!"
-AUTO_AGENT_SHORTLY_COPY = "An agent will be with you shortly."
+AUTO_AGENT_SHORTLY_COPY = AGENT_SHORTLY_COPY
 
 _AUTO_HANDLE_NO_SCREENSHOT = "\n\nSend your method as a message, not a screenshot"
 

@@ -415,10 +415,13 @@ async def _send_player_dm(
             lambda: client.get_entity(int(player_user_id)),
             label="get_entity(player)",
         )
-        await _call_with_flood_retry(
+        sent = await _call_with_flood_retry(
             lambda: client.send_message(player, text),
             label="send_message(player)",
         )
+        from bot.services import automated_staff_messages as asm
+
+        await asm.record_sent(sent, kind=asm.KIND_OUTREACH_DM)
         return True, None
     except Exception as e:
         logger.warning(
