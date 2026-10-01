@@ -9,7 +9,7 @@ from decimal import Decimal
 import httpx
 from sqlalchemy.orm import Session
 
-from api.audit_ledger import LedgerEvent
+from api.audit_ledger import LedgerEvent, canonicalize_gg_player_id
 from bot.services.gg_computer import gg_computer_base_url
 from db.models import EarlyRakebackLine, EarlyRakebackSnapshot
 
@@ -84,7 +84,7 @@ def sum_early_rakeback_by_player_for_week(
     )
     totals: dict[str, Decimal] = {}
     for line in lines:
-        gid = (line.gg_player_id or "").strip()
+        gid = canonicalize_gg_player_id(line.gg_player_id)
         if not gid:
             continue
         totals[gid] = totals.get(gid, Decimal(0)) + Decimal(str(line.amount_usd))
@@ -102,19 +102,40 @@ def net_settlement_events_after_early_rb(
     """
     warnings: list[str] = []
     out: list[LedgerEvent] = []
+    early_by_canonical: dict[str, Decimal] = {}
+    for raw_gid, amount in early_by_player.items():
+        gid = canonicalize_gg_player_id(raw_gid)
+        if not gid:
+            if (raw_gid or "").strip():
+                warnings.append(
+                    f"Early RB gg_id {raw_gid!r} is not NNNN-NNNN; "
+                    "skipped when netting Monday settlement"
+                )
+            continue
+        early_by_canonical[gid] = early_by_canonical.get(gid, Decimal(0)) + amount
+
     for event in events:
         if event.source != "monday_settlement":
             out.append(event)
             continue
-        gid = (event.gg_player_id or "").strip()
+        raw_gid = (event.gg_player_id or "").strip()
+        gid = canonicalize_gg_player_id(raw_gid)
         if not gid:
-            warnings.append(
-                "Monday settlement row missing gg_id; cannot net early RB"
-                + (f" (detail={event.detail!r})" if event.detail else "")
-            )
+            if raw_gid:
+                warnings.append(
+                    f"Monday settlement gg_id {raw_gid!r} is not NNNN-NNNN; "
+                    "cannot net early RB"
+                )
+            else:
+                warnings.append(
+                    "Monday settlement row missing gg_id; cannot net early RB"
+                    + (f" (detail={event.detail!r})" if event.detail else "")
+                )
             out.append(event)
             continue
-        early = early_by_player.get(gid, Decimal(0))
+        if gid != raw_gid:
+            event = replace(event, gg_player_id=gid)
+        early = early_by_canonical.get(gid, Decimal(0))
         remaining = event.amount_usd - early
         if remaining <= 0:
             continue

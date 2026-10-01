@@ -9,6 +9,7 @@ negates club-to-player outflows (deposits, RB, bonuses) and keeps cashouts posit
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -121,6 +122,25 @@ DEPOSIT_METHOD_ORDER: tuple[str, ...] = (
     "deposit_paypal",
     "deposit_crypto",
 )
+
+
+_CANONICAL_GG_PLAYER_ID_RE = re.compile(r"^[0-9]{4}-[0-9]{4}$")
+
+
+def canonicalize_gg_player_id(raw: str | None) -> str | None:
+    """ClubGG player id as ``NNNN-NNNN``.
+
+    Accepts that form, or exactly 8 digits (aon-beta stores the id with the
+    hyphen removed). Returns None when the value is missing or any other shape.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if _CANONICAL_GG_PLAYER_ID_RE.match(text):
+        return text
+    if text.isdigit() and len(text) == 8:
+        return f"{text[:4]}-{text[4:]}"
+    return None
 
 
 def gg_player_id_match_key(raw: str | None) -> str:
@@ -757,7 +777,7 @@ def fetch_early_rakeback_events(
     return [
         LedgerEvent(
             source="early_rakeback",
-            gg_player_id=(line.gg_player_id or "").strip() or None,
+            gg_player_id=canonicalize_gg_player_id(line.gg_player_id),
             amount_usd=Decimal(str(line.amount_usd)),
             occurred_at_utc=line.occurred_at,
             external_id=f"early_rakeback:{line.id}",

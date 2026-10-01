@@ -16,14 +16,17 @@ from api.aon_beta_client import (
     fetch_early_rakeback_archives,
     fetch_early_rakeback_entries,
 )
+from api.audit_ledger import canonicalize_gg_player_id
 from api.club_audit_timezone import audit_date_for_occurred_at, audit_day_window_utc
 from api.club_slug import ALL_GG_COMPUTER_CLUB_SLUGS, CLUB_SLUG_TO_NAME, resolve_club_id
 from db.models import EarlyRakebackLine, EarlyRakebackSnapshot
 
 SKIP_REASON_MISSING_GG_PLAYER_ID = "missing_gg_player_id"
+SKIP_REASON_INVALID_GG_PLAYER_ID = "invalid_gg_player_id"
 
 SKIP_REASON_LABELS: dict[str, str] = {
     SKIP_REASON_MISSING_GG_PLAYER_ID: "unmapped — no GG player ID",
+    SKIP_REASON_INVALID_GG_PLAYER_ID: "unmapped — GG player ID must be NNNN-NNNN",
 }
 
 
@@ -199,6 +202,23 @@ def sync_report_to_dict(report: EarlyRakebackSyncReport) -> dict[str, Any]:
     }
 
 
+def _import_gg_player_id(raw: Any) -> tuple[str, str | None]:
+    """Return (id to store, skip reason).
+
+    8-digit aon-beta ids are stored as NNNN-NNNN. Any other non-empty value is
+    unmapped. Empty stays unmapped with the missing-id reason.
+    """
+    if raw is None:
+        return "", SKIP_REASON_MISSING_GG_PLAYER_ID
+    text = str(raw).strip()
+    if not text:
+        return "", SKIP_REASON_MISSING_GG_PLAYER_ID
+    canonical = canonicalize_gg_player_id(text)
+    if canonical is None:
+        return "", SKIP_REASON_INVALID_GG_PLAYER_ID
+    return canonical, None
+
+
 def _entry_id(entry: dict[str, Any]) -> str:
     raw = entry.get("_id") or entry.get("id")
     return str(raw) if raw is not None else ""
@@ -275,11 +295,11 @@ def _flatten_entries(
 
     for entry in entries:
         entry_id = _entry_id(entry)
-        gg_player_id = (entry.get("gg_player_id") or "").strip()
+        gg_player_id, id_problem = _import_gg_player_id(entry.get("gg_player_id"))
         member_nickname = (entry.get("memberNickname") or "").strip()
         member_type = (entry.get("memberType") or "").strip()
         records = entry.get("records") or []
-        mapped = bool(gg_player_id)
+        mapped = id_problem is None
         before = len(stored)
 
         for record in records:
@@ -298,17 +318,18 @@ def _flatten_entries(
 
         stored_count = len(stored) - before
         if not mapped:
+            reason = id_problem or SKIP_REASON_MISSING_GG_PLAYER_ID
             if stored_count:
                 _record_skip(
                     skips,
-                    reason=SKIP_REASON_MISSING_GG_PLAYER_ID,
+                    reason=reason,
                     nickname=member_nickname,
                     count=stored_count,
                 )
             elif not records:
                 _record_skip(
                     skips,
-                    reason=SKIP_REASON_MISSING_GG_PLAYER_ID,
+                    reason=reason,
                     nickname=member_nickname,
                     count=1,
                 )
@@ -331,12 +352,12 @@ def _flatten_archive_entries(
         for entry_index, entry in enumerate(entries):
             if not isinstance(entry, dict):
                 continue
-            gg_player_id = (entry.get("gg_player_id") or "").strip()
+            gg_player_id, id_problem = _import_gg_player_id(entry.get("gg_player_id"))
             member_nickname = (entry.get("memberNickname") or "").strip()
             member_type = (entry.get("memberType") or "").strip()
             records = entry.get("records") or []
             entry_id = f"archive:{archive_id}:{entry_index}"
-            mapped = bool(gg_player_id)
+            mapped = id_problem is None
             before = len(stored)
 
             for record_index, record in enumerate(records):
@@ -361,7 +382,7 @@ def _flatten_archive_entries(
             if not mapped and stored_count:
                 _record_skip(
                     skips,
-                    reason=SKIP_REASON_MISSING_GG_PLAYER_ID,
+                    reason=id_problem or SKIP_REASON_MISSING_GG_PLAYER_ID,
                     nickname=member_nickname,
                     count=stored_count,
                 )

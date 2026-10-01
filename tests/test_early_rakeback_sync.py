@@ -9,8 +9,10 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from api.early_rakeback_sync import (
+    SKIP_REASON_INVALID_GG_PLAYER_ID,
     SKIP_REASON_MISSING_GG_PLAYER_ID,
     _flatten_archive_entries,
+    _flatten_entries,
     backfill_early_rakeback_from_archives,
     parse_skipped_nicknames_json,
     sync_early_rakeback_for_date,
@@ -251,6 +253,58 @@ class EarlyRakebackSyncTestCase(unittest.TestCase):
         self.assertEqual(lines[0]["source_entry_id"], "archive:arch1:0")
         self.assertEqual(lines[0]["amount_usd"], Decimal("15"))
         self.assertEqual(skips, [])
+
+    def test_import_inserts_hyphen_and_rejects_bad_id(self):
+        record = {
+            "calculatedAmount": 264.6,
+            "timestamp": "2026-09-23T23:15:52.700Z",
+        }
+        lines, skips = _flatten_entries(
+            [
+                {
+                    "_id": "brady",
+                    "memberNickname": "Brady2929",
+                    "memberType": "player",
+                    "gg_player_id": "57787429",
+                    "records": [record],
+                },
+                {
+                    "_id": "bad",
+                    "memberNickname": "BadId",
+                    "memberType": "player",
+                    "gg_player_id": "5778742",
+                    "records": [record],
+                },
+            ]
+        )
+        by_nick = {line["member_nickname"]: line for line in lines}
+        self.assertEqual(by_nick["Brady2929"]["gg_player_id"], "5778-7429")
+        self.assertEqual(by_nick["BadId"]["gg_player_id"], "")
+        self.assertEqual(len(skips), 1)
+        self.assertEqual(skips[0].nickname, "BadId")
+        self.assertEqual(skips[0].reason, SKIP_REASON_INVALID_GG_PLAYER_ID)
+
+        from_utc = datetime(2026, 9, 23, 4, 0, tzinfo=timezone.utc)
+        to_utc = datetime(2026, 9, 24, 3, 59, 59, tzinfo=timezone.utc)
+        archived, archive_skips = _flatten_archive_entries(
+            [
+                {
+                    "_id": "arch",
+                    "entries": [
+                        {
+                            "memberNickname": "Brady2929",
+                            "memberType": "player",
+                            "gg_player_id": "57787429",
+                            "records": [record],
+                        }
+                    ],
+                }
+            ],
+            from_utc,
+            to_utc,
+        )
+        self.assertEqual(archived[0]["gg_player_id"], "5778-7429")
+        self.assertEqual(archive_skips, [])
 
     def test_parse_skipped_nicknames_json_legacy_strings(self):
         skips = parse_skipped_nicknames_json('["Alice", "Bob"]')

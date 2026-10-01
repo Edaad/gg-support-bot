@@ -11,6 +11,7 @@ from api.audit_ledger import (
     _apply_audit_manual_filters,
     _fetch_manual_deposit_events,
     build_ledger_lines,
+    canonicalize_gg_player_id,
     cashout_method_token,
     cashout_source_label,
     fetch_cashout_events,
@@ -204,6 +205,22 @@ class BuildLedgerLinesSourceLabelTestCase(unittest.TestCase):
         ]
         lines = build_ledger_lines(events)
         self.assertEqual(lines[0].source_label, "Cashout")
+
+
+class CanonicalizeGgPlayerIdTestCase(unittest.TestCase):
+    def test_keeps_hyphenated_id(self):
+        self.assertEqual(canonicalize_gg_player_id("5778-7429"), "5778-7429")
+        self.assertEqual(canonicalize_gg_player_id(" 5778-7429 "), "5778-7429")
+
+    def test_inserts_hyphen_into_eight_digits(self):
+        self.assertEqual(canonicalize_gg_player_id("57787429"), "5778-7429")
+
+    def test_rejects_other_shapes(self):
+        self.assertIsNone(canonicalize_gg_player_id(None))
+        self.assertIsNone(canonicalize_gg_player_id(""))
+        self.assertIsNone(canonicalize_gg_player_id("5778742"))
+        self.assertIsNone(canonicalize_gg_player_id("5778-742"))
+        self.assertIsNone(canonicalize_gg_player_id("577874291"))
 
 
 class GgPlayerIdMatchKeyTestCase(unittest.TestCase):

@@ -536,13 +536,35 @@ class MondaySettlementTestCase(unittest.TestCase):
         self.assertNotIn("1111-2222", by_id)  # fully consumed by early RB
         self.assertEqual(warnings, [])
 
+    def test_net_settlement_matches_digit_only_early_rb_id(self):
+        from api.gg_computer_settlement import net_settlement_events_after_early_rb
+
+        events = [
+            LedgerEvent(
+                "monday_settlement",
+                "5778-7429",
+                Decimal("269.77"),
+                None,
+                "monday:w:5778-7429",
+                detail="Brady2929",
+            ),
+        ]
+        netted, warnings = net_settlement_events_after_early_rb(
+            events,
+            {"57787429": Decimal("264.60")},
+        )
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(netted), 1)
+        self.assertEqual(netted[0].gg_player_id, "5778-7429")
+        self.assertEqual(netted[0].amount_usd, Decimal("5.17"))
+
     def test_sum_early_rakeback_by_player_for_week(self):
         from api.gg_computer_settlement import sum_early_rakeback_by_player_for_week
 
         session = MagicMock()
         snap_a = MagicMock(id=1, audit_date=date(2026, 8, 17))
         snap_b = MagicMock(id=2, audit_date=date(2026, 8, 18))
-        line_a = MagicMock(gg_player_id="1055-4566", amount_usd=Decimal("450"))
+        line_a = MagicMock(gg_player_id="10554566", amount_usd=Decimal("450"))
         line_b = MagicMock(gg_player_id="1055-4566", amount_usd=Decimal("52"))
 
         def query_side_effect(model):
