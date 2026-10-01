@@ -353,6 +353,14 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
         )
 
     try:
+        apply_low_deposit_cashout_hold(record_id)
+    except Exception:
+        logger.exception(
+            "staff_cashout_record: low_deposit note failed record_id=%s",
+            record_id,
+        )
+
+    try:
         from bot.services.staff_cashout_pushover import (
             SOURCE_CREATE,
             notify_cashout_pushover_sync,
@@ -409,22 +417,31 @@ def chat_has_bound_payment(chat_id: int) -> bool:
         return stripe is not None
 
 
-def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
-    """Park a cashout with do_not_send when the group has no bound payment.
+_HOLD_NOTE_HEADER = "CASHOUT ON HOLD, DO NOT SEND UNTIL HEAD ADMIN CLEARS"
+_HOLD_NOTE_NO_PAYMENT = "No bound payment in this group."
+_HOLD_NOTE_LOOKUP_FAILED = "Could not verify bound payments."
 
-    Returns a Slack payload only when newly parked. Skips missing chat_id and
-    records already marked do_not_send. Fail-closed on lookup errors.
+
+def hold_note_for_reason(reason: str) -> str:
+    detail = (
+        _HOLD_NOTE_LOOKUP_FAILED if reason == "lookup_failed" else _HOLD_NOTE_NO_PAYMENT
+    )
+    return f"{_HOLD_NOTE_HEADER}\n{detail}"
+
+
+def apply_low_deposit_cashout_hold(record_id: int) -> None:
+    """Write the do-not-send warning into the note when the group has no bound payment.
+
+    Does not set do_not_send. Skips a missing chat, a bound payment, and a note
+    that is already saved. Fail-closed on lookup errors.
     """
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
-        if not record:
-            return None
-        if record.chat_id is None:
-            return None
-        if bool(getattr(record, "do_not_send", False)):
-            return None
+        if not record or record.chat_id is None:
+            return
+        if (record.note or "").strip():
+            return
 
-        reason: str
         try:
             has_bound_payment = chat_has_bound_payment(int(record.chat_id))
         except Exception:
@@ -436,27 +453,17 @@ def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
             reason = "lookup_failed"
         else:
             if has_bound_payment:
-                return None
+                return
             reason = "no_bound_payment"
 
-        record.do_not_send = True
+        record.note = hold_note_for_reason(reason)
         record.updated_at = datetime.utcnow()
         logger.info(
-            "low_deposit_hold: parked record_id=%s chat_id=%s reason=%s",
+            "low_deposit_hold: noted record_id=%s chat_id=%s reason=%s",
             record.id,
             record.chat_id,
             reason,
         )
-        return {
-            "record_id": int(record.id),
-            "club_id": int(record.club_id),
-            "chat_id": int(record.chat_id),
-            "group_title": record.group_title or "",
-            "gg_player_id": record.gg_player_id,
-            "amount": record.amount,
-            "reason": reason,
-            "note": record.note,
-        }
 
 
 def create_staff_cashout_record_manual(

@@ -1224,22 +1224,6 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                 return_value=99,
             ) as mock_create,
             patch(
-                "cashier.services.complete.apply_low_deposit_cashout_hold",
-                return_value=None,
-            ) as mock_hold,
-            patch(
-                "cashier.services.complete.notify_slack_escalation",
-                new=AsyncMock(return_value=True),
-            ) as mock_slack,
-            patch(
-                "cashier.services.complete.notify_slack_head_admin_escalation",
-                new=AsyncMock(return_value=True),
-            ) as mock_head_admin,
-            patch(
-                "cashier.services.complete.dm_staff",
-                new=AsyncMock(return_value=True),
-            ) as mock_dm,
-            patch(
                 "cashier.services.complete.schedule_cash_flow_from_club",
             ),
             patch(
@@ -1259,120 +1243,6 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(ok)
             self.assertIsNone(err)
             mock_create.assert_called_once_with(job)
-            mock_hold.assert_called_once_with(99)
-            mock_slack.assert_not_called()
-            mock_head_admin.assert_not_called()
-            mock_dm.assert_not_called()
-
-    async def test_complete_notifies_slack_when_low_deposit_hold(self) -> None:
-        job = {
-            "id": 7,
-            "club_id": 2,
-            "chat_id": -100,
-            "group_title": "RT / 1-2 / X",
-            "amount": Decimal("50"),
-            "status": "in_progress",
-            "initiated_by": 1,
-            "trigger": "group_cash",
-            "method_display_name": "Venmo",
-            "payout_details": "@x",
-        }
-        hold = {
-            "record_id": 99,
-            "club_id": 2,
-            "chat_id": -100,
-            "group_title": "RT / 1-2 / X",
-            "gg_player_id": "1-2",
-            "amount": Decimal("50"),
-            "reason": "no_bound_payment",
-        }
-        club = MagicMock()
-        club.name = "Round Table"
-        with (
-            patch(
-                "cashier.services.complete.get_job",
-                return_value=job,
-            ),
-            patch(
-                "cashier.services.complete.create_staff_cashout_record_from_job",
-                return_value=99,
-            ),
-            patch(
-                "cashier.services.complete.apply_low_deposit_cashout_hold",
-                return_value=hold,
-            ),
-            patch(
-                "cashier.services.complete.notify_slack_escalation",
-                new=AsyncMock(return_value=True),
-            ) as mock_slack,
-            patch(
-                "cashier.services.complete.notify_slack_head_admin_escalation",
-                new=AsyncMock(return_value=True),
-            ) as mock_head_admin,
-            patch(
-                "cashier.services.complete.notify_do_not_send_hold_pushover",
-                new=AsyncMock(return_value=1),
-            ) as mock_pushover,
-            patch(
-                "cashier.services.complete.dm_staff",
-                new=AsyncMock(return_value=True),
-            ) as mock_dm,
-            patch(
-                "cashier.services.complete.get_club_by_id",
-                return_value=club,
-            ),
-            patch(
-                "cashier.services.complete.schedule_cash_flow_from_club",
-            ),
-            patch(
-                "cashier.services.complete.record_activity_for_chat",
-            ),
-            patch(
-                "cashier.services.complete.invalidate_pending_one_time_bypasses",
-            ),
-            patch(
-                "cashier.services.complete.complete_job",
-                return_value=job,
-            ),
-        ):
-            from cashier.services.complete import complete_cashout_job
-
-            ok, err = await complete_cashout_job(7)
-            self.assertTrue(ok)
-            self.assertIsNone(err)
-            mock_slack.assert_awaited_once()
-            text = mock_slack.await_args.args[0]
-            self.assertTrue(
-                text.startswith(
-                    "CASHOUT ON HOLD, DO NOT SEND UNTIL HEAD ADMIN CLEARS\n"
-                )
-            )
-            self.assertIn("no bound payment", text)
-            self.assertIn("Round Table", text)
-            self.assertIn("*Group*: `RT / 1-2 / X`", text)
-            self.assertIn("*Club*: Round Table", text)
-            self.assertNotIn("Chat id", text)
-            self.assertEqual(
-                mock_slack.await_args.kwargs.get("source"),
-                "low_deposit_cashout",
-            )
-            mock_head_admin.assert_awaited_once_with(text, source="low_deposit_cashout")
-            mock_pushover.assert_awaited_once()
-            self.assertEqual(mock_pushover.await_args.args[0], 99)
-            push = mock_pushover.await_args.args[1]
-            self.assertTrue(
-                push.startswith(
-                    "CASHOUT ON HOLD, DO NOT SEND UNTIL HEAD ADMIN CLEARS\n"
-                )
-            )
-            self.assertIn("Reason: no bound payment in this group", push)
-            self.assertIn("Group: RT / 1-2 / X", push)
-            mock_dm.assert_awaited_once()
-            self.assertEqual(mock_dm.await_args.args[0], 1)
-            tg = mock_dm.await_args.args[1]
-            self.assertIn("<b>Group</b>: <code>RT / 1-2 / X</code>", tg)
-            self.assertIn("<b>Club</b>: Round Table", tg)
-            self.assertEqual(mock_dm.await_args.kwargs.get("parse_mode"), "HTML")
 
 
 class CountDepositsForChatTestCase(unittest.TestCase):
@@ -1404,6 +1274,7 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
     def test_skip_when_no_chat_id(self) -> None:
         record = MagicMock()
         record.chat_id = None
+        record.note = None
         record.do_not_send = False
         session = MagicMock()
         session.get.return_value = record
@@ -1416,13 +1287,15 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 apply_low_deposit_cashout_hold,
             )
 
-            self.assertIsNone(apply_low_deposit_cashout_hold(1))
+            apply_low_deposit_cashout_hold(1)
             self.assertFalse(record.do_not_send)
+            self.assertIsNone(record.note)
 
-    def test_skip_when_already_do_not_send(self) -> None:
+    def test_skip_when_note_already_set(self) -> None:
         record = MagicMock()
         record.chat_id = -100
-        record.do_not_send = True
+        record.note = "staff note"
+        record.do_not_send = False
         session = MagicMock()
         session.get.return_value = record
 
@@ -1439,13 +1312,16 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 apply_low_deposit_cashout_hold,
             )
 
-            self.assertIsNone(apply_low_deposit_cashout_hold(1))
+            apply_low_deposit_cashout_hold(1)
             mock_bound.assert_not_called()
+            self.assertEqual(record.note, "staff note")
+            self.assertFalse(record.do_not_send)
 
-    def test_no_hold_when_bound_payment_exists(self) -> None:
+    def test_no_note_when_bound_payment_exists(self) -> None:
         record = MagicMock()
         record.id = 5
         record.chat_id = -100
+        record.note = None
         record.do_not_send = False
         session = MagicMock()
         session.get.return_value = record
@@ -1464,17 +1340,15 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 apply_low_deposit_cashout_hold,
             )
 
-            self.assertIsNone(apply_low_deposit_cashout_hold(5))
+            apply_low_deposit_cashout_hold(5)
             self.assertFalse(record.do_not_send)
+            self.assertIsNone(record.note)
 
-    def test_parks_when_no_bound_payment(self) -> None:
+    def test_notes_when_no_bound_payment(self) -> None:
         record = MagicMock()
         record.id = 5
-        record.club_id = 2
         record.chat_id = -100
-        record.group_title = "RT / 1 / X"
-        record.gg_player_id = "1"
-        record.amount = Decimal("75")
+        record.note = None
         record.do_not_send = False
         session = MagicMock()
         session.get.return_value = record
@@ -1491,21 +1365,20 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         ):
             from bot.services.staff_cashout_records import (
                 apply_low_deposit_cashout_hold,
+                hold_note_for_reason,
             )
 
-            hold = apply_low_deposit_cashout_hold(5)
-        self.assertTrue(record.do_not_send)
-        self.assertEqual(hold["reason"], "no_bound_payment")
-        self.assertEqual(hold["record_id"], 5)
+            apply_low_deposit_cashout_hold(5)
+        self.assertFalse(record.do_not_send)
+        self.assertEqual(record.note, hold_note_for_reason("no_bound_payment"))
+        self.assertIn("DO NOT SEND UNTIL HEAD ADMIN CLEARS", record.note)
+        self.assertIn("No bound payment in this group.", record.note)
 
-    def test_parks_on_lookup_exception(self) -> None:
+    def test_notes_on_lookup_exception(self) -> None:
         record = MagicMock()
         record.id = 7
-        record.club_id = 2
         record.chat_id = -100
-        record.group_title = "RT / 1 / X"
-        record.gg_player_id = "1"
-        record.amount = Decimal("75")
+        record.note = None
         record.do_not_send = False
         session = MagicMock()
         session.get.return_value = record
@@ -1522,11 +1395,13 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
         ):
             from bot.services.staff_cashout_records import (
                 apply_low_deposit_cashout_hold,
+                hold_note_for_reason,
             )
 
-            hold = apply_low_deposit_cashout_hold(7)
-        self.assertTrue(record.do_not_send)
-        self.assertEqual(hold["reason"], "lookup_failed")
+            apply_low_deposit_cashout_hold(7)
+        self.assertFalse(record.do_not_send)
+        self.assertEqual(record.note, hold_note_for_reason("lookup_failed"))
+        self.assertIn("Could not verify bound payments.", record.note)
 
 
 class ChatHasBoundPaymentTestCase(unittest.TestCase):
