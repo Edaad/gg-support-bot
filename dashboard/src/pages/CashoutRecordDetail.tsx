@@ -43,6 +43,7 @@ function applyRecord(row: StaffCashoutRecordT): StaffCashoutRecordT {
     sending: Boolean(row.sending),
     do_not_send: Boolean(row.do_not_send),
     audited: Boolean(row.audited),
+    note: row.note?.trim() ? row.note.trim() : null,
     payments: [...(row.payments ?? [])],
     sends: [...(row.sends ?? [])],
   }
@@ -253,6 +254,8 @@ export default function CashoutRecordDetail({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteForId, setNoteForId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editAmount, setEditAmount] = useState('')
 
@@ -321,6 +324,30 @@ export default function CashoutRecordDetail({
         setRecord(next)
         syncDestRows(next, methods)
       }
+    }
+  }
+
+  useEffect(() => {
+    if (!record || noteForId === record.id) return
+    setNoteDraft(record.note ?? '')
+    setNoteForId(record.id)
+  }, [record, noteForId])
+
+  const saveNote = async () => {
+    if (!record) return
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateCashoutRecord(token, record.id, {
+        note: noteDraft.trim(),
+      })
+      const next = applyRecord(updated)
+      setRecord(next)
+      setNoteDraft(next.note ?? '')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -703,6 +730,32 @@ export default function CashoutRecordDetail({
           </label>
         )}
       </div>
+
+      <section className="mt-6">
+        <label htmlFor="cashout-note" className="text-sm font-medium text-ink">
+          Note
+        </label>
+        <p className="mt-1 text-sm text-ink-muted">
+          Included in Slack and Pushover alerts sent after this is saved.
+        </p>
+        <textarea
+          id="cashout-note"
+          rows={3}
+          maxLength={2000}
+          value={noteDraft}
+          disabled={saving}
+          onChange={(e) => setNoteDraft(e.target.value)}
+          className="mt-2 w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
+        />
+        <button
+          type="button"
+          className="btn-primary-sm mt-2"
+          disabled={saving || noteDraft.trim() === (record.note ?? '')}
+          onClick={() => void saveNote()}
+        >
+          Save note
+        </button>
+      </section>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-border bg-surface p-5">

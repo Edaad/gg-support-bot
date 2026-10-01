@@ -150,6 +150,7 @@ def _record_to_dict(record: StaffCashoutRecord) -> dict[str, Any]:
         "sending": bool(getattr(record, "sending", False)),
         "do_not_send": bool(getattr(record, "do_not_send", False)),
         "audited": bool(getattr(record, "audited", False)),
+        "note": (getattr(record, "note", None) or None),
         "chat_connected": record_chat_connected(record.club_id, record.chat_id),
         "owed_clear_status": record.owed_clear_status,
         "owed_clear_error": record.owed_clear_error,
@@ -454,6 +455,7 @@ def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
             "gg_player_id": record.gg_player_id,
             "amount": record.amount,
             "reason": reason,
+            "note": record.note,
         }
 
 
@@ -551,6 +553,19 @@ def delete_staff_cashout_record(record_id: int) -> bool:
         return True
 
 
+NOTE_MAX_LEN = 2000
+
+
+def clean_cashout_note(value: str | None) -> str | None:
+    """Blank notes are stored as null. Rejects text over NOTE_MAX_LEN."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    if len(text) > NOTE_MAX_LEN:
+        raise ValueError(f"Note must be {NOTE_MAX_LEN} characters or fewer")
+    return text
+
+
 def update_staff_cashout_record(
     record_id: int,
     *,
@@ -559,6 +574,8 @@ def update_staff_cashout_record(
     sending: Optional[bool] = None,
     do_not_send: Optional[bool] = None,
     audited: Optional[bool] = None,
+    note: Optional[str] = None,
+    note_set: bool = False,
 ) -> Optional[dict[str, Any]]:
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
@@ -582,6 +599,8 @@ def update_staff_cashout_record(
             if bool(audited) and current["status"] != "cleared":
                 raise ValueError("Audited can only be set when remaining is zero")
             record.audited = bool(audited)
+        if note_set:
+            record.note = clean_cashout_note(note)
         record.updated_at = datetime.utcnow()
         if amount is not None:
             _sync_owed_clear(session, record)

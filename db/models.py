@@ -1121,6 +1121,7 @@ class StaffCashoutRecord(Base):
     audited = Column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    note = Column(Text, nullable=True)
     last_slack_reminder_at = Column(DateTime, nullable=True)
     create_notified_at = Column(DateTime, nullable=True)
     # Club MTProto "$X owed" pin in the player's group; edited to "$0 owed" and

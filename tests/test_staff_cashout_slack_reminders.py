@@ -46,6 +46,26 @@ class FormatCashoutSlackReminderTests(unittest.TestCase):
         )
         self.assertIn("`RT / 1 / Na'than`", text)
 
+    def test_includes_note_when_set(self) -> None:
+        text = rem.format_cashout_slack_reminder(
+            group_title="GTO / 1 / X",
+            remaining=Decimal("10"),
+            record_id=1,
+            dashboard_url=None,
+            note="  hold for ID check  ",
+        )
+        self.assertIn("Note: hold for ID check", text)
+
+    def test_omits_blank_note(self) -> None:
+        text = rem.format_cashout_slack_reminder(
+            group_title="GTO / 1 / X",
+            remaining=Decimal("10"),
+            record_id=1,
+            dashboard_url=None,
+            note="   ",
+        )
+        self.assertNotIn("Note:", text)
+
 
 class FormatCashoutPushoverReminderTests(unittest.TestCase):
     def test_plain_text_player_amount_tag(self) -> None:
@@ -86,6 +106,15 @@ class FormatCashoutPushoverReminderTests(unittest.TestCase):
                 ]
             ),
         )
+
+    def test_create_includes_note_when_set(self) -> None:
+        text = rem.format_cashout_pushover_create(
+            group_title="RT / 1 / Sam",
+            amount=Decimal("50"),
+            method_label="Zelle",
+            note="call first",
+        )
+        self.assertTrue(text.endswith("\n\nNote: call first"))
 
 
 class DashboardUrlTests(unittest.TestCase):

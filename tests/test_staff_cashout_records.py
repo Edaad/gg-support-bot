@@ -164,6 +164,15 @@ class ZapierNameTestCase(unittest.TestCase):
 
 
 class StaffCashoutRecordServiceTestCase(unittest.TestCase):
+    def test_clean_cashout_note(self) -> None:
+        from bot.services.staff_cashout_records import clean_cashout_note
+
+        self.assertIsNone(clean_cashout_note(None))
+        self.assertIsNone(clean_cashout_note("   "))
+        self.assertEqual(clean_cashout_note("  hold  "), "hold")
+        with self.assertRaises(ValueError):
+            clean_cashout_note("x" * 2001)
+
     def test_create_idempotent_when_record_exists(self) -> None:
         existing = MagicMock()
         existing.id = 42

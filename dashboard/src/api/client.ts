@@ -109,6 +109,7 @@ export type PlaidZelleItem = {
   payment_method: string | null
   payment_channel: string | null
   pending: boolean
+  first_seen_at: string | null
   detail: Record<string, unknown> | null
 }
 
@@ -546,6 +547,7 @@ export interface StaffCashoutRecordT {
   sending: boolean
   do_not_send: boolean
   audited: boolean
+  note: string | null
   sent: number
   remaining: number
   status: 'active' | 'cleared' | 'oversent'
@@ -659,6 +661,7 @@ export const updateCashoutRecord = (
     sending?: boolean
     do_not_send?: boolean
     audited?: boolean
+    note?: string | null
   },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records/${id}`, {

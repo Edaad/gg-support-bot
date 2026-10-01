@@ -720,6 +720,7 @@ class StaffCashoutRecordRead(BaseModel):
     sending: bool = False
     do_not_send: bool = False
     audited: bool = False
+    note: Optional[str] = None
     sent: Decimal = Decimal("0")
     remaining: Decimal = Decimal("0")
     status: str = "cleared"
@@ -768,6 +769,7 @@ class StaffCashoutRecordUpdate(BaseModel):
     sending: Optional[bool] = None
     do_not_send: Optional[bool] = None
     audited: Optional[bool] = None
+    note: Optional[str] = None
 
 
 class StaffCashoutSlackReminderRead(BaseModel):

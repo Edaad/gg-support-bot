@@ -98,6 +98,7 @@ def _to_read(data: dict, club_names: dict[int, str]) -> StaffCashoutRecordRead:
         sending=bool(data.get("sending")),
         do_not_send=bool(data.get("do_not_send")),
         audited=bool(data.get("audited")),
+        note=data.get("note"),
         sent=sent,
         remaining=remaining,
         status=str(data.get("status") or "cleared"),
@@ -494,6 +495,8 @@ def patch_cashout_record(
             if "do_not_send" in updates
             else None,
             audited=updates.get("audited") if "audited" in updates else None,
+            note=updates.get("note") if "note" in updates else None,
+            note_set="note" in updates,
         )
     except CashoutRecordNotActive as exc:
         raise HTTPException(409, str(exc)) from exc

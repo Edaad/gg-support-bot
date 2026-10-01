@@ -13,6 +13,7 @@ from bot.services.club import (
     record_activity_for_chat,
 )
 from bot.services.mtproto_group_cash import schedule_cash_flow_from_club
+from bot.services.staff_cashout_slack_reminders import cashout_note_lines
 from bot.services.slack_ops_notify import (
     notify_slack_escalation,
     notify_slack_head_admin_escalation,
@@ -62,6 +63,7 @@ def _format_low_deposit_hold_slack(hold: dict[str, Any]) -> str:
             lines.append(f"*{label}*: `{safe}`")
         else:
             lines.append(f"*{label}*: {value}")
+    lines.extend(cashout_note_lines(hold.get("note")))
     return "\n".join(lines)
 
 
@@ -70,6 +72,7 @@ def _format_low_deposit_hold_pushover(hold: dict[str, Any]) -> str:
     lines = [_HOLD_HEADER]
     for label, value in _hold_message_fields(hold):
         lines.append(f"{label}: {value}")
+    lines.extend(cashout_note_lines(hold.get("note")))
     return "\n".join(lines)
 
 

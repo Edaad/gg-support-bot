@@ -128,6 +128,14 @@ def dashboard_public_base_url() -> str | None:
     return raw or None
 
 
+def cashout_note_lines(note: str | None) -> list[str]:
+    """Extra message lines when a cashout note is set. Empty when blank."""
+    text = (note or "").strip()
+    if not text:
+        return []
+    return ["", f"Note: {text}"]
+
+
 def cashout_record_dashboard_url(record_id: int) -> str | None:
     base = dashboard_public_base_url()
     if not base:
@@ -141,6 +149,7 @@ def format_cashout_slack_reminder(
     remaining: Any,
     record_id: int,
     dashboard_url: str | None = None,
+    note: str | None = None,
 ) -> str:
     title = (group_title or "").strip() or "(unnamed)"
     safe_title = title.replace("`", "'")
@@ -154,6 +163,7 @@ def format_cashout_slack_reminder(
         "",
         f"Remaining: {format_remaining_money(remaining)}",
     ]
+    lines.extend(cashout_note_lines(note))
     url = (
         dashboard_url
         if dashboard_url is not None
@@ -169,6 +179,7 @@ def format_cashout_pushover_reminder(
     group_title: str,
     remaining: Any,
     method_label: str | None = None,
+    note: str | None = None,
 ) -> str:
     """Plain-text body for the 5-minute overdue Pushover alert."""
     player = (group_title or "").strip() or "(unnamed)"
@@ -180,6 +191,7 @@ def format_cashout_pushover_reminder(
             f"Player: {player}",
             f"Amount: {format_remaining_money(remaining)}",
             f"Tag: {method}",
+            *cashout_note_lines(note),
         ]
     )
 
@@ -189,6 +201,7 @@ def format_cashout_pushover_create(
     group_title: str,
     amount: Any,
     method_label: str,
+    note: str | None = None,
 ) -> str:
     """Plain-text body for a new-cashout Pushover alert."""
     player = (group_title or "").strip() or "(unnamed)"
@@ -198,6 +211,7 @@ def format_cashout_pushover_create(
             f"Player: {player}",
             f"Amount: {format_remaining_money(amount)}",
             f"Tag: {method}",
+            *cashout_note_lines(note),
         ]
     )
 
@@ -364,6 +378,7 @@ def list_due_cashout_reminders(
                     "last_slack_reminder_at": getattr(
                         record, "last_slack_reminder_at", None
                     ),
+                    "note": getattr(record, "note", None),
                 }
             )
         return due
@@ -467,6 +482,7 @@ async def send_due_cashout_reminders(
                 remaining=remaining,
                 record_id=record_id,
                 dashboard_url=url,
+                note=item.get("note"),
             )
             ok = await notify_slack_head_admin_escalation(text, source=SLACK_SOURCE)
             if not ok:

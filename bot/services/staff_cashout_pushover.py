@@ -253,6 +253,7 @@ def _load_record_notify_context(record_id: int) -> dict[str, Any] | None:
             "method_names": names,
             "method_label": method_label,
             "rails": rails_for_display_names(names),
+            "note": record.note,
         }
 
 
@@ -268,6 +269,7 @@ def _title_and_message_for_context(
                 group_title=group_title,
                 amount=ctx.get("amount"),
                 method_label=method_label,
+                note=ctx.get("note"),
             ),
         )
     return (
@@ -276,6 +278,7 @@ def _title_and_message_for_context(
             group_title=group_title,
             remaining=ctx.get("remaining"),
             method_label=method_label,
+            note=ctx.get("note"),
         ),
     )
 
