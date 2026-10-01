@@ -1275,8 +1275,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "group_title": "RT / 1-2 / X",
             "gg_player_id": "1-2",
             "amount": Decimal("50"),
-            "deposit_count": 0,
-            "reason": "no_deposits",
+            "reason": "no_bound_payment",
         }
         club = MagicMock()
         club.name = "Round Table"
@@ -1335,7 +1334,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                     "CASHOUT ON HOLD, DO NOT SEND UNTIL HEAD ADMIN CLEARS\n"
                 )
             )
-            self.assertIn("0 deposits", text)
+            self.assertIn("no bound payment", text)
             self.assertIn("Round Table", text)
             self.assertIn("*Group*: `RT / 1-2 / X`", text)
             self.assertIn("*Club*: Round Table", text)
@@ -1410,17 +1409,17 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 return_value=self._session_cm(session),
             ),
             patch(
-                "bot.services.staff_cashout_records.count_deposits_for_chat",
-            ) as mock_count,
+                "bot.services.staff_cashout_records.chat_has_bound_payment",
+            ) as mock_bound,
         ):
             from bot.services.staff_cashout_records import (
                 apply_low_deposit_cashout_hold,
             )
 
             self.assertIsNone(apply_low_deposit_cashout_hold(1))
-            mock_count.assert_not_called()
+            mock_bound.assert_not_called()
 
-    def test_no_hold_when_two_or_more_deposits(self) -> None:
+    def test_no_hold_when_bound_payment_exists(self) -> None:
         record = MagicMock()
         record.id = 5
         record.chat_id = -100
@@ -1434,8 +1433,8 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 return_value=self._session_cm(session),
             ),
             patch(
-                "bot.services.staff_cashout_records.count_deposits_for_chat",
-                return_value=2,
+                "bot.services.staff_cashout_records.chat_has_bound_payment",
+                return_value=True,
             ),
         ):
             from bot.services.staff_cashout_records import (
@@ -1445,7 +1444,7 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
             self.assertIsNone(apply_low_deposit_cashout_hold(5))
             self.assertFalse(record.do_not_send)
 
-    def test_parks_on_zero_deposits(self) -> None:
+    def test_parks_when_no_bound_payment(self) -> None:
         record = MagicMock()
         record.id = 5
         record.club_id = 2
@@ -1463,8 +1462,8 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 return_value=self._session_cm(session),
             ),
             patch(
-                "bot.services.staff_cashout_records.count_deposits_for_chat",
-                return_value=0,
+                "bot.services.staff_cashout_records.chat_has_bound_payment",
+                return_value=False,
             ),
         ):
             from bot.services.staff_cashout_records import (
@@ -1473,42 +1472,10 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
 
             hold = apply_low_deposit_cashout_hold(5)
         self.assertTrue(record.do_not_send)
-        self.assertEqual(hold["reason"], "no_deposits")
-        self.assertEqual(hold["deposit_count"], 0)
+        self.assertEqual(hold["reason"], "no_bound_payment")
         self.assertEqual(hold["record_id"], 5)
 
-    def test_parks_on_single_deposit(self) -> None:
-        record = MagicMock()
-        record.id = 6
-        record.club_id = 2
-        record.chat_id = -100
-        record.group_title = "RT / 1 / X"
-        record.gg_player_id = "1"
-        record.amount = Decimal("75")
-        record.do_not_send = False
-        session = MagicMock()
-        session.get.return_value = record
-
-        with (
-            patch(
-                "bot.services.staff_cashout_records.get_db",
-                return_value=self._session_cm(session),
-            ),
-            patch(
-                "bot.services.staff_cashout_records.count_deposits_for_chat",
-                return_value=1,
-            ),
-        ):
-            from bot.services.staff_cashout_records import (
-                apply_low_deposit_cashout_hold,
-            )
-
-            hold = apply_low_deposit_cashout_hold(6)
-        self.assertTrue(record.do_not_send)
-        self.assertEqual(hold["reason"], "single_deposit")
-        self.assertEqual(hold["deposit_count"], 1)
-
-    def test_parks_on_count_exception(self) -> None:
+    def test_parks_on_lookup_exception(self) -> None:
         record = MagicMock()
         record.id = 7
         record.club_id = 2
@@ -1526,7 +1493,7 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
                 return_value=self._session_cm(session),
             ),
             patch(
-                "bot.services.staff_cashout_records.count_deposits_for_chat",
+                "bot.services.staff_cashout_records.chat_has_bound_payment",
                 side_effect=RuntimeError("db down"),
             ),
         ):
@@ -1536,8 +1503,92 @@ class LowDepositCashoutHoldTestCase(unittest.TestCase):
 
             hold = apply_low_deposit_cashout_hold(7)
         self.assertTrue(record.do_not_send)
-        self.assertEqual(hold["reason"], "count_failed")
-        self.assertIsNone(hold["deposit_count"])
+        self.assertEqual(hold["reason"], "lookup_failed")
+
+
+class ChatHasBoundPaymentTestCase(unittest.TestCase):
+    def _session_cm(self, session: MagicMock) -> MagicMock:
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_true_on_first_matching_method(self) -> None:
+        from db.models import VenmoPayment
+
+        session = MagicMock()
+        session.query.return_value.filter.return_value.first.return_value = (1,)
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ):
+            from bot.services.staff_cashout_records import chat_has_bound_payment
+
+            self.assertTrue(chat_has_bound_payment(-100))
+        self.assertEqual(session.query.call_count, 1)
+        self.assertIs(session.query.call_args.args[0], VenmoPayment.id)
+        clause = " ".join(
+            str(arg) for arg in session.query.return_value.filter.call_args.args
+        )
+        self.assertIn("telegram_chat_id", clause)
+        self.assertIn("is_test", clause)
+
+    def test_false_when_no_method_has_a_bound_row(self) -> None:
+        from db.models import (
+            CashAppPayment,
+            CryptoPayment,
+            PayPalPayment,
+            StripeCheckoutSession,
+            VenmoPayment,
+            ZellePayment,
+        )
+
+        session = MagicMock()
+        session.query.return_value.filter.return_value.first.return_value = None
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ):
+            from bot.services.staff_cashout_records import chat_has_bound_payment
+
+            self.assertFalse(chat_has_bound_payment(-100))
+        queried = [call.args[0] for call in session.query.call_args_list]
+        self.assertEqual(
+            queried,
+            [
+                VenmoPayment.id,
+                CashAppPayment.id,
+                PayPalPayment.id,
+                ZellePayment.id,
+                CryptoPayment.id,
+                StripeCheckoutSession.id,
+            ],
+        )
+        stripe_clause = " ".join(
+            str(arg)
+            for arg in session.query.return_value.filter.call_args_list[-1].args
+        )
+        self.assertIn("status", stripe_clause)
+        self.assertNotIn("is_test", stripe_clause)
+
+    def test_true_when_only_stripe_checkout_is_complete(self) -> None:
+        session = MagicMock()
+        session.query.return_value.filter.return_value.first.side_effect = [
+            None,
+            None,
+            None,
+            None,
+            None,
+            (9,),
+        ]
+        with patch(
+            "bot.services.staff_cashout_records.get_db",
+            return_value=self._session_cm(session),
+        ):
+            from bot.services.staff_cashout_records import chat_has_bound_payment
+
+            self.assertTrue(chat_has_bound_payment(-100))
+        self.assertEqual(session.query.call_count, 6)
 
 
 if __name__ == "__main__":

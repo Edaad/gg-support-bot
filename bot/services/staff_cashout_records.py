@@ -10,7 +10,6 @@ from typing import Any, Optional
 from sqlalchemy import exists, or_
 
 from bot.services.club import (
-    count_deposits_for_chat,
     get_method_by_id,
     get_sub_option_by_id,
 )
@@ -18,11 +17,17 @@ from bot.services.player_details import parse_tracking_title
 from club_gc_settings import get_club_gc_config_by_link_club_id
 from db.connection import get_db
 from db.models import (
+    CashAppPayment,
     Club,
+    CryptoPayment,
+    PayPalPayment,
     StaffCashoutMoneySend,
     StaffCashoutPayment,
     StaffCashoutRecord,
     StaffCashoutSendProof,
+    StripeCheckoutSession,
+    VenmoPayment,
+    ZellePayment,
 )
 
 logger = logging.getLogger(__name__)
@@ -364,11 +369,50 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
     return record_id
 
 
+_BOUND_PAYMENT_MODELS = (
+    VenmoPayment,
+    CashAppPayment,
+    PayPalPayment,
+    ZellePayment,
+    CryptoPayment,
+)
+
+
+def chat_has_bound_payment(chat_id: int) -> bool:
+    """True when this group has a non-test bound payment on any method.
+
+    Methods: Venmo, Cash App, PayPal, Zelle, crypto, and a completed Stripe
+    checkout. Test ingest rows do not count.
+    """
+    cid = int(chat_id)
+    with get_db() as session:
+        for model in _BOUND_PAYMENT_MODELS:
+            row = (
+                session.query(model.id)
+                .filter(
+                    model.telegram_chat_id == cid,
+                    model.is_test.is_(False),
+                )
+                .first()
+            )
+            if row is not None:
+                return True
+        stripe = (
+            session.query(StripeCheckoutSession.id)
+            .filter(
+                StripeCheckoutSession.telegram_chat_id == cid,
+                StripeCheckoutSession.status == "complete",
+            )
+            .first()
+        )
+        return stripe is not None
+
+
 def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
-    """Park a cashout with do_not_send when the group has 0–1 completed deposits.
+    """Park a cashout with do_not_send when the group has no bound payment.
 
     Returns a Slack payload only when newly parked. Skips missing chat_id and
-    records already marked do_not_send. Fail-closed on deposit-count errors.
+    records already marked do_not_send. Fail-closed on lookup errors.
     """
     with get_db() as session:
         record = session.get(StaffCashoutRecord, int(record_id))
@@ -379,32 +423,28 @@ def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
         if bool(getattr(record, "do_not_send", False)):
             return None
 
-        deposit_count: Optional[int]
         reason: str
         try:
-            deposit_count = count_deposits_for_chat(int(record.chat_id))
+            has_bound_payment = chat_has_bound_payment(int(record.chat_id))
         except Exception:
             logger.exception(
-                "low_deposit_hold: count failed record_id=%s chat_id=%s",
+                "low_deposit_hold: bound-payment lookup failed record_id=%s chat_id=%s",
                 record_id,
                 record.chat_id,
             )
-            deposit_count = None
-            reason = "count_failed"
+            reason = "lookup_failed"
         else:
-            if deposit_count >= 2:
+            if has_bound_payment:
                 return None
-            reason = "no_deposits" if deposit_count == 0 else "single_deposit"
+            reason = "no_bound_payment"
 
         record.do_not_send = True
         record.updated_at = datetime.utcnow()
         logger.info(
-            "low_deposit_hold: parked record_id=%s chat_id=%s reason=%s "
-            "deposit_count=%s",
+            "low_deposit_hold: parked record_id=%s chat_id=%s reason=%s",
             record.id,
             record.chat_id,
             reason,
-            deposit_count,
         )
         return {
             "record_id": int(record.id),
@@ -413,7 +453,6 @@ def apply_low_deposit_cashout_hold(record_id: int) -> Optional[dict[str, Any]]:
             "group_title": record.group_title or "",
             "gg_player_id": record.gg_player_id,
             "amount": record.amount,
-            "deposit_count": deposit_count,
             "reason": reason,
         }
 

@@ -27,9 +27,8 @@ from cashier.services.notify import dm_staff
 logger = logging.getLogger(__name__)
 
 _HOLD_REASON_LABELS = {
-    "no_deposits": "0 deposits in this group",
-    "single_deposit": "1 deposit in this group",
-    "count_failed": "could not verify deposit count",
+    "no_bound_payment": "no bound payment in this group",
+    "lookup_failed": "could not verify bound payments",
 }
 
 
@@ -39,18 +38,12 @@ def _hold_message_fields(hold: dict[str, Any]) -> list[tuple[str, str]]:
     amount = hold.get("amount")
     amount_str = str(amount) if amount is not None else "—"
     reason = str(hold.get("reason") or "")
-    reason_label = _HOLD_REASON_LABELS.get(reason, reason or "low deposit hold")
-    deposit_count = hold.get("deposit_count")
-    if deposit_count is None:
-        count_value = "could not verify"
-    else:
-        count_value = str(deposit_count)
+    reason_label = _HOLD_REASON_LABELS.get(reason, reason or "no bound payment")
     group_title = hold.get("group_title") or "—"
     return [
         ("Club", club_name),
         ("Group", group_title),
         ("Amount", amount_str),
-        ("Deposit count", count_value),
         ("Reason", reason_label),
         ("Record id", str(hold.get("record_id"))),
     ]
