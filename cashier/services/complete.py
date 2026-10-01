@@ -17,6 +17,7 @@ from bot.services.slack_ops_notify import (
     notify_slack_escalation,
     notify_slack_head_admin_escalation,
 )
+from bot.services.staff_cashout_pushover import notify_do_not_send_hold_pushover
 from bot.services.staff_cashout_records import (
     apply_low_deposit_cashout_hold,
     create_staff_cashout_record_from_job,
@@ -64,6 +65,14 @@ def _format_low_deposit_hold_slack(hold: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _format_low_deposit_hold_pushover(hold: dict[str, Any]) -> str:
+    """Plain text for Pushover: header plus label: value lines."""
+    lines = [_HOLD_HEADER]
+    for label, value in _hold_message_fields(hold):
+        lines.append(f"{label}: {value}")
+    return "\n".join(lines)
+
+
 def _format_low_deposit_hold_telegram(hold: dict[str, Any]) -> str:
     """Telegram HTML: <b>Label</b>: value, group title in <code>."""
     lines = [html.escape(_HOLD_HEADER)]
@@ -80,6 +89,10 @@ async def _notify_low_deposit_hold(hold: dict[str, Any], job: dict[str, Any]) ->
     slack_text = _format_low_deposit_hold_slack(hold)
     await notify_slack_escalation(slack_text, source="low_deposit_cashout")
     await notify_slack_head_admin_escalation(slack_text, source="low_deposit_cashout")
+    await notify_do_not_send_hold_pushover(
+        int(hold["record_id"]),
+        _format_low_deposit_hold_pushover(hold),
+    )
     staff_user_id = job.get("initiated_by")
     if staff_user_id is None:
         logger.warning(

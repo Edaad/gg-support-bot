@@ -150,6 +150,47 @@ class NotifyCreateGatedTests(unittest.TestCase):
         load.assert_not_called()
 
 
+class DoNotSendHoldPushoverTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fans_out_without_hours_gate(self) -> None:
+        notify = AsyncMock(return_value=True)
+        with (
+            patch(
+                "bot.services.staff_cashout_pushover.cashout_staff_alerts_open"
+            ) as hours,
+            patch(
+                "bot.services.staff_cashout_pushover._load_record_notify_context",
+                return_value={"rails": {"venmo"}},
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.recipients_for_rails",
+                return_value=[
+                    {"id": 1, "pushover_user_key": "key_e", "name": "Edaad"},
+                ],
+            ),
+            patch(
+                "bot.services.staff_cashout_pushover.cashout_record_dashboard_url",
+                return_value="https://dash.example/cashout-records/9",
+            ),
+            patch(
+                "bot.services.pushover_notify.notify_pushover",
+                notify,
+            ),
+        ):
+            sent = await push.notify_do_not_send_hold_pushover(
+                9, "CASHOUT ON HOLD\nReason: no bound payment in this group"
+            )
+        self.assertEqual(sent, 1)
+        hours.assert_not_called()
+        notify.assert_awaited_once()
+        self.assertEqual(notify.await_args.kwargs["user"], "key_e")
+        self.assertEqual(notify.await_args.kwargs["title"], push.DO_NOT_SEND_TITLE)
+        self.assertEqual(notify.await_args.kwargs["source"], push.SOURCE_DO_NOT_SEND)
+        self.assertEqual(
+            notify.await_args.kwargs["url"],
+            "https://dash.example/cashout-records/9",
+        )
+
+
 class OverdueUsesFanoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_calls_async_fanout_after_slack(self) -> None:
         due = [

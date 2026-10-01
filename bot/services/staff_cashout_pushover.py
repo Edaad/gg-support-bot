@@ -35,6 +35,8 @@ OTHER_RAIL = "other"
 
 SOURCE_CREATE = "cashout_create_pushover"
 SOURCE_OVERDUE = "cashout_slack_reminder"
+SOURCE_DO_NOT_SEND = "low_deposit_cashout"
+DO_NOT_SEND_TITLE = "CASHOUT ON HOLD, DO NOT SEND"
 
 CREATE_TITLE_TMPL = "New {method} Cashout"
 OVERDUE_TITLE = "URGENT CASHOUT"
@@ -374,5 +376,49 @@ async def notify_cashout_pushover_async(
     except Exception:
         logger.exception(
             "cashout_pushover: async fan-out failed record_id=%s", record_id
+        )
+        return 0
+
+
+async def notify_do_not_send_hold_pushover(record_id: int, message: str) -> int:
+    """Fan-out a do-not-send hold to the cashout's Pushover recipients.
+
+    Not gated on active hours. Returns the number of successful sends.
+    Never raises.
+    """
+    try:
+        ctx = _load_record_notify_context(record_id)
+        if ctx is None:
+            return 0
+        targets = recipients_for_rails(ctx["rails"])
+        if not targets:
+            return 0
+        from bot.services.pushover_notify import notify_pushover
+
+        url = cashout_record_dashboard_url(int(record_id))
+        sent = 0
+        for person in targets:
+            ok = await notify_pushover(
+                message,
+                user=person["pushover_user_key"],
+                title=DO_NOT_SEND_TITLE,
+                url=url,
+                url_title="Open cashout",
+                priority=1,
+                source=SOURCE_DO_NOT_SEND,
+            )
+            if ok:
+                sent += 1
+            else:
+                logger.warning(
+                    "cashout_pushover: do-not-send failed record_id=%s recipient_id=%s",
+                    record_id,
+                    person.get("id"),
+                )
+        return sent
+    except Exception:
+        logger.exception(
+            "cashout_pushover: do-not-send fan-out failed record_id=%s",
+            record_id,
         )
         return 0

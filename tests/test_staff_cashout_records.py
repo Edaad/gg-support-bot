@@ -1301,6 +1301,10 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=True),
             ) as mock_head_admin,
             patch(
+                "cashier.services.complete.notify_do_not_send_hold_pushover",
+                new=AsyncMock(return_value=1),
+            ) as mock_pushover,
+            patch(
                 "cashier.services.complete.dm_staff",
                 new=AsyncMock(return_value=True),
             ) as mock_dm,
@@ -1344,6 +1348,16 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                 "low_deposit_cashout",
             )
             mock_head_admin.assert_awaited_once_with(text, source="low_deposit_cashout")
+            mock_pushover.assert_awaited_once()
+            self.assertEqual(mock_pushover.await_args.args[0], 99)
+            push = mock_pushover.await_args.args[1]
+            self.assertTrue(
+                push.startswith(
+                    "CASHOUT ON HOLD, DO NOT SEND UNTIL HEAD ADMIN CLEARS\n"
+                )
+            )
+            self.assertIn("Reason: no bound payment in this group", push)
+            self.assertIn("Group: RT / 1-2 / X", push)
             mock_dm.assert_awaited_once()
             self.assertEqual(mock_dm.await_args.args[0], 1)
             tg = mock_dm.await_args.args[1]
