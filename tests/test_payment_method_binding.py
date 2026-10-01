@@ -425,6 +425,8 @@ class TestAmountInstructionsMessage(unittest.TestCase):
         self.assertIn("SEND THE EXACT AMOUNT SHOWN BELOW", text)
         self.assertIn("<code>74.99</code>", text)
         self.assertIn("PLEASE DO NOT SEND $75.00 (NO ROUNDING).", text)
+        self.assertNotIn("random emoji", text)
+        self.assertNotIn("Goods and services will be refunded.", text)
         self.assertIn(
             "This one-time step links your payment method so future deposits "
             "go through faster.",
@@ -443,8 +445,33 @@ class TestAmountInstructionsMessage(unittest.TestCase):
         self.assertIn("SEND THE EXACT AMOUNT SHOWN BELOW", text)
         self.assertIn("<code>99.99</code>", text)
         self.assertIn("PLEASE DO NOT SEND $100.00 (NO ROUNDING).", text)
+        self.assertIn(
+            "Please put a <b>random emoji</b> in the payment caption when sending.",
+            text,
+        )
+        self.assertIn(
+            "Personal payments only. <b>Goods and services will be refunded.</b>",
+            text,
+        )
         self.assertIn("TAP BELOW WHEN YOU ARE READY FOR THE PAYMENT INFO.", text)
         self.assertNotIn("SEND EXACTLY", text)
+
+    def test_venmo_combined_amount_setup_message_plain(self):
+        text = format_first_time_special_amount_setup_message(
+            payment_method_slug="venmo",
+            setup_amount_cents=9999,
+            chosen_amount_cents=10000,
+            use_html=False,
+        )
+        self.assertIn(
+            "Please put a random emoji in the payment caption when sending.",
+            text,
+        )
+        self.assertIn(
+            "Personal payments only. Goods and services will be refunded.",
+            text,
+        )
+        self.assertNotIn("<b>", text)
 
 
 class TestAllocateSetupAmount(unittest.TestCase):

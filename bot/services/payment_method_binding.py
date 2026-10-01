@@ -1897,6 +1897,18 @@ def format_first_time_special_amount_setup_message(
         "go through faster."
     )
     ack_line = _first_time_ack_prompt(use_html=use_html)
+    venmo_notes = ""
+    if slug == "venmo":
+        if use_html:
+            venmo_notes = (
+                "Please put a <b>random emoji</b> in the payment caption when sending.\n\n"
+                "Personal payments only. <b>Goods and services will be refunded.</b>\n\n"
+            )
+        else:
+            venmo_notes = (
+                "Please put a random emoji in the payment caption when sending.\n\n"
+                "Personal payments only. Goods and services will be refunded.\n\n"
+            )
 
     if use_html:
         safe_setup = html_module.escape(setup_display)
@@ -1906,6 +1918,7 @@ def format_first_time_special_amount_setup_message(
             f"{amount_line}\n\n"
             f"<code>{safe_setup}</code>\n\n"
             f"<b>{_caps(f'Please do not send {safe_chosen} (no rounding).')}</b>\n\n"
+            f"{venmo_notes}"
             f"{future_line}\n\n"
             f"{ack_line}"
         )
@@ -1914,6 +1927,7 @@ def format_first_time_special_amount_setup_message(
         f"{amount_line}\n\n"
         f"{setup_display}\n\n"
         f"{do_not_send}\n\n"
+        f"{venmo_notes}"
         f"{future_line}\n\n"
         f"{ack_line}"
     )
