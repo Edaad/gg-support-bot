@@ -254,10 +254,9 @@ export default function CashoutRecordDetail({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [noteDraft, setNoteDraft] = useState('')
-  const [noteForId, setNoteForId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editAmount, setEditAmount] = useState('')
+  const [editNote, setEditNote] = useState('')
 
   const [sendOpen, setSendOpen] = useState(false)
   const [sendEdit, setSendEdit] = useState<StaffCashoutSendT | null>(null)
@@ -327,34 +326,11 @@ export default function CashoutRecordDetail({
     }
   }
 
-  useEffect(() => {
-    if (!record || noteForId === record.id) return
-    setNoteDraft(record.note ?? '')
-    setNoteForId(record.id)
-  }, [record, noteForId])
-
-  const saveNote = async () => {
-    if (!record) return
-    setSaving(true)
-    setError(null)
-    try {
-      const updated = await updateCashoutRecord(token, record.id, {
-        note: noteDraft.trim(),
-      })
-      const next = applyRecord(updated)
-      setRecord(next)
-      setNoteDraft(next.note ?? '')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const openEdit = () => {
     if (!record) return
     setEditName(record.group_title)
     setEditAmount(String(record.amount))
+    setEditNote(record.note ?? '')
     syncDestRows(record, methods)
     setError(null)
     setEditOpen(true)
@@ -452,9 +428,10 @@ export default function CashoutRecordDetail({
     setSaving(true)
     setError(null)
     try {
-      const payload: { group_title: string; amount?: number } = {
+      const payload: { group_title: string; amount?: number; note?: string } = {
         group_title: editName.trim(),
       }
+      if (editNote.trim() !== (record.note ?? '')) payload.note = editNote.trim()
       if (record.status === 'active') payload.amount = amount
       const updated = await updateCashoutRecord(token, record.id, payload)
       const withPayments = await replaceCashoutPayments(
@@ -731,31 +708,12 @@ export default function CashoutRecordDetail({
         )}
       </div>
 
-      <section className="mt-6">
-        <label htmlFor="cashout-note" className="text-sm font-medium text-ink">
-          Note
-        </label>
-        <p className="mt-1 text-sm text-ink-muted">
-          Included in Slack and Pushover alerts sent after this is saved.
-        </p>
-        <textarea
-          id="cashout-note"
-          rows={3}
-          maxLength={2000}
-          value={noteDraft}
-          disabled={saving}
-          onChange={(e) => setNoteDraft(e.target.value)}
-          className="mt-2 w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
-        />
-        <button
-          type="button"
-          className="btn-primary-sm mt-2"
-          disabled={saving || noteDraft.trim() === (record.note ?? '')}
-          onClick={() => void saveNote()}
-        >
-          Save note
-        </button>
-      </section>
+      {record.note && (
+        <section className="mt-6 rounded-2xl border border-border bg-surface p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Note</p>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-ink">{record.note}</p>
+        </section>
+      )}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-border bg-surface p-5">
@@ -883,6 +841,20 @@ export default function CashoutRecordDetail({
             />
           </div>
           <CashoutDestinationList methods={methods} rows={destRows} onChange={setDestRows} />
+          <div>
+            <label htmlFor="cashout-edit-note" className="mb-1 block text-xs font-medium text-ink-muted">
+              Note (optional)
+            </label>
+            <textarea
+              id="cashout-edit-note"
+              rows={3}
+              maxLength={2000}
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-ink-muted">Included in Slack and Pushover alerts sent after this is saved.</p>
+          </div>
           {error && <p className="text-sm text-danger-ink">{error}</p>}
           <button type="button" onClick={saveEdit} disabled={saving} className="btn-primary w-full min-h-12">
             {saving ? 'Saving…' : 'Save'}

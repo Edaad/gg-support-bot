@@ -259,10 +259,12 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         cm.__exit__.return_value = False
 
         order: list[str] = []
+        records: list[StaffCashoutRecord] = []
 
         def track_add(obj: object) -> None:
             if isinstance(obj, StaffCashoutRecord):
                 order.append("record")
+                records.append(obj)
             elif isinstance(obj, StaffCashoutPayment):
                 order.append("payment")
 
@@ -299,10 +301,12 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
                         "payout_details": "@player",
                     }
                 ],
+                note="  Check ID first  ",
             )
 
         self.assertEqual(data["id"], 11)
         self.assertEqual(order, ["record", "payment"])
+        self.assertEqual(records[0].note, "Check ID first")
         notify.assert_called_once()
         self.assertEqual(notify.call_args.args[0], 11)
         self.assertNotIn("require_master_toggle", notify.call_args.kwargs)
@@ -572,6 +576,7 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
                             "payout_details": "@player",
                         }
                     ],
+                    "note": "Check ID first",
                 },
             )
             self.assertEqual(resp.status_code, 201)
@@ -581,6 +586,7 @@ class CashoutRecordsApiTestCase(unittest.TestCase):
             kwargs = create_mock.call_args.kwargs
             self.assertEqual(len(kwargs["payments"]), 1)
             self.assertEqual(kwargs["payments"][0]["method_display_name"], "Venmo")
+            self.assertEqual(kwargs["note"], "Check ID first")
 
     def test_create_manual_cashout_requires_payments(self) -> None:
         with patch(

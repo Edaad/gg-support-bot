@@ -434,6 +434,7 @@ def create_cashout_record(
             group_title=body.group_title,
             amount=body.amount,
             payments=[p.model_dump() for p in body.payments],
+            note=body.note,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

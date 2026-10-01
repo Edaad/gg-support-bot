@@ -761,6 +761,7 @@ class StaffCashoutRecordCreate(BaseModel):
     group_title: str
     amount: Decimal
     payments: List[StaffCashoutPaymentCreate] = []
+    note: Optional[str] = None
 
 
 class StaffCashoutRecordUpdate(BaseModel):

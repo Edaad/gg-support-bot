@@ -317,6 +317,7 @@ export default function CashoutRecords({
   const [clubId, setClubId] = useState('')
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
   const [createMethods, setCreateMethods] = useState<V2Method[]>([])
   const [createRows, setCreateRows] = useState<DestinationRow[]>([])
   const [search, setSearch] = useState('')
@@ -561,6 +562,7 @@ export default function CashoutRecords({
     setClubId(isGto && clubs[0] ? String(clubs[0].id) : '')
     setName('')
     setAmount('')
+    setNote('')
     setCreateRows([])
     setError(null)
     setCreateOpen(true)
@@ -585,6 +587,7 @@ export default function CashoutRecords({
         group_title: name.trim(),
         amount: parsed,
         payments: collected.payments,
+        note: note.trim() || null,
       })
       setCreateOpen(false)
       openRecord(created.id)
@@ -1141,6 +1144,20 @@ export default function CashoutRecords({
             rows={createRows}
             onChange={setCreateRows}
           />
+          <div>
+            <label htmlFor="cashout-create-note" className="mb-1 block text-xs font-medium text-ink-muted">
+              Note (optional)
+            </label>
+            <textarea
+              id="cashout-create-note"
+              rows={3}
+              maxLength={2000}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-ink-muted">Included in Slack and Pushover alerts for this cashout.</p>
+          </div>
           {error && (
             <p className="text-sm text-danger-ink">{error}</p>
           )}

@@ -645,6 +645,7 @@ export const createCashoutRecord = (
       method_display_name?: string | null
       payout_details?: string | null
     }>
+    note?: string | null
   },
 ) =>
   request<StaffCashoutRecordT>(`/cashout-records`, {

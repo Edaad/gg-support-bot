@@ -472,6 +472,7 @@ def create_staff_cashout_record_manual(
     group_title: str,
     amount: Decimal,
     payments: list[dict[str, Any]] | None = None,
+    note: str | None = None,
 ) -> dict[str, Any]:
     title = (group_title or "").strip()
     if not title:
@@ -482,6 +483,7 @@ def create_staff_cashout_record_manual(
     payment_rows = list(payments or [])
     if not payment_rows:
         raise ValueError("At least one payment destination is required")
+    clean_note = clean_cashout_note(note)
 
     with get_db() as session:
         club = session.get(Club, int(club_id))
@@ -497,6 +499,7 @@ def create_staff_cashout_record_manual(
             recorded_by_telegram_user_id=None,
             trigger="dashboard",
             tracks_money_sent=True,
+            note=clean_note,
         )
         session.add(record)
         session.flush()
