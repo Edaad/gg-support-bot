@@ -73,6 +73,7 @@ export type DepositAlert = {
   is_active: boolean
   conditions: AlertCondition[]
   disable_enabled: boolean
+  disable_inherits: boolean
   disable_conditions: AlertCondition[]
   disable_status: DisableStatus | null
   clubs: AlertClub[]
@@ -103,6 +104,7 @@ export type DepositAlertCreate = {
   is_active?: boolean
   conditions: ConditionIn[]
   disable_enabled?: boolean
+  disable_inherits?: boolean
   disable_conditions?: ConditionIn[]
 }
 
@@ -113,6 +115,7 @@ export type DepositAlertUpdate = {
   is_active?: boolean
   conditions?: ConditionIn[]
   disable_enabled?: boolean
+  disable_inherits?: boolean
   disable_conditions?: ConditionIn[]
 }
 

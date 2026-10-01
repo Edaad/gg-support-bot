@@ -308,9 +308,10 @@ def format_slack_message(
     include_disable: bool = False,
 ) -> str:
     method_label = METHOD_LABELS.get(alert.method, alert.method)
+    linked = include_disable and bool(getattr(alert, "disable_inherits", False))
     title = (
         ":bell: Deposit destination disabled"
-        if include_disable and not include_alert
+        if linked or (include_disable and not include_alert)
         else ":bell: Deposit method alert"
     )
     lines = [
@@ -321,19 +322,35 @@ def format_slack_message(
         f"Variant: `{alert.variant}`",
         f"Week: {week.week_id} (Mon–Sun ET, so far)",
     ]
-    if include_alert:
-        lines.extend(["", "Conditions:", *_condition_lines(alert.conditions, stats)])
-    if include_disable:
+    off_line = (
+        "This destination is off in every club until Monday, or until an "
+        "admin unchecks Disable this destination when reached."
+    )
+    if linked:
         lines.extend(
             [
                 "",
-                "This destination is off in every club until Monday, or until an "
-                "admin unchecks Disable this destination when reached.",
+                "Conditions:",
+                *_condition_lines(list(alert.conditions or []), stats),
                 "",
-                "Disable conditions:",
-                *_condition_lines(alert.disable_conditions, stats),
+                off_line,
             ]
         )
+    else:
+        if include_alert:
+            lines.extend(
+                ["", "Conditions:", *_condition_lines(alert.conditions, stats)]
+            )
+        if include_disable:
+            lines.extend(
+                [
+                    "",
+                    off_line,
+                    "",
+                    "Disable conditions:",
+                    *_condition_lines(alert.disable_conditions, stats),
+                ]
+            )
     lines.extend(
         [
             "",
@@ -346,23 +363,34 @@ def format_slack_message(
     return "\n".join(lines)
 
 
+def effective_disable_conditions(alert: DepositMethodAlert) -> list:
+    """Conditions that turn the destination off.
+
+    A linked rule uses the Slack conditions. An own-cap rule uses its disable set.
+    """
+    if bool(getattr(alert, "disable_inherits", False)):
+        return list(alert.conditions or [])
+    return list(alert.disable_conditions or [])
+
+
 def disable_conditions_met(alert: DepositMethodAlert, stats: WeekStats) -> bool:
     if not alert.disable_enabled:
         return False
-    return conditions_met(list(alert.disable_conditions or []), stats)
+    return conditions_met(effective_disable_conditions(alert), stats)
 
 
 def disable_status(
     alert: DepositMethodAlert, stats: WeekStats, week_id: str
 ) -> str | None:
-    """Card status: off, pending_slack, on, or None when disable is not in use."""
+    """Card status: off, pending_slack, on, or None when disable is not in use.
+
+    A latched week stays off until Monday even if the cap is no longer met.
+    """
     if not alert.is_active or not alert.disable_enabled:
         return None
-    met = conditions_met(list(alert.disable_conditions or []), stats)
-    latched = alert.last_disable_fired_week_id == week_id
-    if latched and met:
+    if alert.last_disable_fired_week_id == week_id:
         return "off"
-    if met:
+    if conditions_met(effective_disable_conditions(alert), stats):
         return "pending_slack"
     return "on"
 
@@ -416,7 +444,7 @@ async def evaluate_deposit_method_alerts(
         disable_due = (
             bool(alert.disable_enabled)
             and alert.last_disable_fired_week_id != week.week_id
-            and conditions_met(list(alert.disable_conditions or []), stats)
+            and conditions_met(effective_disable_conditions(alert), stats)
         )
         if not alert_due and not disable_due:
             continue
@@ -604,7 +632,7 @@ def disabled_destination_keys(
     *,
     now: datetime | None = None,
 ) -> set[str]:
-    """Keys currently skipped for this method. Empty when nothing is latched and met."""
+    """Keys currently skipped for this method. Empty when nothing is latched this week."""
     try:
         method_slug = normalize_method(method)
     except ValueError:
@@ -630,11 +658,6 @@ def disabled_destination_keys(
         return set()
     keys: set[str] = set()
     for row in rows:
-        stats = week_stats_for(
-            session, method=method_slug, variant=row.variant, week=week
-        )
-        if not conditions_met(list(row.disable_conditions or []), stats):
-            continue
         key = destination_match_key(method_slug, row.variant)
         if key:
             keys.add(key)

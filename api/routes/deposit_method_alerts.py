@@ -52,6 +52,7 @@ class DepositAlertCreate(BaseModel):
     is_active: bool = True
     conditions: list[ConditionIn]
     disable_enabled: bool = False
+    disable_inherits: bool = False
     disable_conditions: list[ConditionIn] = Field(default_factory=list)
 
 
@@ -62,6 +63,7 @@ class DepositAlertUpdate(BaseModel):
     is_active: Optional[bool] = None
     conditions: Optional[list[ConditionIn]] = None
     disable_enabled: Optional[bool] = None
+    disable_inherits: Optional[bool] = None
     disable_conditions: Optional[list[ConditionIn]] = None
 
 
@@ -78,6 +80,7 @@ class DepositAlertRead(BaseModel):
     is_active: bool
     conditions: list[dict[str, Any]]
     disable_enabled: bool
+    disable_inherits: bool
     disable_conditions: list[dict[str, Any]]
     disable_status: Optional[str] = None
     clubs: list[DepositAlertClub]
@@ -126,6 +129,7 @@ def _to_read(
         is_active=bool(row.is_active),
         conditions=condition_summaries(list(row.conditions or [])),
         disable_enabled=bool(row.disable_enabled),
+        disable_inherits=bool(row.disable_inherits),
         disable_conditions=condition_summaries(list(row.disable_conditions or [])),
         disable_status=disable_status(row, stats, week_id),
         clubs=[DepositAlertClub(**club) for club in (clubs or [])],
@@ -267,13 +271,22 @@ def _apply_alert_update(row: DepositMethodAlert, body: DepositAlertUpdate) -> bo
             row.disable_conditions = disable_conditions
             disable_conditions_changed = True
 
+    if body.disable_inherits is not None:
+        row.disable_inherits = bool(body.disable_inherits)
+
     if body.disable_enabled is not None:
         enabled = bool(body.disable_enabled)
         if enabled and not bool(row.disable_enabled):
             disable_turned_on = True
+        if not enabled and bool(row.disable_enabled):
+            clear_disable_latch = True
         row.disable_enabled = enabled
 
-    if row.disable_enabled and not list(row.disable_conditions or []):
+    if (
+        row.disable_enabled
+        and not row.disable_inherits
+        and not list(row.disable_conditions or [])
+    ):
         raise HTTPException(400, "At least one disable condition is required")
 
     if body.is_active is not None:
@@ -315,7 +328,7 @@ async def create_alert(
 
     conditions = _parse_conditions(body.conditions)
     disable_conditions = _parse_disable_conditions(body.disable_conditions)
-    if body.disable_enabled and not disable_conditions:
+    if body.disable_enabled and not body.disable_inherits and not disable_conditions:
         raise HTTPException(400, "At least one disable condition is required")
     row = DepositMethodAlert(
         name=name,
@@ -324,6 +337,7 @@ async def create_alert(
         is_active=bool(body.is_active),
         conditions=conditions,
         disable_enabled=bool(body.disable_enabled),
+        disable_inherits=bool(body.disable_inherits),
         disable_conditions=disable_conditions,
     )
     db.add(row)

@@ -54,6 +54,14 @@ function newDraftCondition(type = 'weekly_volume'): DraftCondition {
   }
 }
 
+function cloneDrafts(drafts: DraftCondition[]): DraftCondition[] {
+  return drafts.map((c) => ({
+    key: `${c.type}-${Math.random().toString(36).slice(2, 8)}`,
+    type: c.type,
+    threshold: c.threshold,
+  }))
+}
+
 function conditionsToDraft(alert: DepositAlert | null): DraftCondition[] {
   if (!alert?.conditions?.length) return [newDraftCondition()]
   return alert.conditions.map((c) => ({
@@ -160,7 +168,10 @@ function AlertCard({
         {row.disable_enabled && disableStatusLabel(row.disable_status) && (
           <p className="font-medium text-ink">{disableStatusLabel(row.disable_status)}</p>
         )}
-        {row.disable_enabled && (
+        {row.disable_enabled && row.disable_inherits && (
+          <p className="text-ink-muted">Same conditions as the alert</p>
+        )}
+        {row.disable_enabled && !row.disable_inherits && (
           <ul className="space-y-1 text-ink-muted">
             {(row.disable_conditions || []).map((c) => (
               <li key={`disable-${c.type}`}>{c.summary || c.label || c.type}</li>
@@ -203,9 +214,12 @@ export default function Alerts({ token }: { token: string }) {
   const [variantsLoading, setVariantsLoading] = useState(false)
   const [conditions, setConditions] = useState<DraftCondition[]>([newDraftCondition()])
   const [disableEnabled, setDisableEnabled] = useState(false)
+  const [disableInherits, setDisableInherits] = useState(true)
   const [disableConditions, setDisableConditions] = useState<DraftCondition[]>([
     newDraftCondition(),
   ])
+  const [savedInherit, setSavedInherit] = useState(false)
+  const [savedDisableDrafts, setSavedDisableDrafts] = useState<DraftCondition[]>([])
   const [formError, setFormError] = useState<string | null>(null)
 
   const nameId = useId()
@@ -280,7 +294,10 @@ export default function Alerts({ token }: { token: string }) {
     setVariant('')
     setConditions([newDraftCondition()])
     setDisableEnabled(false)
+    setDisableInherits(true)
     setDisableConditions([newDraftCondition()])
+    setSavedInherit(false)
+    setSavedDisableDrafts([])
     setFormError(null)
     setModalOpen(true)
   }
@@ -291,12 +308,17 @@ export default function Alerts({ token }: { token: string }) {
     setMethod(row.method as AlertMethod)
     setVariant(row.variant)
     setConditions(conditionsToDraft(row))
+    const storedDrafts = row.disable_conditions?.length
+      ? conditionsToDraft({ ...row, conditions: row.disable_conditions })
+      : []
+    const hasSetup = Boolean(row.disable_inherits) || storedDrafts.length > 0
     setDisableEnabled(Boolean(row.disable_enabled))
+    setDisableInherits(hasSetup ? Boolean(row.disable_inherits) : true)
     setDisableConditions(
-      row.disable_conditions?.length
-        ? conditionsToDraft({ ...row, conditions: row.disable_conditions })
-        : [newDraftCondition()],
+      storedDrafts.length ? cloneDrafts(storedDrafts) : [newDraftCondition()],
     )
+    setSavedInherit(Boolean(row.disable_inherits))
+    setSavedDisableDrafts(cloneDrafts(storedDrafts))
     setFormError(null)
     setModalOpen(true)
   }
@@ -370,19 +392,26 @@ export default function Alerts({ token }: { token: string }) {
       setFormError('At least one condition is required')
       return
     }
-    if (disableEnabled && !disableConditions.length) {
+    if (disableEnabled && !disableInherits && !disableConditions.length) {
       setFormError('At least one disable condition is required')
       return
     }
     if (!validateThresholds(conditions, 'Each alert condition')) return
-    if (disableEnabled && !validateThresholds(disableConditions, 'Each disable condition')) {
+    if (
+      disableEnabled &&
+      !disableInherits &&
+      !validateThresholds(disableConditions, 'Each disable condition')
+    ) {
       return
     }
 
     setSaving(true)
     try {
       const payloadConditions = draftToPayload(conditions)
-      const payloadDisable = disableEnabled ? draftToPayload(disableConditions) : []
+      const inheritForSave = disableEnabled ? disableInherits : savedInherit
+      const payloadDisable = inheritForSave
+        ? []
+        : draftToPayload(disableEnabled ? disableConditions : savedDisableDrafts)
       if (editRow) {
         await updateDepositAlert(token, editRow.id, {
           name: name.trim(),
@@ -390,6 +419,7 @@ export default function Alerts({ token }: { token: string }) {
           variant,
           conditions: payloadConditions,
           disable_enabled: disableEnabled,
+          disable_inherits: inheritForSave,
           disable_conditions: payloadDisable,
         })
       } else {
@@ -400,6 +430,7 @@ export default function Alerts({ token }: { token: string }) {
           is_active: true,
           conditions: payloadConditions,
           disable_enabled: disableEnabled,
+          disable_inherits: inheritForSave,
           disable_conditions: payloadDisable,
         })
       }
@@ -698,12 +729,42 @@ export default function Alerts({ token }: { token: string }) {
               <input
                 type="checkbox"
                 checked={disableEnabled}
-                onChange={(e) => setDisableEnabled(e.target.checked)}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setDisableEnabled(on)
+                  if (!on) return
+                  const firstTime = !savedInherit && savedDisableDrafts.length === 0
+                  if (firstTime) {
+                    setDisableInherits(true)
+                    return
+                  }
+                  setDisableInherits(savedInherit)
+                  setDisableConditions(
+                    savedDisableDrafts.length
+                      ? cloneDrafts(savedDisableDrafts)
+                      : [newDraftCondition()],
+                  )
+                }}
                 className="h-4 w-4 rounded border-border"
               />
               Disable this destination when reached
             </label>
             {disableEnabled && (
+              <label className="check-hit mt-3 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={disableInherits}
+                  onChange={(e) => {
+                    const on = e.target.checked
+                    if (!on) setDisableConditions(cloneDrafts(conditions))
+                    setDisableInherits(on)
+                  }}
+                  className="h-4 w-4 rounded border-border"
+                />
+                Same conditions as the alert
+              </label>
+            )}
+            {disableEnabled && !disableInherits && (
               <div className="mt-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="label-field-xs mb-0">Disable when (any one is enough)</p>

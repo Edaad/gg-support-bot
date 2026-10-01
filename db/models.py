@@ -3334,6 +3334,9 @@ class DepositMethodAlert(Base):
     disable_enabled = Column(
         Boolean, nullable=False, server_default=text("false"), default=False
     )
+    disable_inherits = Column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     disable_conditions = Column(
         JSONB, nullable=False, server_default=text("'[]'"), default=list
     )
