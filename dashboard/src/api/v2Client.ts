@@ -193,13 +193,6 @@ export const deleteV2Method = (token: string, id: number) =>
 export const reorderV2Methods = (token: string, clubId: number, order: number[]) =>
   request<{ ok: boolean }>(`/clubs/${clubId}/methods/reorder`, { method: 'PUT', body: JSON.stringify({ order }) }, token)
 
-export const resetV2MethodAccumulated = (token: string, methodId: number) =>
-  request<V2Method>(
-    `/methods/${methodId}/reset-accumulated`,
-    { method: 'POST' },
-    token,
-  ).then(normalizeMethod)
-
 export const listV2Tiers = (token: string, methodId: number) =>
   request<V2Tier[]>(`/methods/${methodId}/tiers`, {}, token).then((rows) =>
     rows.map(normalizeTier),
