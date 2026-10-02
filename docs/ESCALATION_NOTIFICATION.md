@@ -231,7 +231,7 @@ Club: {club name}
 Chat: `{chat id}` [https://t.me/c/{id without -100}]
 ```
 
-GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses `player sent a screenshot, please respond to them ASAP`. The `Chat:` line is appended by `notify_escalation_slack` (and the staff-unanswered issue-channel post) to every support-group escalation, including union deposit and RPA posts; the `t.me/c` link is added for supergroups (`-100…` ids) only.
+GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses two Slack-bold lines: `PLAYER SENT A SCREENSHOT, PLEASE RESPOND TO THEM ASAP` and `PLAYER SENT A SCREENSHOT MIGHT POSSIBLY BE A PAYMENT CONFIRMATION`. The `Chat:` line is appended by `notify_escalation_slack` (and the staff-unanswered issue-channel post) to every support-group escalation, including union deposit and RPA posts; the `t.me/c` link is added for supergroups (`-100…` ids) only.
 
 A payment notification with a *Manual action required* footer for a payment tied to a support group also logs an `escalation_events` row (`payment_manual_action`) for the [response audit](RESPONSE_AUDIT.md); its Slack post is unchanged.
 

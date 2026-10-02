@@ -147,7 +147,10 @@ STAFF_UNANSWERED_SECONDS = 300  # 5 minutes after follow-up Slack
 STAFF_UNANSWERED_SECONDS_TEST = 30
 
 SLACK_MESSAGE_BODY_MAX_CHARS = 500
-MEDIA_ONLY_PLACEHOLDER = "player sent a screenshot, please respond to them ASAP"
+MEDIA_ONLY_PLACEHOLDER = (
+    "*PLAYER SENT A SCREENSHOT, PLEASE RESPOND TO THEM ASAP*\n"
+    "*PLAYER SENT A SCREENSHOT MIGHT POSSIBLY BE A PAYMENT CONFIRMATION*"
+)
 
 DEPOSIT_SENT_ACK_COPY = (
     "Thank you! Credits will be added as soon as we receive the payment."
