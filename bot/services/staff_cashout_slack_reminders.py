@@ -129,11 +129,11 @@ def dashboard_public_base_url() -> str | None:
 
 
 def cashout_note_lines(note: str | None) -> list[str]:
-    """Extra message lines when a cashout note is set. Empty when blank."""
+    """Leading lines when a cashout note is set. Empty when blank."""
     text = (note or "").strip()
     if not text:
         return []
-    return ["", f"Note: {text}"]
+    return [f"Note: {text}", ""]
 
 
 def cashout_record_dashboard_url(record_id: int) -> str | None:
@@ -154,6 +154,7 @@ def format_cashout_slack_reminder(
     title = (group_title or "").strip() or "(unnamed)"
     safe_title = title.replace("`", "'")
     lines = [
+        *cashout_note_lines(note),
         ":siren: URGENT :siren:",
         "",
         "Contact head admins immediately to cash the following player "
@@ -163,7 +164,6 @@ def format_cashout_slack_reminder(
         "",
         f"Remaining: {format_remaining_money(remaining)}",
     ]
-    lines.extend(cashout_note_lines(note))
     url = (
         dashboard_url
         if dashboard_url is not None
@@ -186,12 +186,12 @@ def format_cashout_pushover_reminder(
     method = (method_label or "").strip() or "Other"
     return "\n".join(
         [
+            *cashout_note_lines(note),
             "This player has been waiting longer than 5 minutes to get cashed out!",
             "",
             f"Player: {player}",
             f"Amount: {format_remaining_money(remaining)}",
             f"Tag: {method}",
-            *cashout_note_lines(note),
         ]
     )
 
@@ -208,10 +208,10 @@ def format_cashout_pushover_create(
     method = (method_label or "").strip() or "Other"
     return "\n".join(
         [
+            *cashout_note_lines(note),
             f"Player: {player}",
             f"Amount: {format_remaining_money(amount)}",
             f"Tag: {method}",
-            *cashout_note_lines(note),
         ]
     )
 

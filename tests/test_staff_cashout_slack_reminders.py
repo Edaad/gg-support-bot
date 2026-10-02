@@ -54,7 +54,7 @@ class FormatCashoutSlackReminderTests(unittest.TestCase):
             dashboard_url=None,
             note="  hold for ID check  ",
         )
-        self.assertIn("Note: hold for ID check", text)
+        self.assertTrue(text.startswith("Note: hold for ID check\n"))
 
     def test_omits_blank_note(self) -> None:
         text = rem.format_cashout_slack_reminder(
@@ -114,7 +114,7 @@ class FormatCashoutPushoverReminderTests(unittest.TestCase):
             method_label="Zelle",
             note="call first",
         )
-        self.assertTrue(text.endswith("\n\nNote: call first"))
+        self.assertTrue(text.startswith("Note: call first\n"))
 
 
 class DashboardUrlTests(unittest.TestCase):
