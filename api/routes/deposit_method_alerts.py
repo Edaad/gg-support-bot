@@ -21,7 +21,9 @@ from bot.services.deposit_method_alerts import (
     disable_status,
     distinct_variants_for_method,
     eastern_week_bounds_utc,
+    effective_disable_conditions,
     evaluate_deposit_method_alerts,
+    release_disable_latch_if_under_cap,
     normalize_method,
     normalize_variant,
     week_stats_map,
@@ -242,8 +244,15 @@ def _set_method_or_variant(
     return changed
 
 
-def _apply_alert_update(row: DepositMethodAlert, body: DepositAlertUpdate) -> bool:
-    """Apply PATCH fields. Returns whether evaluate should run."""
+def _apply_alert_update(
+    row: DepositMethodAlert, body: DepositAlertUpdate
+) -> tuple[bool, bool]:
+    """Apply PATCH fields.
+
+    Returns whether evaluate should run, and whether the effective disable
+    limit changed.
+    """
+    prev_effective = [dict(c) for c in effective_disable_conditions(row)]
     prev_active = bool(row.is_active)
     identity_changed = _set_method_or_variant(
         row, method=body.method, variant=body.variant
@@ -299,14 +308,19 @@ def _apply_alert_update(row: DepositMethodAlert, body: DepositAlertUpdate) -> bo
         row.last_disable_fired_week_id = None
         row.last_disable_fired_at = None
 
+    limits_changed = not conditions_equal(
+        prev_effective, effective_disable_conditions(row)
+    )
     becoming_active = bool(row.is_active) and not prev_active
-    return bool(row.is_active) and (
+    should_evaluate = bool(row.is_active) and (
         becoming_active
         or clear_alert_latch
         or clear_disable_latch
         or disable_turned_on
         or disable_conditions_changed
+        or limits_changed
     )
+    return should_evaluate, limits_changed
 
 
 @router.post("", response_model=DepositAlertRead)
@@ -360,8 +374,11 @@ async def update_alert(
     if row is None:
         raise HTTPException(404, "Alert not found")
 
-    should_evaluate = _apply_alert_update(row, body)
+    should_evaluate, limits_changed = _apply_alert_update(row, body)
     db.flush()
+
+    if limits_changed:
+        await release_disable_latch_if_under_cap(db, row)
 
     if should_evaluate:
         await evaluate_deposit_method_alerts(db, method=row.method, variant=row.variant)

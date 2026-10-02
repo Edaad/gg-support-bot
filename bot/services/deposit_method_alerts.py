@@ -323,8 +323,9 @@ def format_slack_message(
         f"Week: {week.week_id} (Mon–Sun ET, so far)",
     ]
     off_line = (
-        "This destination is off in every club until Monday, or until an "
-        "admin unchecks Disable this destination when reached."
+        "This destination is off in every club until the limit is above this "
+        "week's total, until Monday, or until an admin unchecks Disable this "
+        "destination when reached."
     )
     if linked:
         lines.extend(
@@ -384,7 +385,8 @@ def disable_status(
 ) -> str | None:
     """Card status: off, pending_slack, on, or None when disable is not in use.
 
-    A latched week stays off until Monday even if the cap is no longer met.
+    A latched week is off. A limit update that leaves this week under the cap
+    clears that latch before status is read again.
     """
     if not alert.is_active or not alert.disable_enabled:
         return None
@@ -399,6 +401,72 @@ def destination_is_disabled(
     alert: DepositMethodAlert, stats: WeekStats, week_id: str
 ) -> bool:
     return disable_status(alert, stats, week_id) == "off"
+
+
+def format_reenable_slack_message(
+    alert: DepositMethodAlert,
+    *,
+    stats: WeekStats,
+    week: EasternWeek,
+) -> str:
+    """Staff Slack when a raised limit puts the destination back on offer."""
+    method_label = METHOD_LABELS.get(alert.method, alert.method)
+    lines = [
+        ":bell: Deposit destination available",
+        "",
+        f"*{alert.name}*",
+        f"Method: {method_label}",
+        f"Variant: `{alert.variant}`",
+        f"Week: {week.week_id} (Mon–Sun ET, so far)",
+        "",
+        "The limit is above this week's total, so this destination is available again.",
+        "",
+        "Conditions:",
+        *_condition_lines(effective_disable_conditions(alert), stats),
+        "",
+        f"This week: {_fmt_usd_cents(stats.volume_cents)} · {stats.tx_count} txs",
+    ]
+    url = _dashboard_alerts_url()
+    if url:
+        lines.extend(["", f"<{url}|Open Alerts>"])
+    return "\n".join(lines)
+
+
+async def release_disable_latch_if_under_cap(
+    session: Session,
+    alert: DepositMethodAlert,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Clear this week's disable latch when a new limit is no longer met.
+
+    Sends the available-again Slack. The destination is offered again even if
+    that post fails.
+    """
+    if not alert.is_active or not alert.disable_enabled:
+        return False
+    week = eastern_week_bounds_utc(now)
+    if alert.last_disable_fired_week_id != week.week_id:
+        return False
+    stats = week_stats_for(
+        session, method=alert.method, variant=alert.variant, week=week
+    )
+    if conditions_met(effective_disable_conditions(alert), stats):
+        return False
+    alert.last_disable_fired_week_id = None
+    alert.last_disable_fired_at = None
+    from bot.services.slack_ops_notify import notify_slack_head_admin_escalation
+
+    text = format_reenable_slack_message(alert, stats=stats, week=week)
+    ok = await notify_slack_head_admin_escalation(text, source=SLACK_SOURCE)
+    if not ok:
+        logger.warning(
+            "deposit_method_alert: re-enable slack failed alert_id=%s method=%s variant=%r",
+            alert.id,
+            alert.method,
+            alert.variant,
+        )
+    return True
 
 
 async def evaluate_deposit_method_alerts(

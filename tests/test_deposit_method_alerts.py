@@ -39,6 +39,7 @@ from bot.services.deposit_method_alerts import (
     eastern_week_bounds_utc,
     evaluate_deposit_method_alerts,
     is_destination_disabled,
+    release_disable_latch_if_under_cap,
     maybe_evaluate_after_ingest,
 )
 from db.connection import get_db_dependency
@@ -904,32 +905,139 @@ class DisableReenableTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(destination_is_disabled(row, stats, WEEK))
         session.close()
 
-    async def test_raising_threshold_stays_off_without_another_slack(self):
+    async def test_raising_limit_reenables_and_posts(self):
         self._latched()
         session = self.Session()
         row = session.query(DepositMethodAlert).one()
         high = WeekStats(150_000, 1)
-        row.disable_conditions = [_volume(500_000)]
+        _apply_alert_update(
+            row,
+            DepositAlertUpdate(
+                disable_conditions=[
+                    {"type": "weekly_volume", "threshold_usd": 5000},
+                ]
+            ),
+        )
         session.commit()
-        self.assertTrue(destination_is_disabled(row, high, WEEK))
-        self.assertEqual(disable_status(row, high, WEEK), "off")
-        self.assertIn(
+        with (
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                new=AsyncMock(return_value=True),
+            ) as slack,
+            patch(
+                "bot.services.deposit_method_alerts.week_stats_for",
+                return_value=high,
+            ),
+        ):
+            released = await release_disable_latch_if_under_cap(session, row, now=NOW)
+        self.assertTrue(released)
+        text = slack.await_args.args[0]
+        self.assertIn("available again", text)
+        self.assertIsNone(row.last_disable_fired_week_id)
+        self.assertFalse(destination_is_disabled(row, high, WEEK))
+        self.assertNotIn(
             destination_match_key("venmo", "@sonny"),
             disabled_destination_keys(session, "venmo", now=NOW),
         )
-        with patch(
-            "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
-            new=AsyncMock(return_value=True),
-        ) as slack:
-            with patch(
+        session.close()
+
+    async def test_raising_linked_alert_limit_reenables(self):
+        self._latched()
+        session = self.Session()
+        row = session.query(DepositMethodAlert).one()
+        row.disable_inherits = True
+        row.conditions = [_volume(100_000)]
+        session.commit()
+        high = WeekStats(150_000, 1)
+        _apply_alert_update(
+            row,
+            DepositAlertUpdate(
+                conditions=[{"type": "weekly_volume", "threshold_usd": 5000}]
+            ),
+        )
+        session.commit()
+        with (
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                new=AsyncMock(return_value=True),
+            ) as slack,
+            patch(
                 "bot.services.deposit_method_alerts.week_stats_for",
                 return_value=high,
-            ):
-                fired = await evaluate_deposit_method_alerts(
-                    session, method="venmo", variant="@sonny", now=NOW
-                )
-        self.assertEqual(fired, 0)
+            ),
+        ):
+            released = await release_disable_latch_if_under_cap(session, row, now=NOW)
+        self.assertTrue(released)
+        self.assertIn("available again", slack.await_args.args[0])
+        self.assertFalse(destination_is_disabled(row, high, WEEK))
+        session.close()
+
+    async def test_lowering_limit_while_still_over_stays_off(self):
+        self._latched()
+        session = self.Session()
+        row = session.query(DepositMethodAlert).one()
+        stats = WeekStats(150_000, 1)
+        _apply_alert_update(
+            row,
+            DepositAlertUpdate(
+                disable_conditions=[
+                    {"type": "weekly_volume", "threshold_usd": 500},
+                ]
+            ),
+        )
+        session.commit()
+        with (
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                new=AsyncMock(return_value=True),
+            ) as slack,
+            patch(
+                "bot.services.deposit_method_alerts.week_stats_for",
+                return_value=stats,
+            ),
+        ):
+            released = await release_disable_latch_if_under_cap(session, row, now=NOW)
+        self.assertFalse(released)
         slack.assert_not_awaited()
+        self.assertEqual(row.last_disable_fired_week_id, WEEK)
+        self.assertTrue(destination_is_disabled(row, stats, WEEK))
+        session.close()
+
+    async def test_lowering_limit_onto_this_week_disables_and_posts(self):
+        self._latched()
+        session = self.Session()
+        row = session.query(DepositMethodAlert).one()
+        row.last_disable_fired_week_id = None
+        row.disable_conditions = [_volume(500_000)]
+        session.commit()
+        stats = WeekStats(150_000, 1)
+        _apply_alert_update(
+            row,
+            DepositAlertUpdate(
+                disable_conditions=[
+                    {"type": "weekly_volume", "threshold_usd": 1000},
+                ]
+            ),
+        )
+        session.commit()
+        with (
+            patch(
+                "bot.services.slack_ops_notify.notify_slack_head_admin_escalation",
+                new=AsyncMock(return_value=True),
+            ) as slack,
+            patch(
+                "bot.services.deposit_method_alerts.week_stats_for",
+                return_value=stats,
+            ),
+        ):
+            fired = await evaluate_deposit_method_alerts(
+                session, method="venmo", variant="@sonny", now=NOW
+            )
+        self.assertEqual(fired, 1)
+        text = slack.await_args.args[0]
+        self.assertIn("off in every club", text)
+        self.assertEqual(row.last_disable_fired_week_id, WEEK)
+        self.assertTrue(destination_is_disabled(row, stats, WEEK))
         session.close()
 
     async def test_deactivate_offers_again_reactivate_skips_without_slack(self):
