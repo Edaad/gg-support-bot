@@ -13,7 +13,6 @@ import {
   updateV2Method,
   deleteV2Method,
   reorderV2Methods,
-  resetV2MethodAccumulated,
   type V2Method,
 } from '../api/v2Client'
 import V2TierEditor from './V2TierEditor'
@@ -805,58 +804,6 @@ export default function V2MethodEditor({ token, clubId, direction }: Props) {
                       </div>
                       {summary.length > 0 && (
                         <p className="mt-1 text-xs text-ink-muted">{summary.join(' · ')}</p>
-                      )}
-                      {direction === 'deposit' &&
-                        (m.deposit_limit != null || (m.accumulated_amount ?? 0) > 0) && (
-                        <div className="mt-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-ink-muted">
-                              Deposited{' '}
-                              <span className="font-medium text-ink">
-                                $
-                                {Number(m.accumulated_amount ?? 0).toLocaleString('en-US', {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </span>
-                              {m.deposit_limit != null && (
-                                <>
-                                  {' '}
-                                  /{' '}
-                                  <span className="font-medium text-ink">
-                                    $
-                                    {Number(m.deposit_limit).toLocaleString('en-US', {
-                                      minimumFractionDigits: 2,
-                                    })}
-                                  </span>
-                                </>
-                              )}
-                            </span>
-                            {(m.accumulated_amount ?? 0) > 0 && (
-                              <button
-                                type="button"
-                                aria-label={`Reset accumulated deposits for ${m.name}`}
-                                onClick={async (e) => {
-                                  e.stopPropagation()
-                                  const ok = await askConfirm({
-                                    title: 'Reset accumulated deposits?',
-                                    message: `Clear the running total for ${m.name}.`,
-                                    confirmLabel: 'Reset total',
-                                    destructive: true,
-                                  })
-                                  if (!ok) return
-                                  await resetV2MethodAccumulated(token, m.id)
-                                  await load()
-                                }}
-                                className="action-chip text-accent hover:bg-accent/10 hover:text-accent-hover"
-                              >
-                                Reset total
-                              </button>
-                            )}
-                            {m.deposit_limit != null && (m.accumulated_amount ?? 0) >= m.deposit_limit && (
-                              <span className="badge-danger">Cap reached</span>
-                            )}
-                          </div>
-                        </div>
                       )}
                     </div>
                   </div>
