@@ -1036,7 +1036,7 @@ class DepositPlayerMessageTests(unittest.IsolatedAsyncioTestCase):
                         99,
                         club_id=3,
                         title="G",
-                        message_text="(media)",
+                        message_text=esc.MEDIA_ONLY_PLACEHOLDER,
                         message=msg,
                     )
         self.assertFalse(consumed)
