@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists, or_
 
@@ -20,6 +21,7 @@ from db.models import (
     CashAppPayment,
     Club,
     CryptoPayment,
+    Expense,
     PayPalPayment,
     StaffCashoutMoneySend,
     StaffCashoutPayment,
@@ -57,6 +59,56 @@ def _as_decimal(value: Any) -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value or 0))
+
+
+_CENTS = Decimal("0.01")
+_EASTERN = ZoneInfo("America/New_York")
+ROUND_UP_EXPENSE_TYPE = "Cashout round-up"
+
+
+def round_up_cashout_amount(amount: Decimal) -> tuple[Decimal, Optional[Decimal]]:
+    """Ceiling to the next whole dollar. The second value is the round-up expense."""
+    cents = _as_decimal(amount).quantize(_CENTS, rounding=ROUND_HALF_UP)
+    rounded = cents.to_integral_value(rounding=ROUND_CEILING)
+    if rounded == cents:
+        return cents, None
+    return rounded, (rounded - cents).quantize(_CENTS)
+
+
+def round_up_expense_description(
+    record_id: int, original: Decimal, rounded: Decimal, group_title: str
+) -> str:
+    cents = _as_decimal(original).quantize(_CENTS, rounding=ROUND_HALF_UP)
+    original_text = f"{cents:.2f}"
+    rounded_text = f"{rounded.to_integral_value():.0f}"
+    return (
+        f"Cashout #{int(record_id)} · {original_text} rounded to {rounded_text}"
+        f" · {group_title}"
+    )
+
+
+def _add_round_up_expense(
+    session: Any,
+    *,
+    record_id: int,
+    club_id: int,
+    original: Decimal,
+    rounded: Decimal,
+    expense_amount: Decimal,
+    group_title: str,
+) -> None:
+    session.add(
+        Expense(
+            amount=expense_amount,
+            expense_type=ROUND_UP_EXPENSE_TYPE,
+            description=round_up_expense_description(
+                record_id, original, rounded, group_title
+            ),
+            club_id=int(club_id),
+            expense_date=datetime.now(_EASTERN).date(),
+            pending=False,
+        )
+    )
 
 
 def _payment_to_dict(payment: StaffCashoutPayment) -> dict[str, Any]:
@@ -295,8 +347,15 @@ def get_staff_cashout_record_by_job_id(cashier_job_id: int) -> Optional[dict[str
         return _record_to_dict(record)
 
 
-def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
-    """Create order + first destination. New rows track money sent (start at $0)."""
+def create_staff_cashout_record_from_job(
+    job: dict[str, Any],
+) -> Optional[tuple[int, Decimal]]:
+    """Create order + first destination. New rows track money sent (start at $0).
+
+    Returns the record id and the amount stored on that row. Fractional amounts
+    are ceilinged to the next dollar, with the difference written as an expense
+    in the same transaction. An existing row is returned unchanged.
+    """
     job_id = job.get("id")
     if job_id is None:
         return None
@@ -313,12 +372,11 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
                 job_id,
                 existing.id,
             )
-            return existing.id
+            return int(existing.id), _as_decimal(existing.amount)
 
         group_title = job.get("group_title") or ""
-        amount = job.get("amount")
-        if not isinstance(amount, Decimal):
-            amount = Decimal(str(amount or 0))
+        original = _as_decimal(job.get("amount"))
+        rounded, expense_amount = round_up_cashout_amount(original)
 
         record = StaffCashoutRecord(
             cashier_job_id=int(job_id),
@@ -326,7 +384,7 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
             chat_id=int(job["chat_id"]),
             group_title=group_title,
             gg_player_id=_gg_player_id_from_title(group_title),
-            amount=amount,
+            amount=rounded,
             recorded_by_telegram_user_id=int(job["initiated_by"]),
             trigger=str(job.get("trigger") or "group_cash"),
             tracks_money_sent=True,
@@ -346,10 +404,21 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
         session.add(payment)
         session.flush()
         record_id = int(record.id)
+        if expense_amount is not None:
+            _add_round_up_expense(
+                session,
+                record_id=record_id,
+                club_id=int(job["club_id"]),
+                original=original,
+                rounded=rounded,
+                expense_amount=expense_amount,
+                group_title=group_title,
+            )
         logger.info(
-            "staff_cashout_record created job_id=%s record_id=%s",
+            "staff_cashout_record created job_id=%s record_id=%s amount=%s",
             job_id,
             record_id,
+            rounded,
         )
 
     try:
@@ -375,7 +444,7 @@ def create_staff_cashout_record_from_job(job: dict[str, Any]) -> Optional[int]:
             "staff_cashout_record: create pushover failed record_id=%s",
             record_id,
         )
-    return record_id
+    return record_id, rounded
 
 
 _BOUND_PAYMENT_MODELS = (
@@ -477,13 +546,14 @@ def create_staff_cashout_record_manual(
     title = (group_title or "").strip()
     if not title:
         raise ValueError("Name is required")
-    amt = _as_decimal(amount)
-    if amt <= 0:
+    original = _as_decimal(amount)
+    if original <= 0:
         raise ValueError("Amount must be greater than zero")
     payment_rows = list(payments or [])
     if not payment_rows:
         raise ValueError("At least one payment destination is required")
     clean_note = clean_cashout_note(note)
+    rounded, expense_amount = round_up_cashout_amount(original)
 
     with get_db() as session:
         club = session.get(Club, int(club_id))
@@ -495,7 +565,7 @@ def create_staff_cashout_record_manual(
             chat_id=None,
             group_title=title,
             gg_player_id=_gg_player_id_from_title(title),
-            amount=amt,
+            amount=rounded,
             recorded_by_telegram_user_id=None,
             trigger="dashboard",
             tracks_money_sent=True,
@@ -526,10 +596,22 @@ def create_staff_cashout_record_manual(
 
         session.flush()
         record_id = int(record.id)
+        if expense_amount is not None:
+            _add_round_up_expense(
+                session,
+                record_id=record_id,
+                club_id=int(club_id),
+                original=original,
+                rounded=rounded,
+                expense_amount=expense_amount,
+                group_title=title,
+            )
         logger.info(
-            "staff_cashout_record created from dashboard record_id=%s payments=%s",
+            "staff_cashout_record created from dashboard record_id=%s payments=%s"
+            " amount=%s",
             record_id,
             len(payment_rows),
+            rounded,
         )
         session.expire(record, ["payments", "money_sends"])
         data = _record_to_dict(record)

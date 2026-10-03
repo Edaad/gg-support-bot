@@ -164,6 +164,30 @@ class ZapierNameTestCase(unittest.TestCase):
 
 
 class StaffCashoutRecordServiceTestCase(unittest.TestCase):
+    def test_round_up_cashout_amount(self) -> None:
+        from bot.services.staff_cashout_records import (
+            ROUND_UP_EXPENSE_TYPE,
+            round_up_cashout_amount,
+            round_up_expense_description,
+        )
+
+        rounded, expense = round_up_cashout_amount(Decimal("372.34"))
+        self.assertEqual(rounded, Decimal("373"))
+        self.assertEqual(expense, Decimal("0.66"))
+        self.assertEqual(ROUND_UP_EXPENSE_TYPE, "Cashout round-up")
+        self.assertEqual(
+            round_up_expense_description(9, Decimal("372.34"), rounded, "RT / 1-2 / X"),
+            "Cashout #9 · 372.34 rounded to 373 · RT / 1-2 / X",
+        )
+
+        whole, no_expense = round_up_cashout_amount(Decimal("372.00"))
+        self.assertEqual(whole, Decimal("372.00"))
+        self.assertIsNone(no_expense)
+
+        tiny, tiny_expense = round_up_cashout_amount(Decimal("372.01"))
+        self.assertEqual(tiny, Decimal("373"))
+        self.assertEqual(tiny_expense, Decimal("0.99"))
+
     def test_clean_cashout_note(self) -> None:
         from bot.services.staff_cashout_records import clean_cashout_note
 
@@ -176,6 +200,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
     def test_create_idempotent_when_record_exists(self) -> None:
         existing = MagicMock()
         existing.id = 42
+        existing.amount = Decimal("372.34")
         session = MagicMock()
         session.query.return_value.filter.return_value.first.return_value = existing
         cm = MagicMock()
@@ -196,8 +221,9 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
                 "initiated_by": 1,
                 "trigger": "group_cash",
             }
-            rid = create_staff_cashout_record_from_job(job)
+            rid, stored = create_staff_cashout_record_from_job(job)
             self.assertEqual(rid, 42)
+            self.assertEqual(stored, Decimal("372.34"))
             session.add.assert_not_called()
 
     def test_create_sets_tracks_money_sent(self) -> None:
@@ -230,11 +256,161 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
                 "method_display_name": "Zelle",
                 "payout_details": "408",
             }
-            rid = create_staff_cashout_record_from_job(job)
+            rid, stored = create_staff_cashout_record_from_job(job)
             self.assertEqual(rid, 7)
+            self.assertEqual(stored, Decimal("100"))
             record = session.add.call_args_list[0][0][0]
             self.assertIsInstance(record, StaffCashoutRecord)
+            self.assertEqual(record.amount, Decimal("100"))
             self.assertTrue(record.tracks_money_sent)
+            from db.models import Expense
+
+            expenses = [
+                call.args[0]
+                for call in session.add.call_args_list
+                if isinstance(call.args[0], Expense)
+            ]
+            self.assertEqual(expenses, [])
+
+    def test_create_from_job_rounds_up_and_records_expense(self) -> None:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from db.models import Expense, StaffCashoutRecord
+
+        session = MagicMock()
+        session.query.return_value.filter.return_value.first.return_value = None
+
+        def flush() -> None:
+            added = session.add.call_args_list[0][0][0]
+            added.id = 7
+
+        session.flush.side_effect = flush
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+
+        job = {
+            "id": 10,
+            "club_id": 2,
+            "chat_id": -100,
+            "group_title": "RT / 1-2 / X",
+            "amount": Decimal("372.34"),
+            "initiated_by": 1,
+            "trigger": "auto_cashout",
+        }
+        with (
+            patch("bot.services.staff_cashout_records.get_db", return_value=cm),
+            patch("bot.services.staff_cashout_records.apply_low_deposit_cashout_hold"),
+            patch("bot.services.staff_cashout_pushover.notify_cashout_pushover_sync"),
+        ):
+            from bot.services.staff_cashout_records import (
+                create_staff_cashout_record_from_job,
+            )
+
+            rid, stored = create_staff_cashout_record_from_job(job)
+
+        self.assertEqual((rid, stored), (7, Decimal("373")))
+        record = session.add.call_args_list[0][0][0]
+        self.assertIsInstance(record, StaffCashoutRecord)
+        self.assertEqual(record.amount, Decimal("373"))
+        expenses = [
+            call[0][0]
+            for call in session.add.call_args_list
+            if isinstance(call[0][0], Expense)
+        ]
+        self.assertEqual(len(expenses), 1)
+        expense = expenses[0]
+        self.assertEqual(expense.amount, Decimal("0.66"))
+        self.assertEqual(expense.expense_type, "Cashout round-up")
+        self.assertEqual(expense.club_id, 2)
+        self.assertFalse(expense.pending)
+        self.assertEqual(
+            expense.description,
+            "Cashout #7 · 372.34 rounded to 373 · RT / 1-2 / X",
+        )
+        self.assertEqual(
+            expense.expense_date,
+            datetime.now(ZoneInfo("America/New_York")).date(),
+        )
+
+    def test_manual_create_rounds_up_and_records_expense(self) -> None:
+        from db.models import Club, Expense, StaffCashoutPayment, StaffCashoutRecord
+
+        session = MagicMock()
+        club = MagicMock(spec=Club)
+        club.id = 2
+        session.get.return_value = club
+
+        def flush() -> None:
+            for call in session.add.call_args_list:
+                obj = call[0][0]
+                if (
+                    isinstance(obj, StaffCashoutRecord)
+                    and getattr(obj, "id", None) is None
+                ):
+                    obj.id = 11
+
+        session.flush.side_effect = flush
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+
+        with (
+            patch("bot.services.staff_cashout_records.get_db", return_value=cm),
+            patch(
+                "bot.services.staff_cashout_records._validate_method_choice",
+                return_value=(None, None, "Venmo", "@player"),
+            ),
+            patch(
+                "bot.services.staff_cashout_records._record_to_dict",
+                return_value={"id": 11, "amount": Decimal("373")},
+            ),
+            patch("bot.services.staff_cashout_pushover.notify_cashout_pushover_sync"),
+        ):
+            from bot.services.staff_cashout_records import (
+                create_staff_cashout_record_manual,
+            )
+
+            data = create_staff_cashout_record_manual(
+                club_id=2,
+                group_title="RT / 1-2 / X",
+                amount=Decimal("372.34"),
+                payments=[
+                    {
+                        "payment_method_id": None,
+                        "method_display_name": "Venmo",
+                        "payout_details": "@player",
+                        "amount": Decimal("372.34"),
+                    }
+                ],
+            )
+
+        self.assertEqual(data["id"], 11)
+        record = next(
+            call[0][0]
+            for call in session.add.call_args_list
+            if isinstance(call[0][0], StaffCashoutRecord)
+        )
+        self.assertEqual(record.amount, Decimal("373"))
+        payment = next(
+            call[0][0]
+            for call in session.add.call_args_list
+            if isinstance(call[0][0], StaffCashoutPayment)
+        )
+        self.assertEqual(payment.amount, Decimal("372.34"))
+        expenses = [
+            call[0][0]
+            for call in session.add.call_args_list
+            if isinstance(call[0][0], Expense)
+        ]
+        self.assertEqual(len(expenses), 1)
+        self.assertEqual(expenses[0].amount, Decimal("0.66"))
+        self.assertFalse(expenses[0].pending)
+        self.assertEqual(
+            expenses[0].description,
+            "Cashout #11 · 372.34 rounded to 373 · RT / 1-2 / X",
+        )
 
     def test_manual_create_writes_payments_before_notify(self) -> None:
         from db.models import Club, StaffCashoutPayment, StaffCashoutRecord
@@ -1213,7 +1389,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             "club_id": 2,
             "chat_id": -100,
             "group_title": "RT / 1-2 / X",
-            "amount": Decimal("50"),
+            "amount": Decimal("372.34"),
             "status": "in_progress",
             "initiated_by": 1,
             "trigger": "group_cash",
@@ -1227,11 +1403,11 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "cashier.services.complete.create_staff_cashout_record_from_job",
-                return_value=99,
+                return_value=(99, Decimal("373")),
             ) as mock_create,
             patch(
                 "cashier.services.complete.schedule_cash_flow_from_club",
-            ),
+            ) as mock_schedule,
             patch(
                 "cashier.services.complete.record_activity_for_chat",
             ),
@@ -1249,6 +1425,42 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(ok)
             self.assertIsNone(err)
             mock_create.assert_called_once_with(job)
+            self.assertEqual(mock_schedule.call_args.kwargs["amount"], Decimal("373"))
+            self.assertEqual(mock_schedule.call_args.kwargs["record_id"], 99)
+
+    async def test_complete_pins_original_amount_when_record_fails(self) -> None:
+        job = {
+            "id": 7,
+            "club_id": 2,
+            "chat_id": -100,
+            "group_title": "RT / 1-2 / X",
+            "amount": Decimal("372.34"),
+            "status": "in_progress",
+            "initiated_by": 1,
+            "trigger": "group_cash",
+        }
+        with (
+            patch("cashier.services.complete.get_job", return_value=job),
+            patch(
+                "cashier.services.complete.create_staff_cashout_record_from_job",
+                side_effect=RuntimeError("db"),
+            ),
+            patch(
+                "cashier.services.complete.schedule_cash_flow_from_club",
+            ) as mock_schedule,
+            patch("cashier.services.complete.record_activity_for_chat"),
+            patch("cashier.services.complete.invalidate_pending_one_time_bypasses"),
+            patch("cashier.services.complete.complete_job", return_value=job),
+        ):
+            from cashier.services.complete import complete_cashout_job
+
+            ok, err = await complete_cashout_job(7)
+            self.assertTrue(ok)
+            self.assertIsNone(err)
+            self.assertEqual(
+                mock_schedule.call_args.kwargs["amount"], Decimal("372.34")
+            )
+            self.assertIsNone(mock_schedule.call_args.kwargs["record_id"])
 
 
 class CountDepositsForChatTestCase(unittest.TestCase):

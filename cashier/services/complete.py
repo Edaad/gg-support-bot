@@ -31,20 +31,23 @@ async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
         logger.warning("complete_cashout_job: job cancelled id=%s", job_id)
         return False, "Job was cancelled."
 
-    try:
-        record_id = create_staff_cashout_record_from_job(job)
-    except Exception:
-        logger.exception(
-            "complete_cashout_job: staff_cashout_record failed job_id=%s",
-            job_id,
-        )
-        record_id = None
-
     club_id = int(job["club_id"])
     chat_id = int(job["chat_id"])
     amount = job["amount"]
     if not isinstance(amount, Decimal):
         amount = Decimal(str(amount))
+
+    record_id: Optional[int] = None
+    try:
+        created = create_staff_cashout_record_from_job(job)
+    except Exception:
+        logger.exception(
+            "complete_cashout_job: staff_cashout_record failed job_id=%s",
+            job_id,
+        )
+        created = None
+    if created is not None:
+        record_id, amount = created
 
     # Automated player cashouts post their own "being processed" message in-group, so
     # skip the MTProto ASAP line; still send + pin the "$X owed" message.
