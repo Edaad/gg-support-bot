@@ -945,6 +945,7 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
             message_text=body,
             episode_id=state.get("history_episode_id"),
             trigger_messages=[{"text": body}] if body else None,
+            job_queue=getattr(context, "job_queue", None),
         )
     except Exception:
         logger.warning(

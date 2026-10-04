@@ -24,7 +24,7 @@ Durable state: table `support_group_idle_episode_state` ([`bot/services/support_
 |-------|--------|
 | Open Slack | Immediate `player_idle` (*A player just reached out.*) with the player message |
 | Follow-up burst | After **1 minute** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
-| Staff unanswered | After a **successful** open Slack (`player_idle` / deposit open) **or** follow-up Slack whose text/burst is **not** gratitude-only, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **issue-report** Slack channel (not an open `/reports` ticket; escalation message template). Gratitude/ack-only messages (`thanks`, `ty`, `sounds good`, …) do **not** arm this ping. |
+| Staff unanswered | After a **successful** open Slack (`player_idle` / deposit open) **or** follow-up Slack whose text/burst is **not** gratitude-only, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **issue-report** Slack channel (not an open `/reports` ticket; escalation message template). That issue-report post is deleted **10 minutes** after it is sent when it went out through the bot API (the Slack timestamp is stored on the escalation event, so a worker restart still deletes it). Gratitude/ack-only messages (`thanks`, `ty`, `sounds good`, …) do **not** arm this ping. |
 | Silence end | **5 minutes** with no human (player or staff) → close episode (**deferred** while staff-unanswered is still armed) |
 | Hard cap | **30 minutes** from episode open → close episode |
 
@@ -207,7 +207,7 @@ Copy (no user id, no chat id):
 |--------|----------|----------------------|
 | `player_idle` | A player just reached out. | Yes (the player's message that triggered idle) |
 | `player_idle_followup` | Player follow-up. | Yes (burst body after 1m quiet) |
-| `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to **issue-report** channel only |
+| `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to **issue-report** channel only, then deleted after 10 minutes |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |

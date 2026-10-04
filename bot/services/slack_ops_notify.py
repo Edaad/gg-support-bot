@@ -30,6 +30,7 @@ SLACK_ESCALATION_WEBHOOK_URL_ENV = "SLACK_ESCALATION_WEBHOOK_URL"
 SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID_ENV = "SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID"
 
 SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
+SLACK_CHAT_DELETE_URL = "https://slack.com/api/chat.delete"
 SLACK_FILES_GET_UPLOAD_URL_EXTERNAL = "https://slack.com/api/files.getUploadURLExternal"
 SLACK_FILES_COMPLETE_UPLOAD_EXTERNAL = (
     "https://slack.com/api/files.completeUploadExternal"
@@ -298,15 +299,17 @@ async def notify_slack_escalation(text: str, *, source: str) -> bool:
     return False
 
 
-async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
-    """Post plain text to the issue-report channel (no ticket header/tags).
+async def post_issue_channel_plain(
+    text: str, *, source: str
+) -> tuple[bool, str | None, str | None]:
+    """Post plain text to the issue-report channel.
 
-    Uses issue-report bot token + channel; webhook fallback with the same raw
-    body. Never raises.
+    Returns ``(ok, channel_id, message_ts)``. Channel and ts are set only for a
+    successful bot API post (webhook posts cannot be deleted later). Never raises.
     """
     message = (text or "").strip()
     if not message:
-        return False
+        return False, None, None
     if len(message) > _MAX_SLACK_TEXT_LEN:
         message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
 
@@ -328,14 +331,15 @@ async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
                 resp.raise_for_status()
                 data = resp.json()
             if data.get("ok"):
+                ts = (data.get("ts") or "").strip() or None
                 logger.info(
                     "slack_issue_channel_plain: chat.postMessage ok channel=%s "
                     "ts=%s source=%s",
                     channel,
-                    data.get("ts"),
+                    ts,
                     source,
                 )
-                return True
+                return True, channel, ts
             logger.warning(
                 "slack_issue_channel_plain: chat.postMessage failed error=%s source=%s",
                 data.get("error"),
@@ -353,17 +357,91 @@ async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
                 "fallback source=%s",
                 source,
             )
-            return await _post_issue_report_via_webhook(message)
-        return False
+            ok = await _post_issue_report_via_webhook(message)
+            return ok, None, None
+        return False, None, None
 
     if _issue_report_webhook_url():
-        return await _post_issue_report_via_webhook(message)
+        ok = await _post_issue_report_via_webhook(message)
+        return ok, None, None
 
     logger.warning(
         "slack_issue_channel_plain: skipped source=%s "
         "(set SLACK_ISSUE_REPORT_BOT_TOKEN+SLACK_ISSUE_REPORT_CHANNEL_ID "
         "or SLACK_ISSUE_REPORT_WEBHOOK_URL)",
         source,
+    )
+    return False, None, None
+
+
+async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
+    """Post plain text to the issue-report channel (no ticket header/tags).
+
+    Uses issue-report bot token + channel; webhook fallback with the same raw
+    body. Never raises.
+    """
+    ok, _channel, _ts = await post_issue_channel_plain(text, source=source)
+    return ok
+
+
+_SLACK_DELETE_ALREADY_GONE = frozenset({"message_not_found", "channel_not_found"})
+
+
+async def delete_issue_channel_message(channel: str, message_ts: str) -> bool:
+    """Delete a bot-posted issue-channel message.
+
+    True when the message is gone (deleted, or Slack says it is already missing).
+    False on a transient failure so the caller can retry. Never raises.
+    """
+    token = _issue_report_bot_token()
+    channel_id = (channel or "").strip()
+    ts = (message_ts or "").strip()
+    if not token or not channel_id or not ts:
+        return False
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    payload = {"channel": channel_id, "ts": ts}
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+            resp = await client.post(
+                SLACK_CHAT_DELETE_URL,
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        logger.warning(
+            "slack_issue_channel_plain: chat.delete request failed channel=%s ts=%s",
+            channel_id,
+            ts,
+            exc_info=True,
+        )
+        return False
+    if data.get("ok"):
+        logger.info(
+            "slack_issue_channel_plain: chat.delete ok channel=%s ts=%s",
+            channel_id,
+            ts,
+        )
+        return True
+    error = (data.get("error") or "").strip()
+    if error in _SLACK_DELETE_ALREADY_GONE:
+        logger.info(
+            "slack_issue_channel_plain: chat.delete already gone channel=%s "
+            "ts=%s error=%s",
+            channel_id,
+            ts,
+            error,
+        )
+        return True
+    logger.warning(
+        "slack_issue_channel_plain: chat.delete failed channel=%s ts=%s error=%s",
+        channel_id,
+        ts,
+        error,
     )
     return False
 

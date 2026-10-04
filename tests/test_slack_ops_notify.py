@@ -7,8 +7,10 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services.slack_ops_notify import (
+    delete_issue_channel_message,
     format_slack_ops_message,
     notify_slack_ops,
+    post_issue_channel_plain,
 )
 
 
@@ -146,6 +148,84 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         ok = await notify_slack_ops("oops", source="test")
 
         self.assertFalse(ok)
+
+
+class TestIssueChannelDelete(unittest.IsolatedAsyncioTestCase):
+    @patch.dict(
+        os.environ,
+        {
+            "SLACK_ISSUE_REPORT_BOT_TOKEN": "xoxb-issue",
+            "SLACK_ISSUE_REPORT_CHANNEL_ID": "C9",
+        },
+    )
+    @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
+    async def test_post_returns_channel_and_ts(
+        self, mock_client_cls: MagicMock
+    ) -> None:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": True, "ts": "111.222"}
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        ok, channel, ts = await post_issue_channel_plain("hello", source="test")
+
+        self.assertEqual((ok, channel, ts), (True, "C9", "111.222"))
+        self.assertEqual(
+            mock_client.post.await_args.args[0],
+            "https://slack.com/api/chat.postMessage",
+        )
+
+    @patch.dict(os.environ, {"SLACK_ISSUE_REPORT_BOT_TOKEN": "xoxb-issue"})
+    @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
+    async def test_delete_ok(self, mock_client_cls: MagicMock) -> None:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": True}
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        gone = await delete_issue_channel_message("C9", "111.222")
+
+        self.assertTrue(gone)
+        payload = mock_client.post.await_args.kwargs["json"]
+        self.assertEqual(payload, {"channel": "C9", "ts": "111.222"})
+        self.assertEqual(
+            mock_client.post.await_args.args[0],
+            "https://slack.com/api/chat.delete",
+        )
+
+    @patch.dict(os.environ, {"SLACK_ISSUE_REPORT_BOT_TOKEN": "xoxb-issue"})
+    @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
+    async def test_delete_already_gone(self, mock_client_cls: MagicMock) -> None:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": False, "error": "message_not_found"}
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        self.assertTrue(await delete_issue_channel_message("C9", "111.222"))
+
+    @patch.dict(os.environ, {"SLACK_ISSUE_REPORT_BOT_TOKEN": "xoxb-issue"})
+    @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
+    async def test_delete_transient_error_retries_later(
+        self, mock_client_cls: MagicMock
+    ) -> None:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": False, "error": "ratelimited"}
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        self.assertFalse(await delete_issue_channel_message("C9", "111.222"))
 
 
 if __name__ == "__main__":

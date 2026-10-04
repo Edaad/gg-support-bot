@@ -3151,6 +3151,11 @@ class EscalationEvent(Base):
         Index("ix_esc_ev_chat_created_at", "telegram_chat_id", "created_at"),
         Index("ix_esc_ev_episode_id", "episode_id"),
         Index("ix_esc_ev_reason_created_at", "reason", "created_at"),
+        Index(
+            "ix_esc_ev_slack_delete_at",
+            "slack_delete_at",
+            postgresql_where=text("slack_delete_at IS NOT NULL"),
+        ),
     )
 
     id = Column(BigInteger, primary_key=True)
@@ -3178,6 +3183,10 @@ class EscalationEvent(Base):
     trigger_messages = Column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
     )
+    # Set only for bot-API posts that should be removed later (staff-unanswered).
+    slack_channel_id = Column(String(64), nullable=True)
+    slack_message_ts = Column(String(64), nullable=True)
+    slack_delete_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class EscalationDecisionLog(Base):

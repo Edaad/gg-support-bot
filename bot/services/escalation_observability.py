@@ -292,6 +292,112 @@ def update_escalation_event_slack_ok(event_id: int | None, slack_ok: bool) -> No
         )
 
 
+def mark_escalation_event_slack_delete(
+    event_id: int | None,
+    *,
+    channel_id: str,
+    message_ts: str,
+    delete_at: datetime,
+) -> None:
+    """Remember a bot-API Slack post that should be deleted at ``delete_at``."""
+    if event_id is None:
+        return
+    channel = (channel_id or "").strip()
+    ts = (message_ts or "").strip()
+    if not channel or not ts:
+        return
+    when = delete_at
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    try:
+        with get_db() as session:
+            row = session.get(EscalationEvent, int(event_id))
+            if row is None:
+                return
+            row.slack_channel_id = channel
+            row.slack_message_ts = ts
+            row.slack_delete_at = when
+    except Exception:
+        logger.warning(
+            "escalation_observability: mark slack delete failed event_id=%s",
+            event_id,
+            exc_info=True,
+        )
+
+
+def clear_escalation_event_slack_delete(event_id: int | None) -> None:
+    if event_id is None:
+        return
+    try:
+        with get_db() as session:
+            row = session.get(EscalationEvent, int(event_id))
+            if row is None:
+                return
+            row.slack_channel_id = None
+            row.slack_message_ts = None
+            row.slack_delete_at = None
+    except Exception:
+        logger.warning(
+            "escalation_observability: clear slack delete failed event_id=%s",
+            event_id,
+            exc_info=True,
+        )
+
+
+def get_pending_slack_delete(
+    event_id: int,
+) -> tuple[str, str, datetime] | None:
+    """``(channel, ts, delete_at)`` while a delete is still pending."""
+    try:
+        with get_db() as session:
+            row = session.get(EscalationEvent, int(event_id))
+            if row is None:
+                return None
+            channel = (row.slack_channel_id or "").strip()
+            ts = (row.slack_message_ts or "").strip()
+            delete_at = row.slack_delete_at
+            if not channel or not ts or delete_at is None:
+                return None
+            if delete_at.tzinfo is None:
+                delete_at = delete_at.replace(tzinfo=timezone.utc)
+            return channel, ts, delete_at
+    except Exception:
+        logger.warning(
+            "escalation_observability: load slack delete failed event_id=%s",
+            event_id,
+            exc_info=True,
+        )
+        return None
+
+
+def list_pending_slack_deletes() -> list[tuple[int, datetime]]:
+    """Event ids whose Slack post is still waiting to be deleted."""
+    try:
+        with get_db() as session:
+            rows = (
+                session.query(EscalationEvent.id, EscalationEvent.slack_delete_at)
+                .filter(
+                    EscalationEvent.slack_message_ts.isnot(None),
+                    EscalationEvent.slack_delete_at.isnot(None),
+                )
+                .all()
+            )
+        out: list[tuple[int, datetime]] = []
+        for event_id, delete_at in rows:
+            if delete_at is None:
+                continue
+            if delete_at.tzinfo is None:
+                delete_at = delete_at.replace(tzinfo=timezone.utc)
+            out.append((int(event_id), delete_at))
+        return out
+    except Exception:
+        logger.warning(
+            "escalation_observability: list slack deletes failed",
+            exc_info=True,
+        )
+        return []
+
+
 def record_escalation_decision(
     *,
     decision: str,

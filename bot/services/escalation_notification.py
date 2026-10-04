@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -145,6 +145,8 @@ AWAITING_AGENT_EPISODE_SECONDS_TEST = 60
 
 STAFF_UNANSWERED_SECONDS = 300  # 5 minutes after follow-up Slack
 STAFF_UNANSWERED_SECONDS_TEST = 30
+STAFF_UNANSWERED_SLACK_DELETE_SECONDS = 600  # delete the issue-report post
+STAFF_UNANSWERED_SLACK_DELETE_SECONDS_TEST = 60
 
 SLACK_MESSAGE_BODY_MAX_CHARS = 500
 MEDIA_ONLY_PLACEHOLDER = (
@@ -208,6 +210,13 @@ def register_escalation_notification_runtime(app: Any) -> None:
             "escalation: restore support-group idle episodes failed",
             exc_info=True,
         )
+    try:
+        restore_staff_unanswered_slack_deletes(getattr(app, "job_queue", None))
+    except Exception:
+        logger.warning(
+            "escalation: restore staff-unanswered slack deletes failed",
+            exc_info=True,
+        )
 
 
 def _resolve_job_queue(job_queue: Any | None = None) -> Any | None:
@@ -240,6 +249,12 @@ def staff_unanswered_seconds() -> int:
     if is_test_bot_worker():
         return STAFF_UNANSWERED_SECONDS_TEST
     return STAFF_UNANSWERED_SECONDS
+
+
+def staff_unanswered_slack_delete_seconds() -> int:
+    if is_test_bot_worker():
+        return STAFF_UNANSWERED_SLACK_DELETE_SECONDS_TEST
+    return STAFF_UNANSWERED_SLACK_DELETE_SECONDS
 
 
 def _sent_watch_job_name(chat_id: int | str) -> str:
@@ -944,6 +959,112 @@ async def notify_escalation_slack(
     return ok, event_id
 
 
+def _slack_delete_job_name(event_id: int | str) -> str:
+    return f"esc_slack_delete_{int(event_id)}"
+
+
+def schedule_staff_unanswered_slack_delete(
+    event_id: int,
+    *,
+    delete_at: datetime,
+    job_queue: Any | None = None,
+    when: float | None = None,
+) -> None:
+    """Schedule chat.delete for a staff-unanswered Slack post."""
+    jq = _resolve_job_queue(job_queue)
+    if jq is None:
+        logger.warning(
+            "escalation: no job_queue for slack delete event_id=%s",
+            event_id,
+        )
+        return
+    name = _slack_delete_job_name(event_id)
+    try:
+        for job in jq.get_jobs_by_name(name):
+            job.schedule_removal()
+    except Exception:
+        pass
+    if when is None:
+        delay = (delete_at - datetime.now(timezone.utc)).total_seconds()
+    else:
+        delay = float(when)
+    if delay <= 0:
+        delay = 0.1
+    jq.run_once(
+        _staff_unanswered_slack_delete_callback,
+        when=delay,
+        data={"event_id": int(event_id)},
+        name=name,
+        job_kwargs={"misfire_grace_time": 86400},
+    )
+    logger.info(
+        "escalation: staff-unanswered slack delete scheduled event_id=%s wait_s=%s",
+        event_id,
+        delay,
+    )
+
+
+def restore_staff_unanswered_slack_deletes(job_queue: Any | None = None) -> None:
+    """Re-schedule deletes that were still pending when the worker stopped."""
+    from bot.services.escalation_observability import list_pending_slack_deletes
+
+    jq = _resolve_job_queue(job_queue)
+    if jq is None:
+        return
+    now = datetime.now(timezone.utc)
+    for event_id, delete_at in list_pending_slack_deletes():
+        remaining = (delete_at - now).total_seconds()
+        schedule_staff_unanswered_slack_delete(
+            event_id,
+            delete_at=delete_at,
+            job_queue=jq,
+            when=remaining,
+        )
+
+
+async def _staff_unanswered_slack_delete_callback(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    job = context.job
+    if job is None or not job.data:
+        return
+    event_id = job.data.get("event_id")
+    if event_id is None:
+        return
+    from bot.services.escalation_observability import (
+        clear_escalation_event_slack_delete,
+        get_pending_slack_delete,
+    )
+    from bot.services.slack_ops_notify import delete_issue_channel_message
+
+    pending = get_pending_slack_delete(int(event_id))
+    if pending is None:
+        return
+    channel, message_ts, delete_at = pending
+    if (delete_at - datetime.now(timezone.utc)).total_seconds() > 0.5:
+        return
+    try:
+        gone = await delete_issue_channel_message(channel, message_ts)
+    except Exception:
+        logger.warning(
+            "escalation: staff-unanswered slack delete failed event_id=%s",
+            event_id,
+            exc_info=True,
+        )
+        return
+    if not gone:
+        logger.warning(
+            "escalation: staff-unanswered slack delete not confirmed event_id=%s",
+            event_id,
+        )
+        return
+    clear_escalation_event_slack_delete(int(event_id))
+    logger.info(
+        "escalation: staff-unanswered slack deleted event_id=%s",
+        event_id,
+    )
+
+
 async def notify_staff_unanswered_issue_channel(
     *,
     club_id: int | None,
@@ -952,14 +1073,16 @@ async def notify_staff_unanswered_issue_channel(
     message_text: str | None = None,
     episode_id=None,
     trigger_messages: list | None = None,
+    job_queue: Any | None = None,
 ) -> tuple[bool, int | None]:
     """Post staff-unanswered alert to issue-report channel (no ticket).
 
     Uses escalation message template; does not post to the escalation channel.
-    Returns ``(slack_ok, escalation_event_id)``.
+    A bot-API post is deleted 10 minutes later. Returns ``(slack_ok, escalation_event_id)``.
     """
     from bot.services.escalation_observability import (
         live_history_episode_id,
+        mark_escalation_event_slack_delete,
         record_escalation_event,
         update_escalation_event_slack_ok,
     )
@@ -990,10 +1113,12 @@ async def notify_staff_unanswered_issue_channel(
     )
 
     ok = False
+    channel: str | None = None
+    message_ts: str | None = None
     try:
-        from bot.services.slack_ops_notify import notify_slack_issue_channel_plain
+        from bot.services.slack_ops_notify import post_issue_channel_plain
 
-        ok = await notify_slack_issue_channel_plain(text, source=reason)
+        ok, channel, message_ts = await post_issue_channel_plain(text, source=reason)
     except Exception:
         logger.warning(
             "escalation: staff-unanswered issue channel failed chat_id=%s",
@@ -1003,6 +1128,21 @@ async def notify_staff_unanswered_issue_channel(
         ok = False
 
     update_escalation_event_slack_ok(event_id, ok)
+    if ok and event_id is not None and channel and message_ts:
+        delete_at = datetime.now(timezone.utc) + timedelta(
+            seconds=staff_unanswered_slack_delete_seconds()
+        )
+        mark_escalation_event_slack_delete(
+            event_id,
+            channel_id=channel,
+            message_ts=message_ts,
+            delete_at=delete_at,
+        )
+        schedule_staff_unanswered_slack_delete(
+            event_id,
+            delete_at=delete_at,
+            job_queue=job_queue,
+        )
     return ok, event_id
 
 
