@@ -1357,6 +1357,9 @@ async def _start_telethon_clients(
     ptb_bot: Any,
 ) -> list[TelegramClient]:
     """Connect authorized club sessions and register handlers. Returns started clients."""
+    from bot.services.unread_group_alert import attach_client, begin_cycle
+
+    begin_cycle()
     started: list[TelegramClient] = []
 
     for cfg in CLUB_GC_CONFIG.values():
@@ -1415,6 +1418,7 @@ async def _start_telethon_clients(
                 bot_dm_username=bot_dm_username,
                 ptb_bot=ptb_bot,
             )
+            attach_client(client, cfg)
             started.append(client)
             await _report_club_health(
                 cfg.club_key,
@@ -1608,10 +1612,16 @@ async def _run_listener_cycle(bot_token: str) -> str:
 
     if not started:
         logger.warning("dm_gc no Telethon clients started this cycle")
+        from bot.services.unread_group_alert import end_cycle
+
+        await end_cycle()
         await _teardown_listener_cycle([], ptb_bot)
         return "no_telethon_clients_started"
 
+    from bot.services.unread_group_alert import supervise
+
     exit_reason = "unknown"
+    alert_task = asyncio.create_task(supervise(), name="unread-group-alert")
     watchdog_task = asyncio.create_task(
         _listener_health_watchdog(started),
         name="dm-gc-health-watchdog",
@@ -1641,11 +1651,16 @@ async def _run_listener_cycle(bot_token: str) -> str:
                 parts.append(f"{club_key}=disconnected")
         exit_reason = "; ".join(parts) if parts else "all_clients_disconnected"
     finally:
+        alert_task.cancel()
         watchdog_task.cancel()
-        try:
-            await watchdog_task
-        except asyncio.CancelledError:
-            pass
+        for task in (alert_task, watchdog_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        from bot.services.unread_group_alert import end_cycle
+
+        await end_cycle()
         await _teardown_listener_cycle(started, ptb_bot)
 
     return exit_reason

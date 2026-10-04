@@ -1159,6 +1159,18 @@ class DeployNotifyState(Base):
     last_notified_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class UnreadGroupAlertControl(Base):
+    """Singleton row: last successful unread-group Pushover, for the 5-minute gap."""
+
+    __tablename__ = "unread_group_alert_control"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="unread_group_alert_control_id_check"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=False)
+    last_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class StaffCashoutSlackReminderControl(Base):
     """Singleton row: page-level 5-minute head-admin Slack reminder for Active cashouts."""
 
