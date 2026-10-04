@@ -30,7 +30,8 @@ from club_gc_settings import CLUB_GC_CONFIG, ClubGcConfig
 logger = logging.getLogger(__name__)
 
 THRESHOLD = 5
-REPEAT_AFTER = timedelta(minutes=5)
+BACKOFF_BASE_MINUTES = 5
+BACKOFF_CAP_MINUTES = 30
 FAILED_RETRY_SEC = 30.0
 PUSHOVER_MAX_LEN = 1024
 PUSHOVER_TITLE = "Unread group chats"
@@ -151,14 +152,31 @@ def ready_to_evaluate(connected: set[str], ready: set[str]) -> bool:
     return bool(connected) and connected <= ready
 
 
-def alert_action(count: int, last_sent_at: datetime | None, now: datetime) -> str:
-    """``clear`` below 5, ``send`` when due, ``wait`` inside the 5-minute gap."""
+def backoff_delay_minutes(step: int) -> int:
+    """5, 10, 20, then 30. The next step after 30 starts again at 5."""
+
+    return min(BACKOFF_BASE_MINUTES * (2**step), BACKOFF_CAP_MINUTES)
+
+
+def step_after_send(step: int) -> int:
+    if BACKOFF_BASE_MINUTES * (2**step) >= BACKOFF_CAP_MINUTES:
+        return 0
+    return step + 1
+
+
+def alert_action(
+    count: int,
+    last_sent_at: datetime | None,
+    now: datetime,
+    delay: timedelta,
+) -> str:
+    """``clear`` below 5, ``send`` when due, ``wait`` inside the current gap."""
 
     if count < THRESHOLD:
         return "clear"
     if last_sent_at is None:
         return "send"
-    if as_utc(now) - as_utc(last_sent_at) >= REPEAT_AFTER:
+    if as_utc(now) - as_utc(last_sent_at) >= delay:
         return "send"
     return "wait"
 
@@ -597,7 +615,34 @@ async def _evaluate() -> None:
         count,
         " | ".join(details),
     )
-    return
+    now = datetime.now(timezone.utc)
+    last_sent, step = await asyncio.to_thread(load_alert_control)
+    delay = timedelta(minutes=backoff_delay_minutes(step))
+    action = alert_action(count, last_sent, now, delay)
+    if action == "clear":
+        _cancel_timer()
+        if last_sent is not None or step != 0:
+            await asyncio.to_thread(save_alert_control, None, 0)
+        return
+    if action == "wait":
+        assert last_sent is not None
+        remaining = delay - (now - as_utc(last_sent))
+        _ensure_timer(max(remaining.total_seconds(), 1.0))
+        return
+    message = format_unread_alert(count, [title for _club, title in rows])
+    if not await _fanout(message):
+        logger.warning("unread_group_alert: pushover failed count=%s", count)
+        _schedule_timer(FAILED_RETRY_SEC, replace=True)
+        return
+    next_step = 0 if last_sent is None else step_after_send(step)
+    wait_minutes = backoff_delay_minutes(next_step)
+    await asyncio.to_thread(save_alert_control, now, next_step)
+    logger.info(
+        "unread_group_alert: sent count=%s next_minutes=%s",
+        count,
+        wait_minutes,
+    )
+    _schedule_timer(wait_minutes * 60, replace=True)
 
 
 def _group_list(tracked: dict[str, dict[int, GroupRow]]) -> list[GroupRow]:
@@ -844,18 +889,19 @@ def load_tracked_groups() -> dict[str, dict[int, GroupRow]]:
     return out
 
 
-def load_last_sent_at() -> datetime | None:
+def load_alert_control() -> tuple[datetime | None, int]:
     from db.connection import get_db
     from db.models import UnreadGroupAlertControl
 
     with get_db() as session:
         row = session.get(UnreadGroupAlertControl, 1)
-        if row is None or row.last_sent_at is None:
-            return None
-        return as_utc(row.last_sent_at)
+        if row is None:
+            return None, 0
+        sent = None if row.last_sent_at is None else as_utc(row.last_sent_at)
+        return sent, int(row.backoff_step or 0)
 
 
-def set_last_sent_at(value: datetime | None) -> None:
+def save_alert_control(last_sent_at: datetime | None, backoff_step: int) -> None:
     from db.connection import get_db
     from db.models import UnreadGroupAlertControl
 
@@ -864,7 +910,8 @@ def set_last_sent_at(value: datetime | None) -> None:
         if row is None:
             row = UnreadGroupAlertControl(id=1)
             session.add(row)
-        row.last_sent_at = value
+        row.last_sent_at = last_sent_at
+        row.backoff_step = int(backoff_step)
         session.commit()
 
 

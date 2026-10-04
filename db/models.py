@@ -1160,7 +1160,7 @@ class DeployNotifyState(Base):
 
 
 class UnreadGroupAlertControl(Base):
-    """Singleton row: last successful unread-group Pushover, for the 5-minute gap."""
+    """Singleton row: last Pushover and the exponential gap still in progress."""
 
     __tablename__ = "unread_group_alert_control"
     __table_args__ = (
@@ -1169,6 +1169,7 @@ class UnreadGroupAlertControl(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=False)
     last_sent_at = Column(DateTime(timezone=True), nullable=True)
+    backoff_step = Column(Integer, nullable=False, default=0, server_default=text("0"))
 
 
 class StaffCashoutSlackReminderControl(Base):

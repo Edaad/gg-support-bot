@@ -11,10 +11,12 @@ from bot.services.unread_group_alert import (
     GroupRow,
     LiveDialog,
     alert_action,
+    backoff_delay_minutes,
     format_unread_alert,
     note_incoming,
     note_inbox_read,
     ready_to_evaluate,
+    step_after_send,
     visible_unreads,
 )
 
@@ -67,20 +69,39 @@ class ReadStateTests(unittest.TestCase):
 class AlertActionTests(unittest.TestCase):
     def test_below_threshold_clears(self) -> None:
         self.assertEqual(
-            alert_action(THRESHOLD - 1, NOW - timedelta(minutes=1), NOW),
+            alert_action(
+                THRESHOLD - 1,
+                NOW - timedelta(minutes=1),
+                NOW,
+                timedelta(minutes=5),
+            ),
             "clear",
         )
 
     def test_first_crossing_sends(self) -> None:
-        self.assertEqual(alert_action(THRESHOLD, None, NOW), "send")
+        self.assertEqual(
+            alert_action(THRESHOLD, None, NOW, timedelta(minutes=5)),
+            "send",
+        )
 
     def test_restart_inside_window_waits(self) -> None:
         sent = NOW - timedelta(minutes=4)
-        self.assertEqual(alert_action(7, sent, NOW), "wait")
+        self.assertEqual(alert_action(7, sent, NOW, timedelta(minutes=5)), "wait")
 
-    def test_sends_again_after_five_minutes(self) -> None:
-        sent = NOW - timedelta(minutes=5)
-        self.assertEqual(alert_action(THRESHOLD, sent, NOW), "send")
+    def test_sends_again_after_the_current_gap(self) -> None:
+        sent = NOW - timedelta(minutes=10)
+        self.assertEqual(
+            alert_action(THRESHOLD, sent, NOW, timedelta(minutes=10)),
+            "send",
+        )
+
+    def test_backoff_doubles_until_30_then_restarts(self) -> None:
+        delays: list[int] = []
+        step = 0
+        for _ in range(6):
+            delays.append(backoff_delay_minutes(step))
+            step = step_after_send(step)
+        self.assertEqual(delays, [5, 10, 20, 30, 5, 10])
 
 
 class StartupGateTests(unittest.TestCase):
