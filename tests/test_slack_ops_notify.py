@@ -7,9 +7,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bot.services.slack_ops_notify import (
+    delete_escalation_channel_message,
     delete_issue_channel_message,
     format_slack_ops_message,
     notify_slack_ops,
+    post_escalation_channel_plain,
     post_issue_channel_plain,
 )
 
@@ -226,6 +228,60 @@ class TestIssueChannelDelete(unittest.IsolatedAsyncioTestCase):
         mock_client_cls.return_value = mock_client
 
         self.assertFalse(await delete_issue_channel_message("C9", "111.222"))
+
+
+class TestEscalationChannelPost(unittest.IsolatedAsyncioTestCase):
+    @patch.dict(
+        os.environ,
+        {
+            "SLACK_ESCALATION_BOT_TOKEN": "xoxb-esc",
+            "SLACK_ESCALATION_CHANNEL_ID": "CESC",
+        },
+    )
+    @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
+    async def test_post_returns_escalation_channel_and_ts(
+        self, mock_client_cls: MagicMock
+    ) -> None:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": True, "ts": "333.444"}
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        ok, channel, ts = await post_escalation_channel_plain("hello", source="test")
+
+        self.assertEqual((ok, channel, ts), (True, "CESC", "333.444"))
+        payload = mock_client.post.await_args.kwargs["json"]
+        self.assertEqual(payload["channel"], "CESC")
+        self.assertEqual(
+            mock_client.post.await_args.kwargs["headers"]["Authorization"],
+            "Bearer xoxb-esc",
+        )
+
+    @patch.dict(os.environ, {"SLACK_ESCALATION_BOT_TOKEN": "xoxb-esc"})
+    @patch("bot.services.slack_ops_notify.httpx.AsyncClient")
+    async def test_delete_uses_escalation_token(
+        self, mock_client_cls: MagicMock
+    ) -> None:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"ok": True}
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        self.assertTrue(await delete_escalation_channel_message("CESC", "333.444"))
+        self.assertEqual(
+            mock_client.post.await_args.kwargs["headers"]["Authorization"],
+            "Bearer xoxb-esc",
+        )
+        self.assertEqual(
+            mock_client.post.await_args.kwargs["json"],
+            {"channel": "CESC", "ts": "333.444"},
+        )
 
 
 if __name__ == "__main__":

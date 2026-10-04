@@ -442,7 +442,7 @@ alembic upgrade head   # runs automatically in the Heroku release phase
 alembic upgrade head   # runs automatically in the Heroku release phase
 # Support-group idle episodes (1m burst / 5m silence / 30m hard cap)
 alembic upgrade head   # runs automatically in the Heroku release phase
-# Staff-unanswered after follow-up (issue-report channel ping)
+# Staff-unanswered after follow-up (escalation channel ping)
 alembic upgrade head   # runs automatically in the Heroku release phase
 heroku config:set SLACK_ESCALATION_BOT_TOKEN=xoxb-... -a YOUR_APP
 heroku config:set SLACK_ESCALATION_CHANNEL_ID=C... -a YOUR_APP

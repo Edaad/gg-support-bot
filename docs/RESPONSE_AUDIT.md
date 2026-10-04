@@ -131,7 +131,7 @@ At 09:00 ET the worker checks yesterday (ET). If there are candidates but zero v
 
 ## Related changes
 
-- Escalation Slack posts (`notify_escalation_slack` and the staff-unanswered issue-channel post) end with `Chat: \`-100…\` https://t.me/c/…`. Basic groups get the id only.
+- Escalation Slack posts (`notify_escalation_slack` and the staff-unanswered escalation post) end with `Chat: \`-100…\` https://t.me/c/…`. Basic groups get the id only.
 - A payment notification with a *Manual action required* footer, for a payment tied to a support group, now logs an `escalation_events` row with reason `payment_manual_action` (Slack is unchanged).
 
 ## Tables (Alembic `0012_response_audit`, `0013_audit_shifts`)

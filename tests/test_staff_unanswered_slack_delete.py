@@ -1,4 +1,4 @@
-"""Staff-unanswered issue-report Slack posts are deleted after 10 minutes."""
+"""Staff-unanswered escalation Slack posts are deleted after 10 minutes."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class StaffUnansweredSlackDeleteTests(unittest.IsolatedAsyncioTestCase):
         jq = _job_queue()
         with (
             patch(
-                "bot.services.slack_ops_notify.post_issue_channel_plain",
+                "bot.services.slack_ops_notify.post_escalation_channel_plain",
                 new=AsyncMock(return_value=(True, "C9", "111.222")),
             ),
             patch(
@@ -63,7 +63,7 @@ class StaffUnansweredSlackDeleteTests(unittest.IsolatedAsyncioTestCase):
         jq = _job_queue()
         with (
             patch(
-                "bot.services.slack_ops_notify.post_issue_channel_plain",
+                "bot.services.slack_ops_notify.post_escalation_channel_plain",
                 new=AsyncMock(return_value=(True, None, None)),
             ),
             patch(
@@ -103,7 +103,7 @@ class StaffUnansweredSlackDeleteTests(unittest.IsolatedAsyncioTestCase):
                 return_value=("C9", "111.222", due),
             ),
             patch(
-                "bot.services.slack_ops_notify.delete_issue_channel_message",
+                "bot.services.slack_ops_notify.delete_escalation_channel_message",
                 new=AsyncMock(return_value=True),
             ) as delete,
             patch(
@@ -124,7 +124,7 @@ class StaffUnansweredSlackDeleteTests(unittest.IsolatedAsyncioTestCase):
                 return_value=("C9", "111.222", due),
             ),
             patch(
-                "bot.services.slack_ops_notify.delete_issue_channel_message",
+                "bot.services.slack_ops_notify.delete_escalation_channel_message",
                 new=AsyncMock(return_value=False),
             ),
             patch(
@@ -144,7 +144,7 @@ class StaffUnansweredSlackDeleteTests(unittest.IsolatedAsyncioTestCase):
                 return_value=("C9", "111.222", later),
             ),
             patch(
-                "bot.services.slack_ops_notify.delete_issue_channel_message",
+                "bot.services.slack_ops_notify.delete_escalation_channel_message",
                 new=AsyncMock(),
             ) as delete,
         ):

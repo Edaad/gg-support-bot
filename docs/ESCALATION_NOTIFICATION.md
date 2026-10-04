@@ -24,7 +24,7 @@ Durable state: table `support_group_idle_episode_state` ([`bot/services/support_
 |-------|--------|
 | Open Slack | Immediate `player_idle` (*A player just reached out.*) with the player message |
 | Follow-up burst | After **1 minute** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
-| Staff unanswered | After a **successful** open Slack (`player_idle` / deposit open) **or** follow-up Slack whose text/burst is **not** gratitude-only, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **issue-report** Slack channel (not an open `/reports` ticket; escalation message template). That issue-report post is deleted **10 minutes** after it is sent when it went out through the bot API (the Slack timestamp is stored on the escalation event, so a worker restart still deletes it). Gratitude/ack-only messages (`thanks`, `ty`, `sounds good`, …) do **not** arm this ping. |
+| Staff unanswered | After a **successful** open Slack (`player_idle` / deposit open) **or** follow-up Slack whose text/burst is **not** gratitude-only, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **escalation** Slack channel (not an open `/reports` ticket). That post is deleted **10 minutes** after it is sent when it went out through the bot API (the Slack timestamp is stored on the escalation event, so a worker restart still deletes it). Gratitude/ack-only messages (`thanks`, `ty`, `sounds good`, …) do **not** arm this ping. |
 | Silence end | **5 minutes** with no human (player or staff) → close episode (**deferred** while staff-unanswered is still armed) |
 | Hard cap | **30 minutes** from episode open → close episode |
 
@@ -33,7 +33,7 @@ Behavior:
 1. First player free text (not a flow command, not expected wizard input) **opens** an episode: Slack `player_idle`, call no-op in-group menu hook (`offer_idle_help_prompt` → false for now), arm silence + hard-cap timers, and arm durable staff-unanswered **unless the open text is gratitude/ack-only**.
 2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence. **Exception (player only):** short gratitude/ack closers (`thanks`, `ty`, `thank you`, `sounds good`, …) still feed/Slack but do **not** reset the 5m silence clock.
 3. Staff/AM message while open: clear burst, cancel 1m debounce, clear staff-unanswered latch, bump `last_human_at`, reschedule 5m silence; episode stays open.
-4. After successful follow-up Slack: re-arm durable staff-unanswered **unless the burst is gratitude-only** (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to issue-report channel, then latch until staff replies. Silence close is deferred until that ping fires (or staff clears the latch); after the ping, close if the chat is still quiet.
+4. After successful follow-up Slack: re-arm durable staff-unanswered **unless the burst is gratitude-only** (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to the escalation channel, then latch until staff replies. Silence close is deferred until that ping fires (or staff clears the latch); after the ping, close if the chat is still quiet.
 5. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
 6. Denied `/cashout` / `/earlyrb`: no special arm — next free text opens a normal episode (no 5m silence gate).
 
@@ -207,7 +207,7 @@ Copy (no user id, no chat id):
 |--------|----------|----------------------|
 | `player_idle` | A player just reached out. | Yes (the player's message that triggered idle) |
 | `player_idle_followup` | Player follow-up. | Yes (burst body after 1m quiet) |
-| `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to **issue-report** channel only, then deleted after 10 minutes |
+| `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to the **escalation** channel, then deleted after 10 minutes |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
@@ -231,7 +231,7 @@ Club: {club name}
 Chat: `{chat id}` [https://t.me/c/{id without -100}]
 ```
 
-GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses Slack bold `PLAYER SENT A SCREENSHOT, WHICH MIGHT POSSIBLY BE A PAYMENT CONFIRMATION, PLEASE RESPOND TO THEM ASAP`. The `Chat:` line is appended by `notify_escalation_slack` (and the staff-unanswered issue-channel post) to every support-group escalation, including union deposit and RPA posts; the `t.me/c` link is added for supergroups (`-100…` ids) only.
+GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses Slack bold `PLAYER SENT A SCREENSHOT, WHICH MIGHT POSSIBLY BE A PAYMENT CONFIRMATION, PLEASE RESPOND TO THEM ASAP`. The `Chat:` line is appended by `notify_escalation_slack` (and the staff-unanswered escalation post) to every support-group escalation, including union deposit and RPA posts; the `t.me/c` link is added for supergroups (`-100…` ids) only.
 
 A payment notification with a *Manual action required* footer for a payment tied to a support group also logs an `escalation_events` row (`payment_manual_action`) for the [response audit](RESPONSE_AUDIT.md); its Slack post is unchanged.
 

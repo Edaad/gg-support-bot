@@ -1035,7 +1035,7 @@ async def _staff_unanswered_slack_delete_callback(
         clear_escalation_event_slack_delete,
         get_pending_slack_delete,
     )
-    from bot.services.slack_ops_notify import delete_issue_channel_message
+    from bot.services.slack_ops_notify import delete_escalation_channel_message
 
     pending = get_pending_slack_delete(int(event_id))
     if pending is None:
@@ -1044,7 +1044,7 @@ async def _staff_unanswered_slack_delete_callback(
     if (delete_at - datetime.now(timezone.utc)).total_seconds() > 0.5:
         return
     try:
-        gone = await delete_issue_channel_message(channel, message_ts)
+        gone = await delete_escalation_channel_message(channel, message_ts)
     except Exception:
         logger.warning(
             "escalation: staff-unanswered slack delete failed event_id=%s",
@@ -1075,9 +1075,8 @@ async def notify_staff_unanswered_issue_channel(
     trigger_messages: list | None = None,
     job_queue: Any | None = None,
 ) -> tuple[bool, int | None]:
-    """Post staff-unanswered alert to issue-report channel (no ticket).
+    """Post staff-unanswered alert to the escalation Slack channel (no ticket).
 
-    Uses escalation message template; does not post to the escalation channel.
     A bot-API post is deleted 10 minutes later. Returns ``(slack_ok, escalation_event_id)``.
     """
     from bot.services.escalation_observability import (
@@ -1116,12 +1115,14 @@ async def notify_staff_unanswered_issue_channel(
     channel: str | None = None
     message_ts: str | None = None
     try:
-        from bot.services.slack_ops_notify import post_issue_channel_plain
+        from bot.services.slack_ops_notify import post_escalation_channel_plain
 
-        ok, channel, message_ts = await post_issue_channel_plain(text, source=reason)
+        ok, channel, message_ts = await post_escalation_channel_plain(
+            text, source=reason
+        )
     except Exception:
         logger.warning(
-            "escalation: staff-unanswered issue channel failed chat_id=%s",
+            "escalation: staff-unanswered escalation channel failed chat_id=%s",
             chat_id,
             exc_info=True,
         )

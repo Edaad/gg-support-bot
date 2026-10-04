@@ -2,7 +2,7 @@
 
 Open on player free text (or deposit Slack feed): immediate Slack (unless already
 sent), no-op menu hook, then 1m quiet burst for follow-ups. After a successful
-follow-up Slack, arm a 5m staff-unanswered timer (issue-report channel, once).
+follow-up Slack, arm a 5m staff-unanswered timer (escalation channel, once).
 Player gratitude closers (thanks/ty/…) do not reset the 5m silence clock.
 Episode ends on 5 minutes of any-human silence, 30m hard cap from open, or
 flow-end close.

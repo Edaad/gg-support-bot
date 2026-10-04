@@ -3258,7 +3258,7 @@ class SupportGroupIdleEpisodeState(Base):
         ForeignKey("escalation_episodes.id", ondelete="SET NULL"),
         nullable=True,
     )
-    # After successful player_idle_followup: 5m staff-unanswered → issue-report channel.
+    # After successful player_idle_followup: 5m staff-unanswered → escalation channel.
     staff_unanswered_armed_at = Column(DateTime(timezone=True), nullable=True)
     staff_unanswered_fired_at = Column(DateTime(timezone=True), nullable=True)
     staff_unanswered_message_text = Column(Text, nullable=True)

@@ -185,11 +185,12 @@ async def _post_escalation_via_bot_api(
     *,
     channel_id: str | None = None,
     log_prefix: str = "slack_escalation",
-) -> bool:
+) -> tuple[bool, str | None]:
+    """Post via the escalation bot. Returns ``(ok, message_ts)``."""
     token = _escalation_bot_token()
     channel = channel_id if channel_id is not None else _escalation_channel_id()
     if not token or not channel:
-        return False
+        return False, None
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -212,21 +213,22 @@ async def _post_escalation_via_bot_api(
                 log_prefix,
                 data.get("error"),
             )
-            return False
+            return False, None
+        ts = (data.get("ts") or "").strip() or None
         logger.info(
             "%s: chat.postMessage ok channel=%s ts=%s",
             log_prefix,
             channel,
-            data.get("ts"),
+            ts,
         )
-        return True
+        return True, ts
     except Exception:
         logger.warning(
             "%s: chat.postMessage request failed",
             log_prefix,
             exc_info=True,
         )
-        return False
+        return False, None
 
 
 async def _post_escalation_via_webhook(text: str) -> bool:
@@ -279,7 +281,7 @@ async def notify_slack_escalation(text: str, *, source: str) -> bool:
         message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
 
     if _escalation_bot_token() and _escalation_channel_id():
-        ok = await _post_escalation_via_bot_api(message)
+        ok, _ts = await _post_escalation_via_bot_api(message)
         if ok:
             return True
         if _escalation_webhook_url():
@@ -374,6 +376,47 @@ async def post_issue_channel_plain(
     return False, None, None
 
 
+async def post_escalation_channel_plain(
+    text: str, *, source: str
+) -> tuple[bool, str | None, str | None]:
+    """Post plain text to the escalation channel.
+
+    Returns ``(ok, channel_id, message_ts)``. Channel and ts are set only for a
+    successful bot API post (webhook posts cannot be deleted later). Never raises.
+    """
+    message = (text or "").strip()
+    if not message:
+        return False, None, None
+    if len(message) > _MAX_SLACK_TEXT_LEN:
+        message = message[: _MAX_SLACK_TEXT_LEN - 1] + "…"
+
+    channel = _escalation_channel_id()
+    if _escalation_bot_token() and channel:
+        ok, ts = await _post_escalation_via_bot_api(message)
+        if ok:
+            return True, channel, ts
+        if _escalation_webhook_url():
+            logger.info(
+                "slack_escalation: bot API failed; trying webhook fallback source=%s",
+                source,
+            )
+            posted = await _post_escalation_via_webhook(message)
+            return posted, None, None
+        return False, None, None
+
+    if _escalation_webhook_url():
+        posted = await _post_escalation_via_webhook(message)
+        return posted, None, None
+
+    logger.warning(
+        "slack_escalation: skipped source=%s "
+        "(set SLACK_ESCALATION_BOT_TOKEN+SLACK_ESCALATION_CHANNEL_ID "
+        "or SLACK_ESCALATION_WEBHOOK_URL)",
+        source,
+    )
+    return False, None, None
+
+
 async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
     """Post plain text to the issue-report channel (no ticket header/tags).
 
@@ -387,13 +430,18 @@ async def notify_slack_issue_channel_plain(text: str, *, source: str) -> bool:
 _SLACK_DELETE_ALREADY_GONE = frozenset({"message_not_found", "channel_not_found"})
 
 
-async def delete_issue_channel_message(channel: str, message_ts: str) -> bool:
-    """Delete a bot-posted issue-channel message.
+async def _delete_slack_message(
+    token: str | None,
+    channel: str,
+    message_ts: str,
+    *,
+    log_prefix: str,
+) -> bool:
+    """Delete a bot-posted Slack message.
 
     True when the message is gone (deleted, or Slack says it is already missing).
     False on a transient failure so the caller can retry. Never raises.
     """
-    token = _issue_report_bot_token()
     channel_id = (channel or "").strip()
     ts = (message_ts or "").strip()
     if not token or not channel_id or not ts:
@@ -414,7 +462,8 @@ async def delete_issue_channel_message(channel: str, message_ts: str) -> bool:
             data = resp.json()
     except Exception:
         logger.warning(
-            "slack_issue_channel_plain: chat.delete request failed channel=%s ts=%s",
+            "%s: chat.delete request failed channel=%s ts=%s",
+            log_prefix,
             channel_id,
             ts,
             exc_info=True,
@@ -422,7 +471,8 @@ async def delete_issue_channel_message(channel: str, message_ts: str) -> bool:
         return False
     if data.get("ok"):
         logger.info(
-            "slack_issue_channel_plain: chat.delete ok channel=%s ts=%s",
+            "%s: chat.delete ok channel=%s ts=%s",
+            log_prefix,
             channel_id,
             ts,
         )
@@ -430,20 +480,41 @@ async def delete_issue_channel_message(channel: str, message_ts: str) -> bool:
     error = (data.get("error") or "").strip()
     if error in _SLACK_DELETE_ALREADY_GONE:
         logger.info(
-            "slack_issue_channel_plain: chat.delete already gone channel=%s "
-            "ts=%s error=%s",
+            "%s: chat.delete already gone channel=%s ts=%s error=%s",
+            log_prefix,
             channel_id,
             ts,
             error,
         )
         return True
     logger.warning(
-        "slack_issue_channel_plain: chat.delete failed channel=%s ts=%s error=%s",
+        "%s: chat.delete failed channel=%s ts=%s error=%s",
+        log_prefix,
         channel_id,
         ts,
         error,
     )
     return False
+
+
+async def delete_issue_channel_message(channel: str, message_ts: str) -> bool:
+    """Delete a bot-posted issue-channel message. Never raises."""
+    return await _delete_slack_message(
+        _issue_report_bot_token(),
+        channel,
+        message_ts,
+        log_prefix="slack_issue_channel_plain",
+    )
+
+
+async def delete_escalation_channel_message(channel: str, message_ts: str) -> bool:
+    """Delete a bot-posted escalation-channel message. Never raises."""
+    return await _delete_slack_message(
+        _escalation_bot_token(),
+        channel,
+        message_ts,
+        log_prefix="slack_escalation",
+    )
 
 
 async def notify_slack_head_admin_escalation(text: str, *, source: str) -> bool:
@@ -466,11 +537,12 @@ async def notify_slack_head_admin_escalation(text: str, *, source: str) -> bool:
         )
         return False
 
-    return await _post_escalation_via_bot_api(
+    ok, _ts = await _post_escalation_via_bot_api(
         message,
         channel_id=channel,
         log_prefix="slack_head_admin_escalation",
     )
+    return ok
 
 
 def _issue_report_tag_mentions() -> dict[str, str]:
