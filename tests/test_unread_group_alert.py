@@ -9,8 +9,11 @@ from bot.services.unread_group_alert import (
     THRESHOLD,
     DialogSnap,
     GroupRow,
+    LiveDialog,
     alert_action,
     format_unread_alert,
+    note_incoming,
+    note_inbox_read,
     ready_to_evaluate,
     visible_unreads,
 )
@@ -33,6 +36,32 @@ def _group(
         name=name,
         is_internal=internal,
     )
+
+
+class ReadStateTests(unittest.TestCase):
+    def test_message_already_covered_by_read_does_not_count(self) -> None:
+        live = LiveDialog(
+            unread_count=0,
+            title="Amy",
+            archived=False,
+            top_message_id=10,
+            read_inbox_max_id=12,
+        )
+        self.assertFalse(note_incoming(live, 11))
+        self.assertEqual(live.unread_count, 0)
+
+    def test_inbox_read_clears_the_badge(self) -> None:
+        live = LiveDialog(
+            unread_count=3,
+            title="Amy",
+            archived=False,
+            top_message_id=20,
+            read_inbox_max_id=17,
+        )
+        self.assertTrue(note_inbox_read(live, 20, 0))
+        self.assertEqual(live.unread_count, 0)
+        self.assertFalse(note_incoming(live, 20))
+        self.assertEqual(live.unread_count, 0)
 
 
 class AlertActionTests(unittest.TestCase):

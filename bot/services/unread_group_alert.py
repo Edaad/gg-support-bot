@@ -74,6 +74,7 @@ class LiveDialog:
     title: str
     archived: bool
     top_message_id: int
+    read_inbox_max_id: int = 0
 
     def snap(self) -> DialogSnap:
         return DialogSnap(
@@ -81,6 +82,54 @@ class LiveDialog:
             title=self.title,
             archived=self.archived,
         )
+
+
+def note_incoming(live: LiveDialog, message_id: int, title: str = "") -> bool:
+    """Count a new incoming message. Already-read ids do not raise the badge."""
+
+    if title:
+        live.title = title
+    if message_id <= live.top_message_id:
+        return False
+    live.top_message_id = message_id
+    if message_id <= live.read_inbox_max_id:
+        return False
+    live.unread_count += 1
+    return True
+
+
+def note_inbox_read(live: LiveDialog, max_id: int, still_unread: int) -> bool:
+    """Apply a club-account read. ``still_unread`` replaces the local badge."""
+
+    if max_id > live.read_inbox_max_id:
+        live.read_inbox_max_id = max_id
+    new_count = max(0, still_unread)
+    if live.unread_count == new_count:
+        return False
+    live.unread_count = new_count
+    return True
+
+
+def apply_server_unread(
+    live: LiveDialog,
+    *,
+    unread_count: int,
+    top_message_id: int,
+    read_inbox_max_id: int,
+    title: str = "",
+    archived: bool | None = None,
+) -> None:
+    """Replace the badge with a ``messages.getPeerDialogs`` result."""
+
+    live.unread_count = max(0, int(unread_count))
+    if top_message_id > live.top_message_id:
+        live.top_message_id = top_message_id
+    if read_inbox_max_id > live.read_inbox_max_id:
+        live.read_inbox_max_id = read_inbox_max_id
+    if title:
+        live.title = title
+    if archived is not None:
+        live.archived = archived
 
 
 def _lock_for() -> asyncio.Lock:
@@ -300,12 +349,14 @@ async def _collect_dialogs(
         async for dialog in client.iter_dialogs(archived=archived):
             if not dialog.is_group or dialog.id not in wanted:
                 continue
-            top = int(getattr(dialog.dialog, "top_message", 0) or 0)
+            raw = dialog.dialog
+            top = int(getattr(raw, "top_message", 0) or 0)
             found[int(dialog.id)] = LiveDialog(
                 unread_count=int(dialog.unread_count or 0),
                 title=(dialog.title or "").strip(),
                 archived=bool(dialog.archived),
                 top_message_id=top,
+                read_inbox_max_id=int(getattr(raw, "read_inbox_max_id", 0) or 0),
             )
     return found
 
@@ -345,11 +396,8 @@ async def _resolve_unknown(
         await _fetch_one(client, club_key, chat_id)
         async with _lock_for():
             live = _dialogs.get(club_key, {}).get(chat_id)
-            if live is not None and message_id > live.top_message_id:
-                live.unread_count += 1
-                live.top_message_id = message_id
-                if title:
-                    live.title = title
+            if live is not None:
+                note_incoming(live, message_id, title)
         schedule_evaluate()
     except FloodWaitError as exc:
         logger.warning(
@@ -380,7 +428,7 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
     chat = getattr(event, "chat", None)
     if chat is not None:
         title = (getattr(chat, "title", None) or "").strip()
-    changed = False
+    logged: tuple[int, int, str] | None = None
     async with _lock_for():
         if _stopped or club_key not in _ready:
             return
@@ -391,19 +439,27 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
                 _schedule_unknown(club_key, int(chat_id), int(message_id), title)
                 return
             _absent.get(club_key, set()).discard(int(chat_id))
-            dialogs[int(chat_id)] = LiveDialog(
-                unread_count=1,
+            created = LiveDialog(
+                unread_count=0,
                 title=title,
                 archived=False,
-                top_message_id=int(message_id),
+                top_message_id=0,
             )
+            note_incoming(created, int(message_id), title)
+            dialogs[int(chat_id)] = created
+            changed = created.unread_count > 0
+            logged = (int(chat_id), created.unread_count, created.title)
+        elif note_incoming(current, int(message_id), title):
             changed = True
-        elif int(message_id) > current.top_message_id:
-            current.unread_count += 1
-            current.top_message_id = int(message_id)
-            if title:
-                current.title = title
-            changed = True
+            logged = (int(chat_id), current.unread_count, current.title)
+    if logged is not None and changed:
+        logger.info(
+            "unread_group_alert: incoming club=%s chat_id=%s unread=%s title=%s",
+            club_key,
+            logged[0],
+            logged[1],
+            logged[2],
+        )
     if changed:
         schedule_evaluate()
 
@@ -415,25 +471,43 @@ async def _handle_raw(club_key: str, update: Any) -> None:
         return
     chat_id: int | None = None
     still: int | None = None
+    max_id = 0
     if isinstance(update, UpdateReadChannelInbox):
         chat_id = int(get_peer_id(PeerChannel(update.channel_id)))
         still = int(update.still_unread_count)
+        max_id = int(update.max_id)
     elif isinstance(update, UpdateReadHistoryInbox):
         chat_id = int(get_peer_id(update.peer))
         still = int(update.still_unread_count)
+        max_id = int(update.max_id)
     if chat_id is None or still is None:
         return
     changed = False
+    title = ""
+    unread_now = 0
     async with _lock_for():
         if _stopped or club_key not in _ready:
             return
         current = _dialogs.get(club_key, {}).get(chat_id)
         if current is None:
+            logger.info(
+                "unread_group_alert: read club=%s chat_id=%s still=%s matched=0",
+                club_key,
+                chat_id,
+                still,
+            )
             return
-        count = max(0, still)
-        if current.unread_count != count:
-            current.unread_count = count
-            changed = True
+        changed = note_inbox_read(current, max_id, still)
+        title = current.title
+        unread_now = current.unread_count
+    logger.info(
+        "unread_group_alert: read club=%s chat_id=%s still=%s unread=%s title=%s",
+        club_key,
+        chat_id,
+        still,
+        unread_now,
+        title,
+    )
     if changed:
         schedule_evaluate()
 
@@ -491,28 +565,39 @@ async def _evaluate() -> None:
             _dialog_index(),
             ready,
         )
+    if len(rows) >= THRESHOLD:
+        try:
+            await _refresh_unread(connected)
+        except FloodWaitError as exc:
+            logger.warning(
+                "unread_group_alert: refresh flood wait seconds=%s", exc.seconds
+            )
+            _schedule_timer(float(exc.seconds) + 1.0, replace=True)
+            return
+        async with _lock_for():
+            connected, ready = _connected_and_ready()
+            if not ready_to_evaluate(connected, ready):
+                return
+            rows = visible_unreads(
+                _group_list(tracked),
+                _dialog_index(),
+                ready,
+            )
     count = len(rows)
-    now = datetime.now(timezone.utc)
-    last_sent = await asyncio.to_thread(load_last_sent_at)
-    action = alert_action(count, last_sent, now)
-    if action == "clear":
-        _cancel_timer()
-        if last_sent is not None:
-            await asyncio.to_thread(set_last_sent_at, None)
-        return
-    if action == "wait":
-        assert last_sent is not None
-        remaining = REPEAT_AFTER - (now - as_utc(last_sent))
-        _ensure_timer(max(remaining.total_seconds(), 1.0))
-        return
-    message = format_unread_alert(count, [title for _club, title in rows])
-    if not await _fanout(message):
-        logger.warning("unread_group_alert: pushover failed count=%s", count)
-        _schedule_timer(FAILED_RETRY_SEC, replace=True)
-        return
-    await asyncio.to_thread(set_last_sent_at, now)
-    logger.info("unread_group_alert: sent count=%s", count)
-    _schedule_timer(REPEAT_AFTER.total_seconds(), replace=True)
+    async with _lock_for():
+        details = [
+            f"{club_key} {chat_id} unread={live.unread_count} {live.title}"
+            for club_key, dialogs in _dialogs.items()
+            if club_key in ready
+            for chat_id, live in dialogs.items()
+            if live.unread_count >= 1
+        ]
+    logger.info(
+        "unread_group_alert: count=%s %s",
+        count,
+        " | ".join(details),
+    )
+    return
 
 
 def _group_list(tracked: dict[str, dict[int, GroupRow]]) -> list[GroupRow]:
@@ -553,6 +638,95 @@ async def _fill_missing(
             await _fetch_one(client, club_key, chat_id)
 
 
+def _live_from_tl(dialog: Any, title: str) -> LiveDialog:
+    return LiveDialog(
+        unread_count=int(dialog.unread_count or 0),
+        title=title,
+        archived=dialog.folder_id is not None,
+        top_message_id=int(dialog.top_message or 0),
+        read_inbox_max_id=int(dialog.read_inbox_max_id or 0),
+    )
+
+
+async def _refresh_unread(connected: set[str]) -> None:
+    """Re-read server badges for chats we still think are unread."""
+
+    async with _lock_for():
+        targets = {
+            club_key: [
+                chat_id for chat_id, live in dialogs.items() if live.unread_count >= 1
+            ]
+            for club_key, dialogs in _dialogs.items()
+            if club_key in connected
+        }
+    for club_key, chat_ids in targets.items():
+        client = _clients.get(club_key)
+        if client is None or not client.is_connected() or not chat_ids:
+            continue
+        for start in range(0, len(chat_ids), 50):
+            if _stopped:
+                return
+            await _refresh_chunk(client, club_key, chat_ids[start : start + 50])
+
+
+async def _refresh_chunk(
+    client: TelegramClient, club_key: str, chat_ids: list[int]
+) -> None:
+    peers = []
+    resolved: list[int] = []
+    for chat_id in chat_ids:
+        try:
+            peers.append(InputDialogPeer(await client.get_input_entity(chat_id)))
+        except Exception:
+            logger.info(
+                "unread_group_alert: refresh skip club=%s chat_id=%s",
+                club_key,
+                chat_id,
+            )
+            continue
+        resolved.append(chat_id)
+    if not peers:
+        return
+    try:
+        result = await client(GetPeerDialogsRequest(peers=peers))
+    except FloodWaitError:
+        raise
+    except Exception:
+        logger.exception(
+            "unread_group_alert: refresh failed club=%s chats=%s",
+            club_key,
+            len(resolved),
+        )
+        return
+    titles: dict[int, str] = {}
+    for chat in result.chats:
+        try:
+            titles[int(get_peer_id(chat))] = _chat_title(chat)
+        except Exception:
+            continue
+    async with _lock_for():
+        if _stopped:
+            return
+        dialogs = _dialogs.get(club_key, {})
+        for dialog in result.dialogs:
+            chat_id = int(get_peer_id(dialog.peer))
+            live = dialogs.get(chat_id)
+            if live is None:
+                continue
+            apply_server_unread(
+                live,
+                unread_count=int(dialog.unread_count or 0),
+                top_message_id=int(dialog.top_message or 0),
+                read_inbox_max_id=int(dialog.read_inbox_max_id or 0),
+                title=titles.get(chat_id, ""),
+                archived=dialog.folder_id is not None,
+            )
+
+
+def _chat_title(chat: Any) -> str:
+    return (getattr(chat, "title", None) or "").strip()
+
+
 async def _fetch_one(client: TelegramClient, club_key: str, chat_id: int) -> None:
     try:
         input_peer = await client.get_input_entity(chat_id)
@@ -584,12 +758,7 @@ async def _fetch_one(client: TelegramClient, club_key: str, chat_id: int) -> Non
         if _stopped:
             return
         _absent.get(club_key, set()).discard(chat_id)
-        _dialogs.setdefault(club_key, {})[chat_id] = LiveDialog(
-            unread_count=int(dialog.unread_count or 0),
-            title=title,
-            archived=dialog.folder_id is not None,
-            top_message_id=int(dialog.top_message or 0),
-        )
+        _dialogs.setdefault(club_key, {})[chat_id] = _live_from_tl(dialog, title)
 
 
 def _title_from_chats(chats: list[Any], chat_id: int) -> str:
