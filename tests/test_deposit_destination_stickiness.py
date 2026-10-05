@@ -291,9 +291,7 @@ class DestinationStickinessPickTests(unittest.TestCase):
 
         meta = response_data[dep._STICKINESS_FALLBACK_KEY]
         self.assertEqual(meta["shown"], "$otherhandle")
-        self.assertEqual(
-            meta["reason"], "inactive in Over $100 ($101–$2000)"
-        )
+        self.assertEqual(meta["reason"], "inactive in Over $100 ($101–$2000)")
 
     def test_sticky_cashapp_falls_back_to_stripe_when_tag_unavailable(self):
         sticky = SimpleNamespace(destination_tag="$eduardok4444", variant_id=21)

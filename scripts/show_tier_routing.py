@@ -36,9 +36,7 @@ def main(method_ids: list[int]) -> None:
                     print(f"  ${raw:>6}: no tier (method hidden)")
                     continue
                 handles = sorted(
-                    (v.venmo_tag or v.label)
-                    for v in tier.variants
-                    if v.is_active
+                    (v.venmo_tag or v.label) for v in tier.variants if v.is_active
                 )
                 print(f"  ${raw:>6}: {tier.label!r} -> {handles}")
 
