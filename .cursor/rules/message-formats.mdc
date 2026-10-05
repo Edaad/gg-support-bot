@@ -1,0 +1,33 @@
+---
+description: Match existing Slack, Telegram, and Pushover message shapes, and confirm the copy before coding it
+alwaysApply: true
+---
+
+# Outbound message copy
+
+Slack, Telegram, and Pushover messages already have a shape. A new or changed message uses that shape. Confirm the exact text with the user before writing code.
+
+## Match the current format
+
+Find the formatter for that channel and that kind of alert. Copy its headline, field order, labels, markup, money and time formatting, and links. Do not invent a layout.
+
+| Channel | Markup | Start here |
+|---|---|---|
+| Slack ops | mrkdwn. Header from `SOURCE_HEADERS`, then the body | `bot/services/slack_ops_format.py`, `format_slack_ops_message` |
+| Slack escalation / union deposit / large cashout | Bold headline, `Club:`, group title in a code span, labeled fields | `format_*_slack_text` in `bot/services/escalation_notification.py` |
+| Slack deposit alerts | `:bell:` title, `*name*`, Method / Variant / Week, conditions, dashboard link | `format_slack_message` in `bot/services/deposit_method_alerts.py` |
+| Pushover | Plain text. `Player:` / `Amount:` / `Tag:` | `format_cashout_pushover_*` in `bot/services/staff_cashout_slack_reminders.py` |
+| Telegram staff payment notices | HTML (`<b>`, escaped text) | `notification/formatting.py` |
+| Telegram player copy | The `format_*_message` already used for that flow | `bot/handlers/`, `bot/services/` |
+
+A new source gets a header in the same style as the table for that channel. Player-facing Telegram copy still follows `personas/player.md`.
+
+## Confirm before coding
+
+When the task adds or changes one of these messages:
+
+1. Read the matching formatter.
+2. Show the full message as it will be sent, with realistic values filled in. If an existing message is changing, show the current text and the proposed text.
+3. Stop. Do not write the formatter, the call site, or tests until the user confirms that shape.
+
+Skip the pause only when the user already supplied the exact copy in that message. Implement that text, still in the channel's markup.
