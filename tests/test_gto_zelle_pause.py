@@ -116,7 +116,7 @@ class PauseRuleTests(unittest.TestCase):
         self.assertIsNone(row.paused_until)
         session.flush.assert_called_once()
 
-    def test_duplicate_labels_include_tier_name(self):
+    def test_cards_include_tier(self):
         first = _variant(id=1, label="Citizens")
         second = _variant(id=2, label="Citizens")
         unique = _variant(id=3, label="Chase")
@@ -129,9 +129,10 @@ class PauseRuleTests(unittest.TestCase):
             _moment(),
         )
         by_id = {card["id"]: card for card in cards}
+        self.assertEqual(by_id[1]["tier_id"], 1)
         self.assertEqual(by_id[1]["tier_label"], "Under $100")
         self.assertEqual(by_id[2]["tier_label"], "Over $100")
-        self.assertIsNone(by_id[3]["tier_label"])
+        self.assertEqual(by_id[3]["tier_label"], "Default")
         self.assertEqual(by_id[1]["state"], "active")
 
 
@@ -219,7 +220,8 @@ class GtoZelleRoleTests(unittest.TestCase):
         card = {
             "id": 1,
             "label": "Citizens",
-            "tier_label": None,
+            "tier_id": 10,
+            "tier_label": "Default",
             "state": "active",
             "paused_until": None,
         }

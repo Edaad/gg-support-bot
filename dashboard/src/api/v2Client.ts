@@ -244,7 +244,8 @@ export type GtoZelleState = 'active' | 'paused' | 'disabled'
 export interface GtoZelleCard {
   id: number
   label: string
-  tier_label: string | null
+  tier_id: number
+  tier_label: string
   state: GtoZelleState
   paused_until: string | null
 }

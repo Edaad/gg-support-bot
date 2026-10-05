@@ -7,6 +7,16 @@ import {
 } from '../api/v2Client'
 import { useConfirm } from '../components/ConfirmProvider'
 
+function tiersOf(cards: GtoZelleCard[]): { id: number; label: string; cards: GtoZelleCard[] }[] {
+  const groups: { id: number; label: string; cards: GtoZelleCard[] }[] = []
+  for (const card of cards) {
+    const last = groups[groups.length - 1]
+    if (last && last.id === card.tier_id) last.cards.push(card)
+    else groups.push({ id: card.tier_id, label: card.tier_label, cards: [card] })
+  }
+  return groups
+}
+
 function formatRemaining(untilIso: string, now: number): string {
   const ms = new Date(untilIso).getTime() - now
   if (ms <= 0) return '0m'
@@ -107,54 +117,63 @@ export default function GtoZelle({ token }: { token: string }) {
       {loaded && cards.length === 0 && !error && (
         <p className="text-sm text-ink-muted">No Zelle variants.</p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {cards.map((card) => {
-          const remaining =
-            card.state === 'paused' && card.paused_until
-              ? formatRemaining(card.paused_until, now)
-              : null
-          return (
-            <article key={card.id} className="panel-nested flex flex-col gap-3">
-              <div>
-                <h2 className="text-sm font-medium text-ink">{card.label}</h2>
-                {card.tier_label && (
-                  <p className="mt-0.5 text-xs text-ink-muted">{card.tier_label}</p>
-                )}
-              </div>
-              {card.state === 'paused' && remaining && (
-                <p className="text-sm text-ink">{remaining}</p>
-              )}
-              {card.state === 'disabled' && (
-                <p className="text-sm text-ink-muted">Disabled</p>
-              )}
-              {card.state === 'active' && (
-                <button
-                  type="button"
-                  className="btn-danger-outline w-fit"
-                  disabled={busyId === card.id}
-                  onClick={() => {
-                    void pause(card)
-                  }}
-                >
-                  Disable
-                </button>
-              )}
-              {card.state === 'paused' && (
-                <button
-                  type="button"
-                  className="btn-secondary-sm w-fit"
-                  disabled={busyId === card.id}
-                  onClick={() => {
-                    void resume(card)
-                  }}
-                >
-                  Re-enable
-                </button>
-              )}
-            </article>
-          )
-        })}
-      </div>
+      {tiersOf(cards).map((tier, index) => (
+        <section
+          key={tier.id}
+          className={index === 0 ? '' : 'mt-10 border-t border-border pt-8'}
+          aria-labelledby={`gto-zelle-tier-${tier.id}`}
+        >
+          <h2
+            id={`gto-zelle-tier-${tier.id}`}
+            className="mb-4 text-lg font-semibold tracking-tight text-ink"
+          >
+            {tier.label}
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {tier.cards.map((card) => {
+              const remaining =
+                card.state === 'paused' && card.paused_until
+                  ? formatRemaining(card.paused_until, now)
+                  : null
+              return (
+                <article key={card.id} className="panel-nested flex flex-col gap-3">
+                  <h3 className="text-sm font-medium text-ink">{card.label}</h3>
+                  {card.state === 'paused' && remaining && (
+                    <p className="text-sm text-ink">{remaining}</p>
+                  )}
+                  {card.state === 'disabled' && (
+                    <p className="text-sm text-ink-muted">Disabled</p>
+                  )}
+                  {card.state === 'active' && (
+                    <button
+                      type="button"
+                      className="btn-danger-outline w-fit"
+                      disabled={busyId === card.id}
+                      onClick={() => {
+                        void pause(card)
+                      }}
+                    >
+                      Disable
+                    </button>
+                  )}
+                  {card.state === 'paused' && (
+                    <button
+                      type="button"
+                      className="btn-secondary-sm w-fit"
+                      disabled={busyId === card.id}
+                      onClick={() => {
+                        void resume(card)
+                      }}
+                    >
+                      Re-enable
+                    </button>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   )
 }

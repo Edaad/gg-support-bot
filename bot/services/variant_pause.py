@@ -128,7 +128,12 @@ def gto_zelle_rows(
             func.lower(ClubPaymentMethod.slug) == "zelle",
             ClubPaymentMethod.tracks_manual_requests.is_(False),
         )
-        .order_by(ClubPaymentTierVariant.sort_order, ClubPaymentTierVariant.id)
+        .order_by(
+            ClubPaymentTier.sort_order,
+            ClubPaymentTier.id,
+            ClubPaymentTierVariant.sort_order,
+            ClubPaymentTierVariant.id,
+        )
         .all()
     )
 
@@ -138,9 +143,6 @@ def build_gto_zelle_cards(
     now: datetime | None = None,
 ) -> list[dict]:
     moment = _now(now)
-    counts: dict[str, int] = {}
-    for variant, _tier in rows:
-        counts[variant.label] = counts.get(variant.label, 0) + 1
     cards: list[dict] = []
     for variant, tier in rows:
         state = card_state(variant, moment)
@@ -149,7 +151,8 @@ def build_gto_zelle_cards(
             {
                 "id": int(variant.id),
                 "label": variant.label,
-                "tier_label": tier.label if counts[variant.label] > 1 else None,
+                "tier_id": int(tier.id),
+                "tier_label": tier.label,
                 "state": state,
                 "paused_until": deadline,
             }

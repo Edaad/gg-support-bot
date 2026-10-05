@@ -23,7 +23,8 @@ router = APIRouter(prefix="/api/v2", tags=["gto-zelle"])
 class GtoZelleCard(BaseModel):
     id: int
     label: str
-    tier_label: Optional[str] = None
+    tier_id: int
+    tier_label: str
     state: Literal["active", "paused", "disabled"]
     paused_until: Optional[datetime] = None
 
