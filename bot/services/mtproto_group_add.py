@@ -217,6 +217,86 @@ def schedule_send_add_confirmation_from_club(
         asyncio.create_task(coro, name=f"group-add-send-{chat_id}")
 
 
+async def _gate_outgoing_deposit(
+    event: events.NewMessage.Event,
+    cfg: ClubGcConfig,
+    *,
+    listener_label: str,
+    ptb_bot: Any | None,
+    club_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    source: str,
+    command: str,
+) -> bool:
+    """Claim the command. True means this handler should run the normal flow."""
+    from bot.services.clubgg_deposit_api import request_id_for
+    from bot.services.clubgg_rpa_events import (
+        OP_DEPOSIT,
+        OUTCOME_OWNED,
+        OUTCOME_PROCEED,
+        PATH_TELETHON,
+        claim_command,
+        message_sent_at,
+    )
+    from bot.services.escalation_notification import notify_stale_command
+
+    message = event.message
+    message_id = int(message.id) if message is not None else None
+    chat_id = int(event.chat_id) if event.chat_id is not None else None
+    if message_id is None or chat_id is None:
+        await _delete_add_command_message(
+            event,
+            ptb_bot=ptb_bot,
+            club_key=cfg.club_key,
+            listener_label=listener_label,
+        )
+        if chat_id is not None:
+            await notify_stale_command(
+                command=command,
+                club_id=club_id,
+                chat_id=chat_id,
+                title=None,
+                amount=amount,
+                bonus=bonus,
+            )
+        return False
+
+    outcome = await asyncio.to_thread(
+        claim_command,
+        request_id=request_id_for(chat_id, message_id),
+        operation=OP_DEPOSIT,
+        source=source,
+        telegram_chat_id=chat_id,
+        message_id=message_id,
+        club_id=club_id,
+        group_title=None,
+        amount=amount,
+        bonus=bonus,
+        message_sent_at_value=message_sent_at(getattr(message, "date", None)),
+        path=PATH_TELETHON,
+    )
+    if outcome == OUTCOME_OWNED:
+        return False
+    if outcome != OUTCOME_PROCEED:
+        await _delete_add_command_message(
+            event,
+            ptb_bot=ptb_bot,
+            club_key=cfg.club_key,
+            listener_label=listener_label,
+        )
+        await notify_stale_command(
+            command=command,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=None,
+            amount=amount,
+            bonus=bonus,
+        )
+        return False
+    return True
+
+
 async def _delete_add_command_message(
     event: events.NewMessage.Event,
     *,
@@ -312,6 +392,22 @@ async def handle_group_add_outgoing(
             },
         )
         # #endregion
+        return
+
+    from bot.services.clubgg_rpa_events import SOURCE_STAFF_ADD
+
+    proceed = await _gate_outgoing_deposit(
+        event,
+        cfg,
+        listener_label=listener_label,
+        ptb_bot=ptb_bot,
+        club_id=int(club_id),
+        amount=amount,
+        bonus=bonus,
+        source=SOURCE_STAFF_ADD,
+        command="add",
+    )
+    if not proceed:
         return
 
     confirmation = format_add_confirmation(amount, bonus, name=name)
@@ -513,6 +609,22 @@ async def handle_group_bonus_outgoing(
     """Outgoing /bonus in a megagroup: confirmation, bonus chips, recording draft."""
     club_id = await asyncio.to_thread(get_club_for_chat, event.chat_id)
     if club_id is None or int(club_id) != int(cfg.link_club_id):
+        return
+
+    from bot.services.clubgg_rpa_events import SOURCE_STAFF_BONUS
+
+    proceed = await _gate_outgoing_deposit(
+        event,
+        cfg,
+        listener_label=listener_label,
+        ptb_bot=ptb_bot,
+        club_id=int(club_id),
+        amount=bonus_amount,
+        bonus=None,
+        source=SOURCE_STAFF_BONUS,
+        command="bonus",
+    )
+    if not proceed:
         return
 
     confirmation = format_bonus_confirmation(bonus_amount)

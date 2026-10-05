@@ -23,6 +23,18 @@ from cashier.services.group_cash_init import (
     WORKING_ON_CASHOUT_MESSAGE,
     initiate_group_cash_job,
 )
+from bot.services.clubgg_rpa_events import (
+    OP_CLAIM,
+    OUTCOME_OWNED,
+    OUTCOME_PROCEED,
+    PATH_BOT_DIRECT,
+    PATH_BOT_FALLBACK,
+    SOURCE_STAFF_CASH,
+    cash_command_request_id,
+    claim_command,
+    is_command_stale,
+    message_sent_at,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +127,35 @@ async def _cash_telethon_fallback(
     if not missed:
         return
 
+    outcome = claim_command(
+        request_id=cash_command_request_id(
+            int(chat.id), int(update.message.message_id)
+        ),
+        operation=OP_CLAIM,
+        source=SOURCE_STAFF_CASH,
+        telegram_chat_id=int(chat.id),
+        message_id=int(update.message.message_id),
+        club_id=club_id,
+        group_title=chat.title,
+        amount=amount,
+        bonus=None,
+        message_sent_at_value=message_sent_at(update.message.date),
+        path=PATH_BOT_FALLBACK,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        from bot.services.escalation_notification import notify_stale_command
+
+        await notify_stale_command(
+            command="cash",
+            club_id=club_id,
+            chat_id=chat.id,
+            title=chat.title,
+            amount=amount,
+        )
+        return
+
     await _cash_bot_api_path(
         update,
         context,
@@ -146,7 +187,9 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Usage: /cash <amount> (Example: /cash 500)")
         return
 
-    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+    listener = bool(get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled())
+    sent = message_sent_at(update.message.date)
+    if listener and not is_command_stale(sent):
         # #region agent log
         _club_cfg = get_club_config_for_admin(admin_id)
         _conn = {getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients}
@@ -172,6 +215,46 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 amount=amount,
             ),
             name=f"cash-telethon-fallback-{chat.id}",
+        )
+        return
+
+    outcome = claim_command(
+        request_id=cash_command_request_id(
+            int(chat.id), int(update.message.message_id)
+        ),
+        operation=OP_CLAIM,
+        source=SOURCE_STAFF_CASH,
+        telegram_chat_id=int(chat.id),
+        message_id=int(update.message.message_id),
+        club_id=club_id,
+        group_title=chat.title,
+        amount=amount,
+        bonus=None,
+        message_sent_at_value=sent,
+        path=PATH_BOT_FALLBACK if listener else PATH_BOT_DIRECT,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        try:
+            await context.bot.delete_message(
+                chat_id=chat.id, message_id=update.message.message_id
+            )
+        except Exception:
+            logger.warning(
+                "cash: could not delete stale command chat_id=%s message_id=%s",
+                chat.id,
+                update.message.message_id,
+                exc_info=True,
+            )
+        from bot.services.escalation_notification import notify_stale_command
+
+        await notify_stale_command(
+            command="cash",
+            club_id=club_id,
+            chat_id=chat.id,
+            title=chat.title,
+            amount=amount,
         )
         return
 

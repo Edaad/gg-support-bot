@@ -41,6 +41,8 @@ REASON_EARLYRB_AUTO_FAILED = "earlyrb_auto_failed"
 REASON_EARLYRB_AUTO_OVER_MAX = "earlyrb_auto_over_max"
 REASON_EARLYRB_CHIPS_NOT_ADDED = "earlyrb_chips_not_added"
 REASON_EARLYRB_AUTO_ADDED = "earlyrb_auto_added"
+REASON_ADD_STALE = "add_stale"
+REASON_CASH_STALE = "cash_stale"
 REASON_RPA_DEPOSIT_FAILED = "rpa_deposit_failed"
 REASON_RPA_CASHOUT_FAILED = "rpa_cashout_failed"
 REASON_RPA_DEPOSIT_UNCERTAIN = "rpa_deposit_uncertain"
@@ -1212,6 +1214,65 @@ async def notify_earlyrb_requested(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+    )
+
+
+def format_stale_command_slack_text(
+    *,
+    command: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    bonus=None,
+) -> str:
+    """Slack body for a staff /add, /bonus, or /cash that started too late."""
+    if command == "cash":
+        headline = "/cash didn't work — server side issue. Claim chips manually."
+    elif command == "bonus":
+        headline = "/bonus didn't work — server side issue. Add chips manually."
+    else:
+        headline = "/add didn't work — server side issue. Add chips manually."
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    lines = [
+        f"*{headline}*",
+        f"Club: {club}",
+        _slack_code_span(group_title),
+        f"Amount: {_union_deposit_amount_str(amount)}",
+    ]
+    if command != "bonus" and bonus is not None and bonus > 0:
+        lines.append(f"Bonus: {_union_deposit_amount_str(bonus)}")
+    return "\n".join(lines)
+
+
+async def notify_stale_command(
+    *,
+    command: str,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    amount,
+    bonus=None,
+) -> None:
+    """Escalation when a staff /add, /bonus, or /cash is too old to move chips."""
+    if not escalation_notification_enabled(club_id):
+        return
+    reason = REASON_CASH_STALE if command == "cash" else REASON_ADD_STALE
+    text = format_stale_command_slack_text(
+        command=command,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        amount=amount,
+        bonus=bonus,
+    )
+    await notify_escalation_slack(
+        reason,
+        club_id=club_id,
+        chat_id=int(chat_id),
+        title=title,
+        slack_text=text,
     )
 
 

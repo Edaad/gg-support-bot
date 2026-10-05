@@ -269,6 +269,74 @@ async def handle_group_cash_outgoing(
         )
         return
 
+    from bot.services.clubgg_rpa_events import (
+        OP_CLAIM,
+        OUTCOME_OWNED,
+        OUTCOME_PROCEED,
+        PATH_TELETHON,
+        SOURCE_STAFF_CASH,
+        cash_command_request_id,
+        claim_command,
+        message_sent_at,
+    )
+    from bot.services.escalation_notification import notify_stale_command
+
+    message = event.message
+    message_id = int(message.id) if message is not None else None
+    if message_id is None:
+        try:
+            await event.delete()
+        except Exception:
+            logger.warning(
+                "group_cash: delete failed club=%s listener=%s chat_id=%s",
+                cfg.club_key,
+                listener_label,
+                chat_id,
+            )
+        await notify_stale_command(
+            command="cash",
+            club_id=int(club_id),
+            chat_id=chat_id,
+            title=None,
+            amount=amount,
+        )
+        return
+
+    outcome = await asyncio.to_thread(
+        claim_command,
+        request_id=cash_command_request_id(chat_id, message_id),
+        operation=OP_CLAIM,
+        source=SOURCE_STAFF_CASH,
+        telegram_chat_id=chat_id,
+        message_id=message_id,
+        club_id=int(club_id),
+        group_title=None,
+        amount=amount,
+        bonus=None,
+        message_sent_at_value=message_sent_at(getattr(message, "date", None)),
+        path=PATH_TELETHON,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        try:
+            await event.delete()
+        except Exception:
+            logger.warning(
+                "group_cash: delete failed club=%s listener=%s chat_id=%s",
+                cfg.club_key,
+                listener_label,
+                chat_id,
+            )
+        await notify_stale_command(
+            command="cash",
+            club_id=int(club_id),
+            chat_id=chat_id,
+            title=None,
+            amount=amount,
+        )
+        return
+
     try:
         await event.delete()
     except Exception as e:

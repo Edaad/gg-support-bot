@@ -558,11 +558,15 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
         update.effective_chat = MagicMock(id=chat_id)
         update.effective_user = MagicMock(id=493310710)
         update.message = MagicMock()
+        update.message.date = datetime.now(timezone.utc)
+        update.message.message_id = 5
+        update.effective_chat.title = "Jacob / 88421"
 
         context = MagicMock()
         context.application.create_task = MagicMock()
 
         with (
+            patch.object(add_module, "claim_command", return_value="proceed"),
             patch.object(add_module, "cancel_deposit_reminder") as cancel_mock,
             patch.object(add_module, "record_activity_for_chat"),
             patch.object(add_module, "invalidate_pending_one_time_bypasses"),
@@ -630,6 +634,10 @@ class DepositReminderTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(mtproto_add_module, "get_club_for_chat", return_value=2),
+            patch(
+                "bot.services.clubgg_rpa_events.claim_command",
+                return_value="proceed",
+            ),
             patch.object(
                 mtproto_add_module, "_delete_add_command_message", new=AsyncMock()
             ),

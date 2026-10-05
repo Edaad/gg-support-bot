@@ -2142,6 +2142,50 @@ class PaymentAutoDepositEvent(Base):
     club = relationship("Club")
 
 
+class ClubggRpaEvent(Base):
+    """One ClubGG RPA call (deposit, claim, or rake), plus a stale command lock."""
+
+    __tablename__ = "clubgg_rpa_events"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_clubgg_rpa_request_id"),
+        Index("ix_clubgg_rpa_started_at", "started_at"),
+        Index("ix_clubgg_rpa_status", "status"),
+        Index(
+            "uq_clubgg_rpa_command",
+            "telegram_chat_id",
+            "message_id",
+            unique=True,
+            postgresql_where=text("command_lock"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    request_id = Column(String(128), nullable=False)
+    operation = Column(String(16), nullable=False)
+    source = Column(String(32), nullable=False)
+    status = Column(String(16), nullable=False)
+    command_lock = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    telegram_chat_id = Column(BigInteger, nullable=True)
+    message_id = Column(BigInteger, nullable=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True
+    )
+    group_title = Column(String(255), nullable=True)
+    amount = Column(Numeric(14, 2), nullable=True)
+    bonus = Column(Numeric(14, 2), nullable=True)
+    message_sent_at = Column(DateTime(timezone=True), nullable=True)
+    started_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    path = Column(String(32), nullable=True)
+    rpa_status = Column(String(32), nullable=True)
+    detail = Column(Text, nullable=True)
+
+    club = relationship("Club")
+
+
 class PaymentChipMatch(Base):
     """Best-effort link from a chip-add (/add or auto-deposit) to a payment notification."""
 

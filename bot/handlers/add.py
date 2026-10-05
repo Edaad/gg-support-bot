@@ -34,6 +34,19 @@ from bot.services.mtproto_group_add import (
     schedule_send_add_confirmation_from_club,
 )
 from bot.services.bonus_from_add import maybe_start_bonus_recording_from_add
+from bot.services.clubgg_deposit_api import request_id_for
+from bot.services.clubgg_rpa_events import (
+    OP_DEPOSIT,
+    OUTCOME_OWNED,
+    OUTCOME_PROCEED,
+    PATH_BOT_DIRECT,
+    PATH_BOT_FALLBACK,
+    SOURCE_STAFF_ADD,
+    SOURCE_STAFF_BONUS,
+    claim_command,
+    is_command_stale,
+    message_sent_at,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +196,28 @@ async def _add_telethon_fallback(
     if not missed:
         return
 
+    outcome = _claim_staff_deposit(
+        update,
+        club_id=club_id,
+        amount=amount,
+        bonus=bonus,
+        source=SOURCE_STAFF_ADD,
+        path=PATH_BOT_FALLBACK,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        await _escalate_blocked_command(
+            command="add",
+            club_id=club_id,
+            chat_id=chat.id,
+            title=chat.title,
+            amount=amount,
+            bonus=bonus,
+        )
+        return
+
+    await _record_add_side_effects(update, context, club_id=club_id)
     await _add_bot_api_path(
         update,
         context,
@@ -194,19 +229,14 @@ async def _add_telethon_fallback(
     )
 
 
-async def _execute_add(
+async def _record_add_side_effects(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
     club_id: int,
-    amount: Decimal,
-    bonus: Decimal | None,
-    name: str | None,
 ) -> None:
     chat = update.effective_chat
-    admin_id = update.effective_user.id
-    assert chat is not None and update.message is not None
-
+    assert chat is not None
     cancel_deposit_reminder(context, chat.id)
     try:
         from bot.services.escalation_notification import (
@@ -232,7 +262,71 @@ async def _execute_add(
             chat.id,
         )
 
-    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+
+async def _escalate_blocked_command(
+    *,
+    command: str,
+    club_id: int,
+    chat_id: int,
+    title: str | None,
+    amount: Decimal,
+    bonus: Decimal | None,
+) -> None:
+    from bot.services.escalation_notification import notify_stale_command
+
+    await notify_stale_command(
+        command=command,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        amount=amount,
+        bonus=bonus,
+    )
+
+
+def _claim_staff_deposit(
+    update: Update,
+    *,
+    club_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    source: str,
+    path: str,
+) -> str:
+    chat = update.effective_chat
+    message = update.message
+    assert chat is not None and message is not None
+    return claim_command(
+        request_id=request_id_for(int(chat.id), int(message.message_id)),
+        operation=OP_DEPOSIT,
+        source=source,
+        telegram_chat_id=int(chat.id),
+        message_id=int(message.message_id),
+        club_id=club_id,
+        group_title=chat.title,
+        amount=amount,
+        bonus=bonus,
+        message_sent_at_value=message_sent_at(message.date),
+        path=path,
+    )
+
+
+async def _execute_add(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    club_id: int,
+    amount: Decimal,
+    bonus: Decimal | None,
+    name: str | None,
+) -> None:
+    chat = update.effective_chat
+    admin_id = update.effective_user.id
+    assert chat is not None and update.message is not None
+
+    listener = bool(get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled())
+    sent = message_sent_at(update.message.date)
+    if listener and not is_command_stale(sent):
         # #region agent log
         _club_cfg = get_club_config_for_admin(admin_id)
         _conn = {getattr(c, "_gg_club_key", "?"): c.is_connected() for c in _clients}
@@ -263,6 +357,33 @@ async def _execute_add(
         )
         return
 
+    outcome = _claim_staff_deposit(
+        update,
+        club_id=club_id,
+        amount=amount,
+        bonus=bonus,
+        source=SOURCE_STAFF_ADD,
+        path=PATH_BOT_FALLBACK if listener else PATH_BOT_DIRECT,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        await bot_delete_message(
+            context.bot,
+            chat_id=chat.id,
+            message_id=update.message.message_id,
+        )
+        await _escalate_blocked_command(
+            command="add",
+            club_id=club_id,
+            chat_id=chat.id,
+            title=chat.title,
+            amount=amount,
+            bonus=bonus,
+        )
+        return
+
+    await _record_add_side_effects(update, context, club_id=club_id)
     await _add_bot_api_path(
         update,
         context,
@@ -413,6 +534,27 @@ async def _bonus_telethon_fallback(
     if not missed:
         return
 
+    outcome = _claim_staff_deposit(
+        update,
+        club_id=club_id,
+        amount=bonus_amount,
+        bonus=None,
+        source=SOURCE_STAFF_BONUS,
+        path=PATH_BOT_FALLBACK,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        await _escalate_blocked_command(
+            command="bonus",
+            club_id=club_id,
+            chat_id=chat.id,
+            title=chat.title,
+            amount=bonus_amount,
+            bonus=None,
+        )
+        return
+
     await _bonus_bot_api_path(
         update,
         context,
@@ -430,9 +572,12 @@ async def _execute_group_bonus(
     bonus_amount: Decimal,
 ) -> None:
     admin_id = update.effective_user.id
-    assert update.effective_chat is not None and update.message is not None
+    chat = update.effective_chat
+    assert chat is not None and update.message is not None
 
-    if get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled():
+    listener = bool(get_club_config_for_admin(admin_id) and is_dm_gc_listener_enabled())
+    sent = message_sent_at(update.message.date)
+    if listener and not is_command_stale(sent):
         context.application.create_task(
             _bonus_telethon_fallback(
                 update,
@@ -440,7 +585,33 @@ async def _execute_group_bonus(
                 club_id=club_id,
                 bonus_amount=bonus_amount,
             ),
-            name=f"bonus-telethon-fallback-{update.effective_chat.id}",
+            name=f"bonus-telethon-fallback-{chat.id}",
+        )
+        return
+
+    outcome = _claim_staff_deposit(
+        update,
+        club_id=club_id,
+        amount=bonus_amount,
+        bonus=None,
+        source=SOURCE_STAFF_BONUS,
+        path=PATH_BOT_FALLBACK if listener else PATH_BOT_DIRECT,
+    )
+    if outcome == OUTCOME_OWNED:
+        return
+    if outcome != OUTCOME_PROCEED:
+        await bot_delete_message(
+            context.bot,
+            chat_id=chat.id,
+            message_id=update.message.message_id,
+        )
+        await _escalate_blocked_command(
+            command="bonus",
+            club_id=club_id,
+            chat_id=chat.id,
+            title=chat.title,
+            amount=bonus_amount,
+            bonus=None,
         )
         return
 

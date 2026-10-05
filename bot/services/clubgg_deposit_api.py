@@ -545,7 +545,7 @@ async def _maybe_notify_rpa_deposit_problem(
     )
 
 
-async def run_auto_chip_add(
+async def _run_auto_chip_add_body(
     *,
     club_id: int,
     chat_id: int,
@@ -698,6 +698,24 @@ async def run_auto_chip_add(
             )
             last_status = tx_status
             last_reason = tx_reason
+            part_request_id = request_id_with_part(request_id, part=part)
+            if part_request_id != request_id:
+                from bot.services.clubgg_rpa_events import (
+                    OP_DEPOSIT,
+                    record_clubgg_result,
+                )
+
+                record_clubgg_result(
+                    request_id=part_request_id,
+                    operation=OP_DEPOSIT,
+                    ok=tx_ok,
+                    rpa_status=tx_status,
+                    club_id=club_id,
+                    telegram_chat_id=chat_id,
+                    amount=chip_amount,
+                    group_title=title,
+                    detail=None if tx_ok else tx_reason,
+                )
             if not tx_ok:
                 all_ok = False
                 if idx == 0 and len(transactions) > 1:
@@ -718,6 +736,45 @@ async def run_auto_chip_add(
                 detail=last_reason or None,
             )
         return all_ok, last_status
+
+
+async def run_auto_chip_add(
+    *,
+    club_id: int,
+    chat_id: int,
+    amount: Decimal,
+    request_id: str,
+    bonus: Optional[Decimal] = None,
+    group_title: Optional[str] = None,
+    union_shorthand: Optional[str] = None,
+    ptb_bot: Any | None = None,
+    label: Optional[str] = None,
+) -> tuple[bool, str]:
+    ok, status = await _run_auto_chip_add_body(
+        club_id=club_id,
+        chat_id=chat_id,
+        amount=amount,
+        request_id=request_id,
+        bonus=bonus,
+        group_title=group_title,
+        union_shorthand=union_shorthand,
+        ptb_bot=ptb_bot,
+        label=label,
+    )
+    from bot.services.clubgg_rpa_events import OP_DEPOSIT, record_clubgg_result
+
+    record_clubgg_result(
+        request_id=request_id,
+        operation=OP_DEPOSIT,
+        ok=ok,
+        rpa_status=status,
+        club_id=club_id,
+        telegram_chat_id=chat_id,
+        amount=amount,
+        group_title=group_title,
+        detail=None if ok else status,
+    )
+    return ok, status
 
 
 async def trigger_auto_chip_add(
@@ -776,7 +833,7 @@ def deposit_api_dry_run() -> bool:
     return bool(cfg and cfg.dry_run)
 
 
-async def run_auto_claim(
+async def _run_auto_claim_body(
     *,
     club_id: int,
     chat_id: int,
@@ -915,6 +972,43 @@ async def run_auto_claim(
         return ClaimOutcome(False, "error", f"unexpected error: {type(exc).__name__}")
 
 
+async def run_auto_claim(
+    *,
+    club_id: int,
+    chat_id: int,
+    job_id: int,
+    amount: Decimal,
+    group_title: Optional[str] = None,
+    union_shorthand: Optional[str] = None,
+    request_id: Optional[str] = None,
+    label: str = LABEL_CASHOUT,
+) -> ClaimOutcome:
+    outcome = await _run_auto_claim_body(
+        club_id=club_id,
+        chat_id=chat_id,
+        job_id=job_id,
+        amount=amount,
+        group_title=group_title,
+        union_shorthand=union_shorthand,
+        request_id=request_id,
+        label=label,
+    )
+    from bot.services.clubgg_rpa_events import OP_CLAIM, record_clubgg_result
+
+    record_clubgg_result(
+        request_id=request_id or f"cash-claim-{int(job_id)}",
+        operation=OP_CLAIM,
+        ok=outcome.ok,
+        rpa_status=outcome.status,
+        club_id=club_id,
+        telegram_chat_id=chat_id,
+        amount=amount,
+        group_title=group_title,
+        detail=outcome.reason or None,
+    )
+    return outcome
+
+
 @dataclass(frozen=True)
 class RakeOutcome:
     """Result of a read-only member rake/PnL check (never raised; always returned)."""
@@ -946,7 +1040,7 @@ def _optional_decimal(raw: Any) -> Optional[Decimal]:
         return None
 
 
-async def run_rake_check(
+async def _run_rake_check_body(
     *,
     club_id: int,
     chat_id: int,
@@ -1116,6 +1210,36 @@ async def run_rake_check(
     except Exception as exc:
         logger.exception("rake_check: unexpected error (chat_id=%s)", chat_id)
         return RakeOutcome(False, "error", f"unexpected error: {type(exc).__name__}")
+
+
+async def run_rake_check(
+    *,
+    club_id: int,
+    chat_id: int,
+    request_id: str,
+    group_title: Optional[str] = None,
+    union_shorthand: Optional[str] = None,
+) -> RakeOutcome:
+    outcome = await _run_rake_check_body(
+        club_id=club_id,
+        chat_id=chat_id,
+        request_id=request_id,
+        group_title=group_title,
+        union_shorthand=union_shorthand,
+    )
+    from bot.services.clubgg_rpa_events import OP_RAKE, record_clubgg_result
+
+    record_clubgg_result(
+        request_id=request_id,
+        operation=OP_RAKE,
+        ok=outcome.ok,
+        rpa_status=outcome.status,
+        club_id=club_id,
+        telegram_chat_id=chat_id,
+        group_title=group_title,
+        detail=outcome.reason or None,
+    )
+    return outcome
 
 
 async def _notify_result(
