@@ -34,7 +34,6 @@ BACKOFF_BASE_MINUTES = 5
 BACKOFF_CAP_MINUTES = 30
 FAILED_RETRY_SEC = 30.0
 PUSHOVER_MAX_LEN = 1024
-ESCALATION_SOURCE = "unread_group_alert"
 
 _clients: dict[str, TelegramClient] = {}
 _dialogs: dict[str, dict[int, "LiveDialog"]] = {}
@@ -350,12 +349,6 @@ async def _snapshot_once(client: TelegramClient, cfg: ClubGcConfig) -> None:
         _dialogs[cfg.club_key] = found
         _absent[cfg.club_key] = wanted - set(found)
         _ready.add(cfg.club_key)
-    logger.info(
-        "unread_group_alert: snapshot club=%s dialogs=%s absent=%s",
-        cfg.club_key,
-        len(found),
-        len(wanted - set(found)),
-    )
     schedule_evaluate()
 
 
@@ -448,7 +441,7 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
     chat = getattr(event, "chat", None)
     if chat is not None:
         title = (getattr(chat, "title", None) or "").strip()
-    logged: tuple[int, int, str] | None = None
+    changed = False
     async with _lock_for():
         if _stopped or club_key not in _ready:
             return
@@ -468,18 +461,8 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
             note_incoming(created, int(message_id), title)
             dialogs[int(chat_id)] = created
             changed = created.unread_count > 0
-            logged = (int(chat_id), created.unread_count, created.title)
-        elif note_incoming(current, int(message_id), title):
-            changed = True
-            logged = (int(chat_id), current.unread_count, current.title)
-    if logged is not None and changed:
-        logger.info(
-            "unread_group_alert: incoming club=%s chat_id=%s unread=%s title=%s",
-            club_key,
-            logged[0],
-            logged[1],
-            logged[2],
-        )
+        else:
+            changed = note_incoming(current, int(message_id), title)
     if changed:
         schedule_evaluate()
 
@@ -503,31 +486,13 @@ async def _handle_raw(club_key: str, update: Any) -> None:
     if chat_id is None or still is None:
         return
     changed = False
-    title = ""
-    unread_now = 0
     async with _lock_for():
         if _stopped or club_key not in _ready:
             return
         current = _dialogs.get(club_key, {}).get(chat_id)
         if current is None:
-            logger.info(
-                "unread_group_alert: read club=%s chat_id=%s still=%s matched=0",
-                club_key,
-                chat_id,
-                still,
-            )
             return
         changed = note_inbox_read(current, max_id, still)
-        title = current.title
-        unread_now = current.unread_count
-    logger.info(
-        "unread_group_alert: read club=%s chat_id=%s still=%s unread=%s title=%s",
-        club_key,
-        chat_id,
-        still,
-        unread_now,
-        title,
-    )
     if changed:
         schedule_evaluate()
 
@@ -575,74 +540,6 @@ async def _evaluate() -> None:
     except FloodWaitError as exc:
         logger.warning("unread_group_alert: fill flood wait seconds=%s", exc.seconds)
         _schedule_timer(float(exc.seconds) + 1.0, replace=True)
-        return
-    async with _lock_for():
-        connected, ready = _connected_and_ready()
-        if not ready_to_evaluate(connected, ready):
-            return
-        rows = visible_unreads(
-            _group_list(tracked),
-            _dialog_index(),
-            ready,
-        )
-    if len(rows) >= THRESHOLD:
-        try:
-            await _refresh_unread(connected)
-        except FloodWaitError as exc:
-            logger.warning(
-                "unread_group_alert: refresh flood wait seconds=%s", exc.seconds
-            )
-            _schedule_timer(float(exc.seconds) + 1.0, replace=True)
-            return
-        async with _lock_for():
-            connected, ready = _connected_and_ready()
-            if not ready_to_evaluate(connected, ready):
-                return
-            rows = visible_unreads(
-                _group_list(tracked),
-                _dialog_index(),
-                ready,
-            )
-    count = len(rows)
-    async with _lock_for():
-        details = [
-            f"{club_key} {chat_id} unread={live.unread_count} {live.title}"
-            for club_key, dialogs in _dialogs.items()
-            if club_key in ready
-            for chat_id, live in dialogs.items()
-            if live.unread_count >= 1
-        ]
-    logger.info(
-        "unread_group_alert: count=%s %s",
-        count,
-        " | ".join(details),
-    )
-    now = datetime.now(timezone.utc)
-    last_sent, step = await asyncio.to_thread(load_alert_control)
-    delay = timedelta(minutes=backoff_delay_minutes(step))
-    action = alert_action(count, last_sent, now, delay)
-    if action == "hold":
-        _cancel_timer()
-        return
-    if action == "wait":
-        assert last_sent is not None
-        remaining = delay - (now - as_utc(last_sent))
-        _ensure_timer(max(remaining.total_seconds(), 1.0))
-        return
-    message = format_unread_alert(count, [title for _club, title in rows])
-    if not await _post_escalation(message):
-        logger.warning("unread_group_alert: escalation post failed count=%s", count)
-        _schedule_timer(FAILED_RETRY_SEC, replace=True)
-        return
-    next_step = 0 if last_sent is None else step_after_send(step)
-    wait_minutes = backoff_delay_minutes(next_step)
-    await asyncio.to_thread(save_alert_control, now, next_step)
-    logger.info(
-        "unread_group_alert: sent count=%s next_minutes=%s",
-        count,
-        wait_minutes,
-    )
-    _schedule_timer(wait_minutes * 60, replace=True)
 
 
 def _group_list(tracked: dict[str, dict[int, GroupRow]]) -> list[GroupRow]:
@@ -723,11 +620,6 @@ async def _refresh_chunk(
         try:
             peers.append(InputDialogPeer(await client.get_input_entity(chat_id)))
         except Exception:
-            logger.info(
-                "unread_group_alert: refresh skip club=%s chat_id=%s",
-                club_key,
-                chat_id,
-            )
             continue
         resolved.append(chat_id)
     if not peers:
@@ -781,11 +673,6 @@ async def _fetch_one(client: TelegramClient, club_key: str, chat_id: int) -> Non
     except FloodWaitError:
         raise
     except Exception:
-        logger.info(
-            "unread_group_alert: peer unavailable club=%s chat_id=%s",
-            club_key,
-            chat_id,
-        )
         async with _lock_for():
             if _stopped:
                 return
@@ -913,9 +800,3 @@ def save_alert_control(last_sent_at: datetime | None, backoff_step: int) -> None
         row.last_sent_at = last_sent_at
         row.backoff_step = int(backoff_step)
         session.commit()
-
-
-async def _post_escalation(message: str) -> bool:
-    from bot.services.slack_ops_notify import notify_slack_escalation
-
-    return await notify_slack_escalation(message, source=ESCALATION_SOURCE)
