@@ -173,9 +173,8 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         fileid_photo_handler,
     )
     from bot.handlers.referral import (
-        my_referrals_handler,
+        referral_handler,
         referral_hop_dm_handler,
-        referral_link_handler,
     )
     from bot.handlers.commands import (
         get_set_handler,
@@ -260,8 +259,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         whoami_handler=whoami_handler,
         fileid_handler=fileid_handler,
         fileid_photo_handler=fileid_photo_handler,
-        referral_link_handler=referral_link_handler,
-        my_referrals_handler=my_referrals_handler,
+        referral_handler=referral_handler,
         referral_hop_dm_handler=referral_hop_dm_handler,
         get_set_handler=get_set_handler,
         mycmds_handler=mycmds_handler,
@@ -476,8 +474,11 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("help", h.help_handler))
     app.add_handler(CommandHandler("whoami", h.whoami_handler))
     app.add_handler(CommandHandler("fileid", h.fileid_handler))
-    app.add_handler(CommandHandler("referral_link", h.referral_link_handler))
-    app.add_handler(CommandHandler("myreferrals", h.my_referrals_handler))
+    app.add_handler(
+        CommandHandler(
+            ["referral", "referral_link", "myreferrals"], h.referral_handler
+        )
+    )
     h.register_issue_report_handlers(app)
     app.add_handler(
         MessageHandler(

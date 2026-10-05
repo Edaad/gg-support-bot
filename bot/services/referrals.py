@@ -32,9 +32,14 @@ _CODE_ALPHABET = string.ascii_letters + string.digits
 UNTITLED_GROUP_ERROR = "This group needs a player id in the title."
 
 REFERRAL_LINK_MESSAGE = (
-    "This is your unique referral link.\n\n"
-    "Share it with your friends. If they join the club, you'll get exclusive rewards!!\n\n"
-    "{url}"
+    "Referral Program 🔥\n\n"
+    "Invite friends with the link below and earn rewards!\n"
+    "{url}\n\n"
+    "For each referral, GET a $30-chip FREEPLAY bonus for each person you refer\n\n"
+    "Rules:\n\n"
+    "• You must have played in the club to qualify.\n"
+    "• Referred players must be new, unique players.\n"
+    "• Referred players must deposit at least $100 for the bonus to apply."
 )
 
 

@@ -489,7 +489,7 @@ Dashboard **Payments** admin settings (gear next to Export) stores quick-access 
 alembic upgrade head   # runs automatically in the Heroku release phase
 ```
 
-**Referral deep links:** `/referral_link` in titled support groups; clickers hop via bot DM then club support account. Tables `referral_links` + `referral_attributions`:
+**Referral deep links:** `/referral` in titled support groups (also `/referral_link` and `/myreferrals`); clickers hop via bot DM then club support account. Tables `referral_links` + `referral_attributions`:
 
 ```bash
 alembic upgrade head   # runs automatically in the Heroku release phase

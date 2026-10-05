@@ -72,8 +72,9 @@ class ReferralHelpersTest(unittest.TestCase):
         )
         self.assertEqual(url, "https://t.me/PlayGGSupport?start=ref_AbCdEfGhIjKl")
         msg = ref.format_referral_link_message(url)
-        self.assertIn("unique referral link", msg)
-        self.assertIn("exclusive rewards!!", msg)
+        self.assertIn("Referral Program 🔥", msg)
+        self.assertIn("$30-chip FREEPLAY", msg)
+        self.assertIn("deposit at least $100", msg)
         self.assertIn(url, msg)
 
     def test_hop_and_existing_copy(self):
@@ -475,14 +476,14 @@ class OnPlayerIdBoundTest(unittest.TestCase):
         self.assertEqual(attr.status, ref.STATUS_CLOSED_DUPLICATE)
 
 
-class ReferralLinkHandlerTest(unittest.IsolatedAsyncioTestCase):
+class ReferralHandlerTest(unittest.IsolatedAsyncioTestCase):
     async def test_silent_in_private(self):
         update = SimpleNamespace(
             message=SimpleNamespace(reply_text=AsyncMock()),
             effective_chat=SimpleNamespace(id=123, type="private", title=None),
         )
         context = SimpleNamespace(bot=SimpleNamespace(username="bot"))
-        await referral_handler.referral_link_handler(update, context)
+        await referral_handler.referral_handler(update, context)
         update.message.reply_text.assert_not_called()
 
     @patch.object(
@@ -500,7 +501,7 @@ class ReferralLinkHandlerTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
         context = SimpleNamespace(bot=SimpleNamespace(username="bot"))
-        await referral_handler.referral_link_handler(update, context)
+        await referral_handler.referral_handler(update, context)
         update.message.reply_text.assert_awaited_once_with(ref.UNTITLED_GROUP_ERROR)
 
     @patch.object(
@@ -514,53 +515,8 @@ class ReferralLinkHandlerTest(unittest.IsolatedAsyncioTestCase):
             effective_chat=SimpleNamespace(id=-999, type="supergroup", title="Random"),
         )
         context = SimpleNamespace(bot=SimpleNamespace(username="bot"))
-        await referral_handler.referral_link_handler(update, context)
+        await referral_handler.referral_handler(update, context)
         update.message.reply_text.assert_not_called()
-
-
-class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
-    async def test_silent_in_private(self):
-        update = SimpleNamespace(
-            message=SimpleNamespace(reply_text=AsyncMock()),
-            effective_chat=SimpleNamespace(id=123, type="private", title=None),
-        )
-        context = SimpleNamespace()
-        await referral_handler.my_referrals_handler(update, context)
-        update.message.reply_text.assert_not_called()
-
-    @patch.object(
-        referral_handler,
-        "fetch_support_group_chat_by_telegram_chat_id",
-        return_value=None,
-    )
-    async def test_silent_when_not_support_group(self, _sgc):
-        update = SimpleNamespace(
-            message=SimpleNamespace(reply_text=AsyncMock()),
-            effective_chat=SimpleNamespace(
-                id=-999, type="supergroup", title="GTO / 1111-2222 / Player"
-            ),
-        )
-        context = SimpleNamespace()
-        await referral_handler.my_referrals_handler(update, context)
-        update.message.reply_text.assert_not_called()
-
-    @patch.object(
-        referral_handler,
-        "fetch_support_group_chat_by_telegram_chat_id",
-        return_value=SimpleNamespace(telegram_chat_title="GTO | new"),
-    )
-    @patch.object(referral_handler, "get_club_for_chat", return_value=4)
-    @patch.object(referral_handler, "gg_player_id_from_title", return_value=None)
-    async def test_untitled_support_group_errors(self, _title, _club, _sgc):
-        update = SimpleNamespace(
-            message=SimpleNamespace(reply_text=AsyncMock()),
-            effective_chat=SimpleNamespace(
-                id=-1001, type="supergroup", title="GTO | new"
-            ),
-        )
-        context = SimpleNamespace()
-        await referral_handler.my_referrals_handler(update, context)
-        update.message.reply_text.assert_awaited_once_with(ref.UNTITLED_GROUP_ERROR)
 
     @patch.object(
         referral_handler,
@@ -569,12 +525,19 @@ class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
     )
     @patch.object(referral_handler, "get_club_for_chat", return_value=4)
     @patch.object(referral_handler, "gg_player_id_from_title", return_value="1111-2222")
+    @patch.object(
+        referral_handler,
+        "ensure_referral_link",
+        return_value=SimpleNamespace(code="ref_AbCdEfGhIjKl"),
+    )
     @patch.object(
         referral_handler,
         "get_credited_referral_player_ids",
         return_value=["5323-5255", "8190-5287"],
     )
-    async def test_lists_credited_referrals(self, mock_get_ids, _title, _club, _sgc):
+    async def test_sends_program_then_credited_list(
+        self, mock_get_ids, _link, _title, _club, _sgc
+    ):
         update = SimpleNamespace(
             message=SimpleNamespace(reply_text=AsyncMock()),
             effective_chat=SimpleNamespace(
@@ -583,12 +546,20 @@ class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
                 title="GTO / 1111-2222 / Player",
             ),
         )
-        context = SimpleNamespace()
-        await referral_handler.my_referrals_handler(update, context)
+        context = SimpleNamespace(bot=SimpleNamespace(username="PlayGGSupport"))
+        await referral_handler.referral_handler(update, context)
 
         mock_get_ids.assert_called_once_with(club_id=4, referrer_chat_id=-1001)
-        update.message.reply_text.assert_awaited_once_with(
-            "You have referred 2 players:\n\n• 5323-5255\n• 8190-5287"
+        texts = [call.args[0] for call in update.message.reply_text.await_args_list]
+        self.assertEqual(len(texts), 2)
+        self.assertIn("Referral Program 🔥", texts[0])
+        self.assertIn(
+            "https://t.me/PlayGGSupport?start=ref_AbCdEfGhIjKl",
+            texts[0],
+        )
+        self.assertEqual(
+            texts[1],
+            "You have referred 2 players:\n\n• 5323-5255\n• 8190-5287",
         )
 
     @patch.object(
@@ -598,8 +569,15 @@ class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
     )
     @patch.object(referral_handler, "get_club_for_chat", return_value=4)
     @patch.object(referral_handler, "gg_player_id_from_title", return_value="1111-2222")
+    @patch.object(
+        referral_handler,
+        "ensure_referral_link",
+        return_value=SimpleNamespace(code="ref_AbCdEfGhIjKl"),
+    )
     @patch.object(referral_handler, "get_credited_referral_player_ids", return_value=[])
-    async def test_empty_state(self, _get_ids, _title, _club, _sgc):
+    async def test_empty_referrals_still_sends_second_message(
+        self, _get_ids, _link, _title, _club, _sgc
+    ):
         update = SimpleNamespace(
             message=SimpleNamespace(reply_text=AsyncMock()),
             effective_chat=SimpleNamespace(
@@ -608,11 +586,11 @@ class MyReferralsHandlerTest(unittest.IsolatedAsyncioTestCase):
                 title="GTO / 1111-2222 / Player",
             ),
         )
-        context = SimpleNamespace()
-        await referral_handler.my_referrals_handler(update, context)
-        update.message.reply_text.assert_awaited_once_with(
-            "You haven't referred any players yet."
-        )
+        context = SimpleNamespace(bot=SimpleNamespace(username="PlayGGSupport"))
+        await referral_handler.referral_handler(update, context)
+        texts = [call.args[0] for call in update.message.reply_text.await_args_list]
+        self.assertEqual(len(texts), 2)
+        self.assertEqual(texts[1], "You haven't referred any players yet.")
 
 
 if __name__ == "__main__":

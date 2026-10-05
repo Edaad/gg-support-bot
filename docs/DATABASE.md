@@ -94,7 +94,7 @@ Maps a **Telegram group/supergroup** (`chat_id` = Telegram chat id) to exactly o
 
 ### `referral_links`
 
-Stable deep-link codes for player support groups. One row per **`(club_id, referrer_chat_id)`**. `/referral_link` creates or reprints the same `code` (`ref_` + 12 alphanumeric). When the group title’s ClubGG player id changes, `referrer_gg_player_id` is updated in place; `code` does not change.
+Stable deep-link codes for player support groups. One row per **`(club_id, referrer_chat_id)`**. `/referral` creates or reprints the same `code` (`ref_` + 12 alphanumeric). When the group title’s ClubGG player id changes, `referrer_gg_player_id` is updated in place; `code` does not change.
 
 | Column | Type | Business meaning |
 |--------|------|------------------|
@@ -102,7 +102,7 @@ Stable deep-link codes for player support groups. One row per **`(club_id, refer
 | `code` | string(32), unique | Opaque `?start=` payload. |
 | `club_id` | FK → `clubs.id` CASCADE | RT / CC / GTO dashboard club. |
 | `referrer_gg_player_id` | string(255) | From the titled support group; updated on retitle. |
-| `referrer_chat_id` | bigint | Support group where `/referral_link` ran. |
+| `referrer_chat_id` | bigint | Support group where `/referral` ran. |
 | `created_at` / `updated_at` | timestamptz | |
 
 **Constraints:** `uq_referral_links_club_chat` — unique `(club_id, referrer_chat_id)`; `uq_referral_links_club_player` — unique `(club_id, referrer_gg_player_id)`.

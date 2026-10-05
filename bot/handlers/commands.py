@@ -51,6 +51,7 @@ RESERVED_CMDS = {
     "sendinactive",
     "bonus",
     "earlyrb",
+    "referral",
     "referral_link",
     "myreferrals",
     "depositaccess",

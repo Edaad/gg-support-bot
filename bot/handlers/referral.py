@@ -1,4 +1,4 @@
-"""Player /referral_link and deep-link hop DMs."""
+"""Player /referral and deep-link hop DMs."""
 
 from __future__ import annotations
 
@@ -40,10 +40,14 @@ _BLOCKING_DM_FLOWS = frozenset(
 )
 
 
-async def referral_link_handler(
+async def referral_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Post the group's unique referral deep link. Silent outside support groups."""
+    """Post the referral program, this group's link, then credited referrals.
+
+    Silent outside support groups. ``/referral_link`` and ``/myreferrals``
+    call this same handler.
+    """
     if not update.message or not update.effective_chat:
         return
     chat = update.effective_chat
@@ -81,7 +85,7 @@ async def referral_link_handler(
             me = await context.bot.get_me()
             bot_username = (me.username or "") if me else ""
         except Exception:
-            logger.warning("referral_link: get_me failed chat_id=%s", chat.id)
+            logger.warning("referral: get_me failed chat_id=%s", chat.id)
 
     if not bot_username:
         await update.message.reply_text("Could not build referral link. Try again.")
@@ -89,30 +93,6 @@ async def referral_link_handler(
 
     url = build_referral_url(bot_username=bot_username, code=link.code)
     await update.message.reply_text(format_referral_link_message(url))
-
-
-async def my_referrals_handler(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """List credited referrals for this titled support group."""
-    if not update.message or not update.effective_chat:
-        return
-    chat = update.effective_chat
-    if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
-        return
-
-    sgc = fetch_support_group_chat_by_telegram_chat_id(chat.id)
-    if sgc is None:
-        return
-
-    club_id = get_club_for_chat(chat.id)
-    if club_id is None:
-        return
-
-    title = chat.title or sgc.telegram_chat_title or ""
-    if not gg_player_id_from_title(title):
-        await update.message.reply_text(UNTITLED_GROUP_ERROR)
-        return
 
     player_ids = get_credited_referral_player_ids(
         club_id=int(club_id),
