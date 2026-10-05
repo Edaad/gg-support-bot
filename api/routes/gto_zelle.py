@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,8 +24,11 @@ router = APIRouter(prefix="/api/v2", tags=["gto-zelle"])
 class GtoZelleCard(BaseModel):
     id: int
     label: str
+    tag: Optional[str] = None
     tier_id: int
     tier_label: str
+    tier_min: Optional[Decimal] = None
+    tier_max: Optional[Decimal] = None
     state: Literal["active", "paused", "disabled"]
     paused_until: Optional[datetime] = None
 

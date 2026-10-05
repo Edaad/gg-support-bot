@@ -14,6 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.gto_club import GTO_CLUB_NAME
+from bot.services.destination_fields import stored_zelle_recipient
 from db.models import Club, ClubPaymentMethod, ClubPaymentTier, ClubPaymentTierVariant
 
 PAUSE_DURATION = timedelta(hours=48)
@@ -151,8 +152,11 @@ def build_gto_zelle_cards(
             {
                 "id": int(variant.id),
                 "label": variant.label,
+                "tag": stored_zelle_recipient(variant),
                 "tier_id": int(tier.id),
                 "tier_label": tier.label,
+                "tier_min": getattr(tier, "min_amount", None),
+                "tier_max": getattr(tier, "max_amount", None),
                 "state": state,
                 "paused_until": deadline,
             }

@@ -134,6 +134,31 @@ class PauseRuleTests(unittest.TestCase):
         self.assertEqual(by_id[2]["tier_label"], "Over $100")
         self.assertEqual(by_id[3]["tier_label"], "Default")
         self.assertEqual(by_id[1]["state"], "active")
+        self.assertIsNone(by_id[1]["tag"])
+        self.assertIsNone(by_id[1]["tier_min"])
+        self.assertIsNone(by_id[1]["tier_max"])
+
+    def test_cards_include_tier_thresholds(self):
+        tier = _tier("$100+", 2)
+        tier.min_amount = 100
+        tier.max_amount = None
+        cards = build_gto_zelle_cards([(_variant(id=2), tier)], _moment())
+        self.assertEqual(cards[0]["tier_min"], 100)
+        self.assertIsNone(cards[0]["tier_max"])
+
+    def test_cards_show_saved_tag(self):
+        row = _variant(id=1, label="Citizens", tag="starship5vllc@gmail.com")
+        cards = build_gto_zelle_cards([(row, _tier())], _moment())
+        self.assertEqual(cards[0]["tag"], "starship5vllc@gmail.com")
+
+    def test_cards_read_tag_from_message_when_unset(self):
+        row = _variant(
+            id=1,
+            label="Wells V",
+            response_text="Zelle: 213-372-9202\nName: Starship V LLC",
+        )
+        cards = build_gto_zelle_cards([(row, _tier())], _moment())
+        self.assertEqual(cards[0]["tag"], "2133729202")
 
 
 class PickSkipsPauseTests(unittest.TestCase):

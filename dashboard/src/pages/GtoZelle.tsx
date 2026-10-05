@@ -7,12 +7,38 @@ import {
 } from '../api/v2Client'
 import { useConfirm } from '../components/ConfirmProvider'
 
-function tiersOf(cards: GtoZelleCard[]): { id: number; label: string; cards: GtoZelleCard[] }[] {
+function money(value: number | string | null): number | null {
+  if (value == null || value === '') return null
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function thresholdLabel(min: number | string | null, max: number | string | null): string {
+  const minN = money(min)
+  const maxN = money(max)
+  const fmt = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`)
+  if (minN != null && maxN != null) return `${fmt(minN)} – ${fmt(maxN)}`
+  if (minN != null) return `${fmt(minN)}+`
+  if (maxN != null) return `Up to ${fmt(maxN)}`
+  return 'Any amount'
+}
+
+function tiersOf(cards: GtoZelleCard[]): {
+  id: number
+  label: string
+  cards: GtoZelleCard[]
+}[] {
   const groups: { id: number; label: string; cards: GtoZelleCard[] }[] = []
   for (const card of cards) {
     const last = groups[groups.length - 1]
     if (last && last.id === card.tier_id) last.cards.push(card)
-    else groups.push({ id: card.tier_id, label: card.tier_label, cards: [card] })
+    else {
+      groups.push({
+        id: card.tier_id,
+        label: thresholdLabel(card.tier_min, card.tier_max),
+        cards: [card],
+      })
+    }
   }
   return groups
 }
@@ -138,6 +164,7 @@ export default function GtoZelle({ token }: { token: string }) {
               return (
                 <article key={card.id} className="panel-nested flex flex-col gap-3">
                   <h3 className="text-sm font-medium text-ink">{card.label}</h3>
+                  {card.tag && <p className="text-sm text-ink-muted">{card.tag}</p>}
                   {card.state === 'paused' && remaining && (
                     <p className="text-sm text-ink">{remaining}</p>
                   )}
