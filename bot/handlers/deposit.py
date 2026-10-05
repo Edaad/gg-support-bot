@@ -706,11 +706,26 @@ def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
     return None
 
 
+def _variant_dict_is_active(variant: dict) -> bool:
+    from bot.services.club_payment_v2 import variant_is_active
+
+    return variant_is_active(variant)
+
+
+def _dict_weight(variant: dict) -> int:
+    raw = variant.get("weight")
+    if raw is None:
+        return 1
+    return int(raw)
+
+
 def _pick_weighted_variant_dicts(variants: list[dict]) -> dict | None:
-    active = [v for v in variants if int(v.get("weight") or 0) > 0]
+    active = [v for v in variants if _variant_dict_is_active(v)]
     if not active:
         return None
-    weights = [max(1, int(v.get("weight") or 1)) for v in active]
+    weights = [_dict_weight(v) for v in active]
+    if sum(weights) <= 0:
+        weights = [1] * len(active)
     return random.choices(active, weights=weights, k=1)[0]
 
 
@@ -766,7 +781,9 @@ def _diagnose_sticky_unavailable_reason(
     band = _format_tier_band(tier)
     in_tier = [v for v in current_variants if _native_tag_matches(slug, v, sticky_tag)]
     if in_tier:
-        return f"weight 0 (inactive) in {band}"
+        if not any(_variant_dict_is_active(v) for v in in_tier):
+            return f"inactive in {band}"
+        return f"unavailable in {band}"
     other: list[dict] = []
     try:
         other = list_method_variants(int(method_id))
@@ -917,7 +934,7 @@ def _pick_venmo_cashapp_destination_response(
     slug = (method_slug or "").strip().lower()
     variants = list_tier_variants(method_id, int(tier["id"]))
     all_variants = _variants_with_tier_checkout(variants, tier)
-    active = [v for v in all_variants if int(v.get("weight") or 0) > 0]
+    active = [v for v in all_variants if _variant_dict_is_active(v)]
     native = [v for v in active if not _variant_is_stripe_checkout(v)]
     stripe_variants = [v for v in active if _variant_is_stripe_checkout(v)]
     if native:

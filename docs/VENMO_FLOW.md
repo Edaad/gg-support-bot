@@ -192,7 +192,7 @@ For **every** POST to `/api/venmo/payments`:
 
 Venmo does not lock a destination tag. `/deposit` picks a weighted active Venmo handle for the amount tier. Old `group_deposit_destination_stickiness` rows with `payment_method_slug = venmo` are ignored.
 
-Cash App still locks the first `$` tag the bot showed. Later deposits keep that tag when any active native variant still has it. If the locked tag is missing, weight 0, or not in the amount’s tier, the bot shows another **native** variant in that tier (weighted), else Stripe, and posts **one** head-admin Slack warning (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`) while that break lasts. If the tier has no other variant, Cash App is omitted from `/deposit` (no Slack). Stripe is never stored as the lock. Staff `/unbindmethod` clears stickiness and the warning dedupe.
+Cash App still locks the first `$` tag the bot showed. Later deposits keep that tag when any active native variant still has it. If the locked tag is missing, marked inactive, or not in the amount’s tier, the bot shows another **native** variant in that tier (weighted), else Stripe, and posts **one** head-admin Slack warning (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`) while that break lasts. If the tier has no other variant, Cash App is omitted from `/deposit` (no Slack). Stripe is never stored as the lock. Staff `/unbindmethod` clears stickiness and the warning dedupe.
 
 ```bash
 alembic upgrade head   # runs automatically in the Heroku release phase

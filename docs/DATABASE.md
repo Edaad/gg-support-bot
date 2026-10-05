@@ -289,7 +289,7 @@ Weighted rotation **inside a tier** (`tier_id` NOT NULL). **Required:** every ti
 | Column | Business meaning |
 |--------|------------------|
 | `method_id`, `tier_id` | FKs; variant is always tier-scoped |
-| `label`, `weight`, `sort_order` | Rotation; **unique `(tier_id, label)`**, `weight >= 1` |
+| `label`, `weight`, `sort_order`, `is_active` | Rotation among active variants; **unique `(tier_id, label)`**, `weight >= 0`. `is_active = false` keeps the variant out of rotation and leaves its weight unchanged |
 | `response_*` | Player message shown to users |
 | `use_group_checkout_link` | `NULL` = inherit tier; `true`/`false` = override |
 | `group_checkout_provider`, `hyperlink_text` | Stripe when override is enabled |

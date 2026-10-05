@@ -461,6 +461,10 @@ class ClubPaymentTierVariant(Base):
     )
     label = Column(String(100), nullable=False)
     weight = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    is_active = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    paused_until = Column(DateTime(timezone=True), nullable=True)
     sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
     response_type = Column(
         String(10),

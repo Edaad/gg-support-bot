@@ -40,6 +40,7 @@ function variantSavePayload(
   const base: Partial<V2Variant> = {
     label: form.label?.trim(),
     weight: form.weight ?? 1,
+    is_active: form.is_active !== false,
     response_type: form.response_type || 'text',
     response_text: form.response_text ?? '',
     response_file_id: form.response_file_id ?? '',
@@ -328,7 +329,7 @@ export default function V2VariantEditor({
     return CASHAPP_DEFAULT_TEMPLATE(link)
   }, [form.cashapp_link])
 
-  const activeVariants = variants.filter((v) => v.weight > 0)
+  const activeVariants = variants.filter((v) => v.is_active !== false)
   const totalWeight = activeVariants.reduce((sum, v) => sum + v.weight, 0)
   const pct = (w: number) => (totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0)
 
@@ -352,11 +353,11 @@ export default function V2VariantEditor({
         const rowCashAppNative =
           isCashApp && !isCashAppCheckoutVariant(v, tierStripeEnabled)
         return (
-        <div key={v.id} className={`editor-row${v.weight === 0 ? ' opacity-60' : ''}`}>
+        <div key={v.id} className={`editor-row${v.is_active === false ? ' opacity-60' : ''}`}>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-ink">{v.label}</span>
-              {v.weight === 0 ? (
+              {v.is_active === false ? (
                 <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-ink-muted">
                   Inactive
                 </span>
@@ -448,7 +449,7 @@ export default function V2VariantEditor({
 
       {variants.length > 0 && activeVariants.length === 0 && (
         <p className="mt-2 rounded bg-warning-bg px-2 py-1.5 text-xs text-warning-ink" role="status">
-          Every variant has weight 0, so this tier is skipped and the method is hidden from players
+          Every variant is inactive, so this tier is skipped and the method is hidden from players
           in this amount band.
         </p>
       )}
@@ -499,9 +500,20 @@ export default function V2VariantEditor({
                 onChange={(e) => setForm({ ...form, weight: Math.max(0, Number(e.target.value) || 0) })}
                 className="input-field-sm"
               />
-              <p className="mt-1 text-xs text-ink-muted">Set to 0 to mark inactive (excluded from rotation).</p>
+              <p className="mt-1 text-xs text-ink-muted">
+                Share of deposits among active variants. Weight does not turn a variant off.
+              </p>
             </div>
           </div>
+          <label className="check-hit">
+            <input
+              type="checkbox"
+              checked={form.is_active !== false}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+              className="h-4 w-4 rounded border-border bg-control text-accent focus:ring-accent"
+            />
+            Active (shown to players)
+          </label>
 
           {isVenmo && (
             <>

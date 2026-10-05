@@ -11,6 +11,7 @@ import Sends from './pages/Sends'
 import CashoutRecords from './pages/CashoutRecords'
 import CashoutRecordDetail from './pages/CashoutRecordDetail'
 import Payments from './pages/Payments'
+import GtoZelle from './pages/GtoZelle'
 import ManualDepositRequests from './pages/ManualDepositRequests'
 import Audit from './pages/Audit'
 import Alerts from './pages/Alerts'
@@ -93,6 +94,7 @@ export default function App() {
               <Route path="/cashout-records" element={<CashoutRecords token={token} role={role} />} />
               <Route path="/cashout-records/:id" element={<CashoutRecordDetail token={token} role={role} />} />
               <Route path="/payments" element={<Payments token={token} role={role} />} />
+              <Route path="/gto-zelle" element={<GtoZelle token={token} />} />
               <Route
                 path="/manual-deposit-requests"
                 element={<ManualDepositRequests token={token} />}

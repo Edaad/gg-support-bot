@@ -262,6 +262,9 @@ def list_methods(
     if not club:
         raise HTTPException(404, "Club not found")
     _assert_club(club_id, db)
+    from bot.services.variant_pause import release_expired_variant_pauses
+
+    release_expired_variant_pauses(db)
     q = _method_query(db).filter_by(club_id=club_id)
     if direction:
         q = q.filter_by(direction=direction)
@@ -319,6 +322,9 @@ def create_method(
 
 @router.get("/methods/{method_id}", response_model=ClubPaymentMethodRead)
 def get_method(method_id: int, db: Session = Depends(get_db_dependency)):
+    from bot.services.variant_pause import release_expired_variant_pauses
+
+    release_expired_variant_pauses(db)
     return _read_method(_get_method(db, method_id))
 
 
@@ -542,6 +548,9 @@ def delete_tier(tier_id: int, db: Session = Depends(get_db_dependency)):
     "/tiers/{tier_id}/variants", response_model=List[ClubPaymentTierVariantRead]
 )
 def list_tier_variants(tier_id: int, db: Session = Depends(get_db_dependency)):
+    from bot.services.variant_pause import release_expired_variant_pauses
+
+    release_expired_variant_pauses(db)
     tier = _get_tier(db, tier_id)
     variants = sorted(tier.variants, key=lambda v: (v.sort_order, v.id))
     return [ClubPaymentTierVariantRead.model_validate(v) for v in variants]
@@ -592,10 +601,17 @@ def update_variant(
     body: ClubPaymentTierVariantUpdate,
     db: Session = Depends(get_db_dependency),
 ):
+    from bot.services.variant_pause import (
+        clear_pause_if_active_flag_saved,
+        release_expired_variant_pauses,
+    )
+
+    release_expired_variant_pauses(db)
     variant = _get_variant(db, variant_id)
     method = _get_method(db, variant.method_id)
     tier = _get_tier(db, variant.tier_id)
     data = body.model_dump(exclude_unset=True)
+    clear_pause_if_active_flag_saved(data)
     if is_primary_tier(tier, list(method.tiers or [])):
         data.pop("checkout_min_amount", None)
     if "weight" in data and data["weight"] < 0:

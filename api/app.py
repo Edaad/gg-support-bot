@@ -118,6 +118,7 @@ def create_app() -> FastAPI:
     from api.routes.paypal_payments import router as paypal_payments_router
     from api.routes.crypto_payments import router as crypto_payments_router
     from api.routes.v2_payment import router as v2_payment_router
+    from api.routes.gto_zelle import router as gto_zelle_router
     from api.routes.manual_deposit_requests import (
         router as manual_deposit_requests_router,
     )
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(paypal_payments_router)
     app.include_router(crypto_payments_router)
     app.include_router(v2_payment_router)
+    app.include_router(gto_zelle_router)
     app.include_router(manual_deposit_requests_router)
     app.include_router(union_methods_router)
     app.include_router(clubs_router)

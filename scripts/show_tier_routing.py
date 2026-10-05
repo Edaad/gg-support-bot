@@ -38,7 +38,7 @@ def main(method_ids: list[int]) -> None:
                 handles = sorted(
                     (v.venmo_tag or v.label)
                     for v in tier.variants
-                    if (v.weight or 0) > 0
+                    if v.is_active
                 )
                 print(f"  ${raw:>6}: {tier.label!r} -> {handles}")
 

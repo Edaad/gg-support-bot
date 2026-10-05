@@ -49,6 +49,7 @@ class ClubPaymentSubOptionRead(BaseModel):
 class ClubPaymentTierVariantCreate(BaseModel):
     label: str
     weight: int = Field(default=1, ge=0)
+    is_active: bool = True
     response_type: str = "text"
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
@@ -70,6 +71,7 @@ class ClubPaymentTierVariantCreate(BaseModel):
 class ClubPaymentTierVariantUpdate(BaseModel):
     label: Optional[str] = None
     weight: Optional[int] = Field(default=None, ge=0)
+    is_active: Optional[bool] = None
     response_type: Optional[str] = None
     response_text: Optional[str] = None
     response_file_id: Optional[str] = None
@@ -97,6 +99,7 @@ class ClubPaymentTierVariantRead(BaseModel):
     tier_id: int
     label: str
     weight: int
+    is_active: bool
     response_type: Optional[str]
     response_text: Optional[str]
     response_file_id: Optional[str]

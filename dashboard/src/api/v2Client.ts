@@ -56,6 +56,7 @@ export interface V2Variant {
   tier_id: number
   label: string
   weight: number
+  is_active: boolean
   response_type: string | null
   response_text: string | null
   response_file_id: string | null
@@ -139,6 +140,7 @@ export interface V2Method {
 function normalizeVariant(v: V2Variant): V2Variant {
   return {
     ...v,
+    is_active: v.is_active !== false,
     checkout_min_amount: toNum(v.checkout_min_amount),
     checkout_max_amount: toNum(v.checkout_max_amount),
   }
@@ -236,6 +238,25 @@ export const updateV2Variant = (token: string, id: number, data: Partial<V2Varia
 
 export const deleteV2Variant = (token: string, id: number) =>
   request<void>(`/variants/${id}`, { method: 'DELETE' }, token)
+
+export type GtoZelleState = 'active' | 'paused' | 'disabled'
+
+export interface GtoZelleCard {
+  id: number
+  label: string
+  tier_label: string | null
+  state: GtoZelleState
+  paused_until: string | null
+}
+
+export const listGtoZelle = (token: string) =>
+  request<GtoZelleCard[]>('/gto-zelle', {}, token)
+
+export const pauseGtoZelle = (token: string, id: number) =>
+  request<GtoZelleCard>(`/gto-zelle/${id}/pause`, { method: 'POST' }, token)
+
+export const resumeGtoZelle = (token: string, id: number) =>
+  request<GtoZelleCard>(`/gto-zelle/${id}/resume`, { method: 'POST' }, token)
 
 export const listV2SubOptions = (token: string, methodId: number) =>
   request<V2SubOption[]>(`/methods/${methodId}/sub-options`, {}, token)

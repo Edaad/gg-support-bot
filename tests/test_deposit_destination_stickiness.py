@@ -265,9 +265,9 @@ class DestinationStickinessPickTests(unittest.TestCase):
             response_data[dep._STICKINESS_FALLBACK_KEY]["shown"], "$otherhandle"
         )
 
-    def test_sticky_weight_zero_falls_back_with_reason(self):
+    def test_sticky_inactive_falls_back_with_reason(self):
         sticky = SimpleNamespace(destination_tag="$eduardok4444", variant_id=21)
-        paused = {**NATIVE_A, "weight": 0}
+        paused = {**NATIVE_A, "is_active": False}
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
             patch.object(
@@ -292,7 +292,7 @@ class DestinationStickinessPickTests(unittest.TestCase):
         meta = response_data[dep._STICKINESS_FALLBACK_KEY]
         self.assertEqual(meta["shown"], "$otherhandle")
         self.assertEqual(
-            meta["reason"], "weight 0 (inactive) in Over $100 ($101–$2000)"
+            meta["reason"], "inactive in Over $100 ($101–$2000)"
         )
 
     def test_sticky_cashapp_falls_back_to_stripe_when_tag_unavailable(self):
@@ -613,7 +613,7 @@ class DestinationStickinessFallbackWarningTests(unittest.TestCase):
             third = pmb.claim_destination_stickiness_fallback_warning(
                 -1001,
                 "cashapp",
-                "weight 0 (inactive) in Over $100 ($101–$2000)",
+                "inactive in Over $100 ($101–$2000)",
             )
 
         self.assertTrue(first)
@@ -621,7 +621,7 @@ class DestinationStickinessFallbackWarningTests(unittest.TestCase):
         self.assertTrue(third)
         self.assertEqual(
             row.fallback_warned_reason,
-            "weight 0 (inactive) in Over $100 ($101–$2000)",
+            "inactive in Over $100 ($101–$2000)",
         )
 
     def test_clear_resets_reason(self):

@@ -242,7 +242,7 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
 
 
 def list_method_variants(method_id: int) -> list[dict]:
-    """All variants for a method, including weight 0, with tier ids."""
+    """All variants for a method, including inactive ones, with tier ids."""
     return _payment_v2().list_method_variants(method_id)
 
 

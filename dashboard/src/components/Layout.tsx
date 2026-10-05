@@ -19,6 +19,7 @@ type NavIconName =
   | 'pool-pay'
   | 'alerts'
   | 'sends'
+  | 'zelle'
 
 type NavLinkItem = {
   to: string
@@ -49,6 +50,7 @@ const ADMIN_MORE_NAV: NavLinkItem[] = [
 
 const AM_TOP_NAV: NavLinkItem[] = [
   { to: '/payments', label: 'Payments', icon: 'payments' },
+  { to: '/gto-zelle', label: 'GTO Zelle', icon: 'zelle' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
   { to: RAKEBACK_URL, label: 'Rakeback', icon: 'rakeback', external: true },
@@ -118,6 +120,16 @@ function NavIcon({ name }: { name: NavIconName }) {
       <StrokeIcon>
         <rect width="20" height="14" x="2" y="5" rx="2" />
         <path d="M2 10h20" />
+      </StrokeIcon>
+    )
+  }
+  if (name === 'zelle') {
+    return (
+      <StrokeIcon>
+        <path d="M4 7h16" />
+        <path d="M7 7v10" />
+        <path d="M17 7l-8 10" />
+        <path d="M11 17h6" />
       </StrokeIcon>
     )
   }

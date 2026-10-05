@@ -8,6 +8,7 @@ export const GTO_CLUB_NAME = 'ClubGTO'
 export const ACCOUNT_MANAGER_PATHS = [
   '/cashout-records',
   '/payments',
+  '/gto-zelle',
   '/bonuses',
   '/settings',
 ] as const

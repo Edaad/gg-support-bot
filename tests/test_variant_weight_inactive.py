@@ -1,4 +1,4 @@
-"""Tests for weight-0 inactive deposit variants."""
+"""Tests for the deposit-variant active flag."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ def _variant_row(
     *,
     vid: int = 1,
     weight: int = 100,
+    is_active: bool = True,
     method_id: int = 4,
     tier_id: int = 10,
     label: str = "Account 1",
@@ -26,6 +27,7 @@ def _variant_row(
     return SimpleNamespace(
         id=vid,
         weight=weight,
+        is_active=is_active,
         method_id=method_id,
         tier_id=tier_id,
         label=label,
@@ -42,21 +44,37 @@ def _variant_row(
 
 
 class VariantWeightHelperTests(unittest.TestCase):
-    def test_active_variants_excludes_zero_weight(self):
-        rows = [_variant_row(vid=1, weight=0), _variant_row(vid=2, weight=50)]
+    def test_active_variants_keeps_any_weight(self):
+        rows = [
+            _variant_row(vid=1, weight=0, is_active=False),
+            _variant_row(vid=2, weight=0),
+        ]
         active = club_payment_v2._active_variants(rows)
         self.assertEqual([v.id for v in active], [2])
 
     def test_pick_weighted_variant_returns_none_when_all_inactive(self):
-        rows = [_variant_row(weight=0), _variant_row(vid=2, weight=0)]
+        rows = [
+            _variant_row(weight=40, is_active=False),
+            _variant_row(vid=2, weight=0, is_active=False),
+        ]
         self.assertIsNone(club_payment_v2._pick_weighted_variant(rows))
+
+    def test_pick_includes_weight_zero_when_active(self):
+        zero = _variant_row(vid=1, weight=0)
+        heavy = _variant_row(vid=2, weight=50)
+        with patch(
+            "bot.services.club_payment_v2.random.choices", return_value=[zero]
+        ) as rc:
+            chosen = club_payment_v2._pick_weighted_variant([zero, heavy])
+        self.assertIs(chosen, zero)
+        self.assertEqual(rc.call_args.kwargs["weights"], [0, 50])
 
 
 class PickVariantInactiveTests(unittest.TestCase):
     @patch("bot.services.club_payment_v2.get_db")
-    def test_pick_variant_never_returns_weight_zero(self, mock_get_db):
-        inactive = _variant_row(vid=1, weight=0)
-        active = _variant_row(vid=2, weight=100)
+    def test_pick_variant_skips_inactive_and_keeps_weight(self, mock_get_db):
+        inactive = _variant_row(vid=1, weight=80, is_active=False)
+        active = _variant_row(vid=2, weight=0)
         session = MagicMock()
         session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = [
             inactive,
@@ -78,7 +96,7 @@ class PickVariantInactiveTests(unittest.TestCase):
 
     @patch("bot.services.club_payment_v2.get_db")
     def test_pick_variant_none_when_all_inactive(self, mock_get_db):
-        inactive = _variant_row(vid=1, weight=0)
+        inactive = _variant_row(vid=1, weight=25, is_active=False)
         session = MagicMock()
         session.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = [
             inactive,
@@ -92,7 +110,7 @@ class PickVariantInactiveTests(unittest.TestCase):
 
     @patch("bot.services.club_payment_v2.get_db")
     def test_sticky_inactive_variant_falls_back_to_weighted_pick(self, mock_get_db):
-        inactive = _variant_row(vid=99, weight=0)
+        inactive = _variant_row(vid=99, weight=100, is_active=False)
         active = _variant_row(vid=2, weight=100)
         session = MagicMock()
         session.query.return_value.get.return_value = inactive
@@ -280,9 +298,15 @@ class DepositStickyInactiveTests(unittest.TestCase):
 
 
 class VariantWeightSchemaTests(unittest.TestCase):
-    def test_create_accepts_weight_zero(self):
+    def test_create_defaults_active_and_accepts_weight_zero(self):
         row = ClubPaymentTierVariantCreate(label="Paused account", weight=0)
         self.assertEqual(row.weight, 0)
+        self.assertTrue(row.is_active)
+
+    def test_update_accepts_inactive_without_weight(self):
+        row = ClubPaymentTierVariantUpdate(is_active=False)
+        self.assertFalse(row.is_active)
+        self.assertIsNone(row.weight)
 
     def test_create_rejects_negative_weight(self):
         with self.assertRaises(ValidationError):

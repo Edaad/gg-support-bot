@@ -87,10 +87,35 @@ def _variant_weight(v: ClubPaymentTierVariant) -> int:
     return int(v.weight) if v.weight is not None else 1
 
 
+def variant_is_active(variant) -> bool:
+    """True unless the variant is explicitly turned off or paused.
+
+    Weight is only the share among active variants. A missing flag counts as
+    active so older callers that do not set it keep the previous default.
+    A paused_until still in the future keeps the variant out of rotation.
+    """
+    from bot.services.variant_pause import pause_deadline
+
+    if pause_deadline(variant) is not None:
+        return False
+    if isinstance(variant, dict):
+        flag = variant.get("is_active", True)
+    else:
+        flag = getattr(variant, "is_active", True)
+    return flag is not False
+
+
+def _rotation_weights(weights: list[int]) -> list[int]:
+    """Use the given shares. If every share is 0, rotate evenly so an active variant is still offered."""
+    if sum(weights) <= 0:
+        return [1] * len(weights)
+    return weights
+
+
 def _active_variants(
     variants: list[ClubPaymentTierVariant],
 ) -> list[ClubPaymentTierVariant]:
-    return [v for v in variants if _variant_weight(v) > 0]
+    return [v for v in variants if variant_is_active(v)]
 
 
 def _pick_weighted_variant(
@@ -99,7 +124,7 @@ def _pick_weighted_variant(
     active = _active_variants(variants)
     if not active:
         return None
-    weights = [_variant_weight(v) for v in active]
+    weights = _rotation_weights([_variant_weight(v) for v in active])
     return random.choices(active, weights=weights, k=1)[0]
 
 
@@ -124,6 +149,8 @@ def _variant_response_dict(
         "cashapp_tag": getattr(v, "cashapp_tag", None),
         "cashapp_link": getattr(v, "cashapp_link", None),
         "cashapp_response_mode": getattr(v, "cashapp_response_mode", None),
+        "is_active": variant_is_active(v),
+        "paused_until": getattr(v, "paused_until", None),
     }
     if link is not None:
         data["use_group_checkout_link"] = bool(link)
@@ -143,6 +170,9 @@ def club_deposit_method_deliverable(
     amount: Decimal,
 ) -> bool:
     """True when a club deposit method has a tier (and variant, checkout, or sub-option) for amount."""
+    from bot.services.variant_pause import release_expired_variant_pauses
+
+    release_expired_variant_pauses(session)
     method = session.query(ClubPaymentMethod).get(int(method_id))
     if method is None or not method.is_active:
         return False
@@ -172,8 +202,7 @@ def club_deposit_method_deliverable(
     )
     active_variant_count = (
         session.query(ClubPaymentTierVariant)
-        .filter_by(tier_id=int(tier.id))
-        .filter(ClubPaymentTierVariant.weight > 0)
+        .filter_by(tier_id=int(tier.id), is_active=True)
         .count()
     )
     if active_variant_count > 0:
@@ -343,6 +372,9 @@ def get_tier_for_amount(method_id: int, amount: Decimal) -> Optional[dict]:
 def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
     """Return tier variants as response dicts with weight, ordered like pick_variant."""
     with get_db() as session:
+        from bot.services.variant_pause import release_expired_variant_pauses
+
+        release_expired_variant_pauses(session)
         variants = (
             session.query(ClubPaymentTierVariant)
             .filter_by(method_id=int(method_id), tier_id=int(tier_id))
@@ -358,7 +390,7 @@ def list_tier_variants(method_id: int, tier_id: int) -> list[dict]:
 
 
 def list_method_variants(method_id: int) -> list[dict]:
-    """All variants for a method, including weight 0, with tier ids."""
+    """All variants for a method, including inactive ones, with tier ids."""
     with get_db() as session:
         variants = (
             session.query(ClubPaymentTierVariant)
@@ -396,6 +428,9 @@ def pick_variant(
     variant_id: Optional[int] = None,
 ) -> Optional[dict]:
     with get_db() as session:
+        from bot.services.variant_pause import release_expired_variant_pauses
+
+        release_expired_variant_pauses(session)
         slug, disabled = _disabled_keys_for_method(session, method_id)
 
         def _blocked(variant: ClubPaymentTierVariant) -> bool:
@@ -410,7 +445,7 @@ def pick_variant(
             if chosen is None or int(chosen.method_id) != int(method_id):
                 return None
             if (
-                _variant_weight(chosen) > 0
+                variant_is_active(chosen)
                 and (tier_id is None or int(chosen.tier_id) == int(tier_id))
                 and not _blocked(chosen)
             ):
