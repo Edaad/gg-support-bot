@@ -72,14 +72,14 @@ def parse_positive_amount_cents(amount: str | int | float) -> int:
 def tag_matches_deposit_variant(db: Session, *, method: str, tag: str) -> bool:
     if method == "crypto":
         return False
-    column = (
+    legacy = (
         ClubPaymentTierVariant.venmo_tag
         if method == "venmo"
         else ClubPaymentTierVariant.cashapp_tag
     )
     normalizer = normalize_venmo_tag if method == "venmo" else normalize_cashapp_tag
     rows = (
-        db.query(column)
+        db.query(ClubPaymentTierVariant.tag, legacy)
         .join(
             ClubPaymentMethod,
             ClubPaymentMethod.id == ClubPaymentTierVariant.method_id,
@@ -87,11 +87,11 @@ def tag_matches_deposit_variant(db: Session, *, method: str, tag: str) -> bool:
         .filter(
             ClubPaymentMethod.direction == "deposit",
             ClubPaymentMethod.slug == method,
-            column.isnot(None),
+            (ClubPaymentTierVariant.tag.isnot(None)) | (legacy.isnot(None)),
         )
         .all()
     )
-    return any(normalizer(row[0]) == tag for row in rows)
+    return any(normalizer(row[0] or row[1]) == tag for row in rows)
 
 
 def _prepared_fields(

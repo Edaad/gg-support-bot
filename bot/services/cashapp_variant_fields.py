@@ -160,13 +160,16 @@ def build_default_cashapp_response_text(
 
 
 def stored_cashapp_tag(variant) -> Optional[str]:
-    """Prefer stored tag; else scrape response fields."""
-    tag = getattr(variant, "cashapp_tag", None)
-    if isinstance(tag, str) and tag.strip():
+    """Prefer the shared tag, then the Cash App mirror, else scrape response fields."""
+    from bot.services.destination_fields import text_attr
+
+    for raw in (text_attr(variant, "tag"), text_attr(variant, "cashapp_tag")):
+        if not raw:
+            continue
         try:
-            return validate_cashapp_tag(tag)
+            return validate_cashapp_tag(raw)
         except ValueError:
-            pass
+            continue
     from bot.services.payment_method_binding import extract_cashapp_handle_from_text
 
     for field in (
@@ -182,13 +185,16 @@ def stored_cashapp_tag(variant) -> Optional[str]:
 
 
 def stored_cashapp_link(variant) -> Optional[str]:
-    """Prefer stored link; else scrape response fields."""
-    link = getattr(variant, "cashapp_link", None)
-    if isinstance(link, str) and link.strip():
+    """Prefer the shared link, then the Cash App mirror, else scrape response fields."""
+    from bot.services.destination_fields import text_attr
+
+    for raw in (text_attr(variant, "link"), text_attr(variant, "cashapp_link")):
+        if not raw:
+            continue
         try:
-            return validate_cashapp_link(link)
+            return validate_cashapp_link(raw)
         except ValueError:
-            pass
+            continue
     from bot.services.payment_method_binding import extract_cashapp_url
 
     for field in (

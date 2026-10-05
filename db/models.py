@@ -480,6 +480,10 @@ class ClubPaymentTierVariant(Base):
     hyperlink_text = Column(String(64), nullable=True)
     checkout_min_amount = Column(Numeric(12, 2), nullable=True)
     checkout_max_amount = Column(Numeric(12, 2), nullable=True)
+    tag = Column(String(200), nullable=True)
+    link = Column(String(128), nullable=True)
+    response_mode = Column(String(16), nullable=True)
+    # Mirrors of tag/link/response_mode for the previous release. Drop later.
     venmo_tag = Column(String(32), nullable=True)
     venmo_link = Column(String(128), nullable=True)
     venmo_response_mode = Column(String(16), nullable=True)

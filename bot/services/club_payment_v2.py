@@ -9,6 +9,7 @@ import random
 from decimal import Decimal
 from typing import List, Optional
 
+from bot.services.destination_fields import read_link, read_response_mode, read_tag
 from bot.services.payment_tier_order import select_tier_for_amount
 from db.connection import get_db
 from db.models import (
@@ -143,6 +144,9 @@ def _variant_response_dict(
         "hyperlink_text": v.hyperlink_text,
         "checkout_min_amount": v.checkout_min_amount,
         "checkout_max_amount": v.checkout_max_amount,
+        "tag": read_tag(v),
+        "link": read_link(v),
+        "response_mode": read_response_mode(v),
         "venmo_tag": getattr(v, "venmo_tag", None),
         "venmo_link": getattr(v, "venmo_link", None),
         "venmo_response_mode": getattr(v, "venmo_response_mode", None),

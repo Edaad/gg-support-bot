@@ -1304,11 +1304,10 @@ def _variant_zelle_recipient_matches(
     variant = session.query(ClubPaymentTierVariant).get(int(variant_id))
     if not variant:
         return False
-    for field in (variant.response_text, variant.response_caption):
-        variant_recipient = extract_zelle_recipient_from_text(field)
-        if variant_recipient and variant_recipient == recipient:
-            return True
-    return False
+    from bot.services.destination_fields import stored_zelle_recipient
+
+    variant_recipient = stored_zelle_recipient(variant)
+    return bool(variant_recipient and variant_recipient == recipient)
 
 
 def _variant_paypal_email_matches(session, variant_id: int, paypal_email: str) -> bool:
@@ -2317,11 +2316,11 @@ def infer_variant_id_for_zelle_recipient(
             .filter_by(method_id=int(method.id))
             .all()
         )
+        from bot.services.destination_fields import stored_zelle_recipient
+
         for v in variants:
-            for field in (v.response_text, v.response_caption):
-                variant_recipient = extract_zelle_recipient_from_text(field)
-                if variant_recipient and variant_recipient == recipient:
-                    return int(v.id)
+            if stored_zelle_recipient(v) == recipient:
+                return int(v.id)
     return None
 
 

@@ -59,6 +59,9 @@ class ClubPaymentTierVariantCreate(BaseModel):
     hyperlink_text: Optional[str] = None
     checkout_min_amount: Optional[Decimal] = None
     checkout_max_amount: Optional[Decimal] = None
+    tag: Optional[str] = None
+    link: Optional[str] = None
+    response_mode: Optional[str] = None
     venmo_tag: Optional[str] = None
     venmo_link: Optional[str] = None
     venmo_response_mode: Optional[str] = None
@@ -81,6 +84,9 @@ class ClubPaymentTierVariantUpdate(BaseModel):
     hyperlink_text: Optional[str] = None
     checkout_min_amount: Optional[Decimal] = None
     checkout_max_amount: Optional[Decimal] = None
+    tag: Optional[str] = None
+    link: Optional[str] = None
+    response_mode: Optional[str] = None
     venmo_tag: Optional[str] = None
     venmo_link: Optional[str] = None
     venmo_response_mode: Optional[str] = None
@@ -109,6 +115,9 @@ class ClubPaymentTierVariantRead(BaseModel):
     hyperlink_text: Optional[str] = None
     checkout_min_amount: Optional[Decimal] = None
     checkout_max_amount: Optional[Decimal] = None
+    tag: Optional[str] = None
+    link: Optional[str] = None
+    response_mode: Optional[str] = None
     venmo_tag: Optional[str] = None
     venmo_link: Optional[str] = None
     venmo_response_mode: Optional[str] = None

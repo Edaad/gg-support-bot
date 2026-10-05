@@ -213,7 +213,7 @@ class ApplyCashappVariantFieldsApiTests(unittest.TestCase):
         from api.routes.v2_payment import _apply_cashapp_variant_fields
 
         method = MagicMock()
-        method.slug = "zelle"
+        method.slug = "paypal"
         tier = MagicMock()
         tier.use_group_checkout_link = False
         out = _apply_cashapp_variant_fields(

@@ -66,6 +66,9 @@ export interface V2Variant {
   hyperlink_text: string | null
   checkout_min_amount: number | null
   checkout_max_amount: number | null
+  tag: string | null
+  link: string | null
+  response_mode: string | null
   venmo_tag: string | null
   venmo_link: string | null
   venmo_response_mode: string | null

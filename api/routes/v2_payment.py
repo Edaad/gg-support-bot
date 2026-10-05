@@ -50,6 +50,7 @@ from bot.services.cashapp_variant_fields import (
     validate_cashapp_response_mode,
     validate_cashapp_tag_and_link,
 )
+from bot.services.destination_fields import legacy_mirror, validate_zelle_tag
 from bot.services.venmo_variant_fields import (
     response_type_for_venmo_mode,
     validate_venmo_response_mode,
@@ -94,6 +95,115 @@ def _read_method(method: ClubPaymentMethod) -> ClubPaymentMethodRead:
     return ClubPaymentMethodRead.model_validate(method)
 
 
+def _coalesce_destination(
+    data: dict,
+    key: str,
+    legacy_key: str | None,
+    existing: ClubPaymentTierVariant | None,
+    *,
+    use_legacy: bool,
+):
+    """Prefer a shared field, then the rail-specific mirror, then the saved row.
+
+    Create payloads include every schema field, so a missing tag arrives as None
+    next to a filled venmo_tag or cashapp_tag. None is not a value.
+    """
+
+    def _filled(name: str | None) -> bool:
+        if not name or name not in data:
+            return False
+        value = data.get(name)
+        return isinstance(value, str) and bool(value.strip())
+
+    if _filled(key):
+        return data.get(key)
+    if use_legacy and _filled(legacy_key):
+        return data.get(legacy_key)
+    if key in data and isinstance(data.get(key), str):
+        return data.get(key)
+    if existing is None:
+        return None
+    current = getattr(existing, key, None)
+    if isinstance(current, str) and current.strip():
+        return current
+    if use_legacy and legacy_key:
+        legacy = getattr(existing, legacy_key, None)
+        if isinstance(legacy, str) and legacy.strip():
+            return legacy
+    return None
+
+
+def _apply_destination_fields(
+    method: ClubPaymentMethod,
+    data: dict,
+    *,
+    tier: ClubPaymentTier | None,
+    existing: ClubPaymentTierVariant | None = None,
+    creating: bool = False,
+) -> dict:
+    """Validate tag/link/response_mode for the method slug and mirror legacy columns."""
+    out = dict(data)
+    slug = (method.slug or "").strip().lower()
+    if slug not in ("venmo", "cashapp", "zelle"):
+        out.update(legacy_mirror(slug, None, None, None))
+        return out
+
+    if slug == "cashapp" and _cashapp_variant_is_checkout(
+        out, existing=existing, tier=tier
+    ):
+        out.update(legacy_mirror(slug, None, None, None))
+        return out
+
+    if slug == "zelle":
+        stored = getattr(existing, "tag", None) if existing is not None else None
+        if not (isinstance(stored, str) and stored.strip()):
+            stored = None
+        if "tag" not in data and not creating and stored is None:
+            out.update(legacy_mirror(slug, None, None, None))
+            return out
+        tag = _coalesce_destination(data, "tag", None, existing, use_legacy=False)
+        try:
+            norm_tag = validate_zelle_tag(tag if isinstance(tag, str) else None)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        out.update(legacy_mirror(slug, norm_tag, None, None))
+        return out
+
+    use_venmo = slug == "venmo"
+    legacy_tag = "venmo_tag" if use_venmo else "cashapp_tag"
+    legacy_link = "venmo_link" if use_venmo else "cashapp_link"
+    legacy_mode = "venmo_response_mode" if use_venmo else "cashapp_response_mode"
+    mode_raw = _coalesce_destination(
+        data, "response_mode", legacy_mode, existing, use_legacy=True
+    )
+    if mode_raw is None and creating:
+        mode_raw = "default"
+    elif mode_raw is None and existing is not None:
+        mode_raw = "text"
+    try:
+        if use_venmo:
+            mode = validate_venmo_response_mode(mode_raw)
+        else:
+            mode = validate_cashapp_response_mode(mode_raw)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    tag = _coalesce_destination(data, "tag", legacy_tag, existing, use_legacy=True)
+    link = _coalesce_destination(data, "link", legacy_link, existing, use_legacy=True)
+    try:
+        if use_venmo:
+            norm_tag, norm_link = validate_venmo_tag_and_link(tag, link)
+            response_type = response_type_for_venmo_mode(mode)
+        else:
+            norm_tag, norm_link = validate_cashapp_tag_and_link(tag, link)
+            response_type = response_type_for_cashapp_mode(mode)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    out.update(legacy_mirror(slug, norm_tag, norm_link, mode))
+    out["response_type"] = response_type
+    return out
+
+
 def _apply_venmo_variant_fields(
     method: ClubPaymentMethod,
     data: dict,
@@ -101,49 +211,16 @@ def _apply_venmo_variant_fields(
     existing: ClubPaymentTierVariant | None = None,
     creating: bool = False,
 ) -> dict:
-    """Validate/normalize Venmo destination fields; clear them for other methods."""
-    out = dict(data)
-    is_venmo = (method.slug or "").strip().lower() == "venmo"
-    if not is_venmo:
-        for key in ("venmo_tag", "venmo_link", "venmo_response_mode"):
-            if key in out:
-                out[key] = None
-        return out
-
-    mode_raw = out.get("venmo_response_mode")
-    if mode_raw is None and creating:
-        mode_raw = "default"
-    elif mode_raw is None and existing is not None:
-        mode_raw = existing.venmo_response_mode or "text"
-
-    try:
-        mode = validate_venmo_response_mode(mode_raw)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    out["venmo_response_mode"] = mode
-    out["response_type"] = response_type_for_venmo_mode(mode)
-
-    tag = out.get("venmo_tag")
-    link = out.get("venmo_link")
-    if tag is None and existing is not None and "venmo_tag" not in data:
-        tag = existing.venmo_tag
-    if link is None and existing is not None and "venmo_link" not in data:
-        link = existing.venmo_link
-
-    try:
-        norm_tag, norm_link = validate_venmo_tag_and_link(tag, link)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    out["venmo_tag"] = norm_tag
-    out["venmo_link"] = norm_link
-    return out
+    return _apply_destination_fields(
+        method, data, tier=None, existing=existing, creating=creating
+    )
 
 
 def _cashapp_variant_is_checkout(
     data: dict,
     *,
     existing: ClubPaymentTierVariant | None,
-    tier: ClubPaymentTier,
+    tier: ClubPaymentTier | None,
 ) -> bool:
     """True when the variant (or inherited tier) uses Stripe group checkout."""
     if "use_group_checkout_link" in data:
@@ -156,7 +233,7 @@ def _cashapp_variant_is_checkout(
         return True
     if link is False:
         return False
-    return bool(tier.use_group_checkout_link)
+    return bool(tier and tier.use_group_checkout_link)
 
 
 def _apply_cashapp_variant_fields(
@@ -167,55 +244,13 @@ def _apply_cashapp_variant_fields(
     existing: ClubPaymentTierVariant | None = None,
     creating: bool = False,
 ) -> dict:
-    """Validate/normalize Cash App destination fields; clear for other methods.
-
-    Stripe checkout variants clear these fields and skip validation.
-    """
-    out = dict(data)
-    is_cashapp = (method.slug or "").strip().lower() == "cashapp"
-    if not is_cashapp:
-        for key in ("cashapp_tag", "cashapp_link", "cashapp_response_mode"):
-            if key in out:
-                out[key] = None
-        return out
-
-    if _cashapp_variant_is_checkout(out, existing=existing, tier=tier):
-        out["cashapp_tag"] = None
-        out["cashapp_link"] = None
-        out["cashapp_response_mode"] = None
-        return out
-
-    mode_raw = out.get("cashapp_response_mode")
-    if mode_raw is None and creating:
-        mode_raw = "default"
-    elif mode_raw is None and existing is not None:
-        mode_raw = existing.cashapp_response_mode or "text"
-
-    try:
-        mode = validate_cashapp_response_mode(mode_raw)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    out["cashapp_response_mode"] = mode
-    out["response_type"] = response_type_for_cashapp_mode(mode)
-
-    tag = out.get("cashapp_tag")
-    link = out.get("cashapp_link")
-    if tag is None and existing is not None and "cashapp_tag" not in data:
-        tag = existing.cashapp_tag
-    if link is None and existing is not None and "cashapp_link" not in data:
-        link = existing.cashapp_link
-
-    try:
-        norm_tag, norm_link = validate_cashapp_tag_and_link(tag, link)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    out["cashapp_tag"] = norm_tag
-    out["cashapp_link"] = norm_link
-    return out
+    return _apply_destination_fields(
+        method, data, tier=tier, existing=existing, creating=creating
+    )
 
 
 def _seeds_empty_variant_unusable(method: ClubPaymentMethod) -> bool:
-    """Venmo/Cash App need destination fields, so an auto-seeded blank one is unusable."""
+    """These slugs need a tag, so an auto-seeded blank variant is unusable."""
     return (method.slug or "").strip().lower() in ("venmo", "cashapp")
 
 
@@ -579,8 +614,7 @@ def create_tier_variant(
         variant_data["checkout_min_amount"],
         variant_data["checkout_max_amount"],
     )
-    variant_data = _apply_venmo_variant_fields(method, variant_data, creating=True)
-    variant_data = _apply_cashapp_variant_fields(
+    variant_data = _apply_destination_fields(
         method, variant_data, tier=tier, creating=True
     )
     ensure_legacy_tier_before_new_variant(db, tier)
@@ -629,22 +663,7 @@ def update_variant(
             if tier.method_id != variant.method_id:
                 raise HTTPException(400, "Invalid tier for this variant")
             data["method_id"] = tier.method_id
-    # Venmo: always re-validate destination (required fields must stay set).
-    if (method.slug or "").strip().lower() == "venmo" or any(
-        k in data for k in ("venmo_tag", "venmo_link", "venmo_response_mode")
-    ):
-        data = _apply_venmo_variant_fields(method, data, existing=variant)
-    # Cash App: re-validate native destination; checkout variants clear fields.
-    if (method.slug or "").strip().lower() == "cashapp" or any(
-        k in data
-        for k in (
-            "cashapp_tag",
-            "cashapp_link",
-            "cashapp_response_mode",
-            "use_group_checkout_link",
-        )
-    ):
-        data = _apply_cashapp_variant_fields(method, data, tier=tier, existing=variant)
+    data = _apply_destination_fields(method, data, tier=tier, existing=variant)
     for field, value in data.items():
         setattr(variant, field, value)
     db.flush()

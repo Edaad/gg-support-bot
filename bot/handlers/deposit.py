@@ -335,7 +335,7 @@ def _zelle_venmo_destination_fallback(
         or response_data.get("response_caption")
         or ""
     ).strip()
-    venmo_link = (response_data.get("venmo_link") or "").strip() or None
+    venmo_link = _destination_link(response_data, "venmo") or None
     if slug == "venmo" and not raw and not venmo_link:
         return None
     if slug != "venmo" and not raw:
@@ -351,12 +351,34 @@ def _zelle_venmo_destination_fallback(
     return {"response_type": "text", "response_text": text}
 
 
+def _destination_mode(response_data: dict, slug: str) -> str:
+    mode = (response_data.get("response_mode") or "").strip().lower()
+    if mode:
+        return mode
+    if slug == "venmo":
+        return (response_data.get("venmo_response_mode") or "").strip().lower()
+    if slug == "cashapp":
+        return (response_data.get("cashapp_response_mode") or "").strip().lower()
+    return ""
+
+
+def _destination_link(response_data: dict, slug: str) -> str:
+    link = (response_data.get("link") or "").strip()
+    if link:
+        return link
+    if slug == "venmo":
+        return (response_data.get("venmo_link") or "").strip()
+    if slug == "cashapp":
+        return (response_data.get("cashapp_link") or "").strip()
+    return ""
+
+
 def _apply_venmo_default_response(response_data: dict, amount) -> dict:
     """Replace outgoing payload with the cover-memo template when mode is default."""
-    mode = (response_data.get("venmo_response_mode") or "").strip().lower()
+    mode = _destination_mode(response_data, "venmo")
     if mode != "default":
         return response_data
-    link = (response_data.get("venmo_link") or "").strip()
+    link = _destination_link(response_data, "venmo")
     if not link:
         return response_data
     try:
@@ -374,10 +396,10 @@ def _apply_venmo_default_response(response_data: dict, amount) -> dict:
 
 def _apply_cashapp_default_response(response_data: dict, amount) -> dict:
     """Replace outgoing payload with the cover-memo template when mode is default."""
-    mode = (response_data.get("cashapp_response_mode") or "").strip().lower()
+    mode = _destination_mode(response_data, "cashapp")
     if mode != "default":
         return response_data
-    link = (response_data.get("cashapp_link") or "").strip()
+    link = _destination_link(response_data, "cashapp")
     if not link:
         return response_data
     try:
@@ -680,20 +702,30 @@ def _variants_with_tier_checkout(variants: list[dict], tier: dict) -> list[dict]
 
 def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
     slug = (method_slug or "").strip().lower()
-    if slug == "venmo":
-        tag = (variant.get("venmo_tag") or "").strip()
-        if tag:
-            return extract_venmo_handle_from_text(tag) or tag.lower()
-    if slug == "cashapp":
-        tag = (variant.get("cashapp_tag") or "").strip()
-        if tag:
-            return extract_cashapp_handle_from_text(tag) or tag.lower()
+    tag = (variant.get("tag") or "").strip()
+    if not tag:
+        if slug == "venmo":
+            tag = (variant.get("venmo_tag") or "").strip()
+        elif slug == "cashapp":
+            tag = (variant.get("cashapp_tag") or "").strip()
+    if tag and slug == "zelle":
+        from bot.services.destination_fields import validate_zelle_tag
+
+        try:
+            return validate_zelle_tag(tag)
+        except ValueError:
+            tag = ""
+    if tag and slug == "venmo":
+        return extract_venmo_handle_from_text(tag) or tag.lower()
+    if tag and slug == "cashapp":
+        return extract_cashapp_handle_from_text(tag) or tag.lower()
     text = "\n".join(
         filter(
             None,
             [
                 variant.get("response_text"),
                 variant.get("response_caption"),
+                variant.get("link") or None,
                 variant.get("venmo_link") if slug == "venmo" else None,
                 variant.get("cashapp_link") if slug == "cashapp" else None,
             ],
@@ -703,6 +735,12 @@ def _variant_destination_tag(method_slug: str, variant: dict) -> str | None:
         return extract_cashapp_handle_from_text(text)
     if slug == "venmo":
         return extract_venmo_handle_from_text(text)
+    if slug == "zelle":
+        from bot.services.payment_method_binding import (
+            extract_zelle_recipient_from_text,
+        )
+
+        return extract_zelle_recipient_from_text(text)
     return None
 
 
@@ -1229,10 +1267,10 @@ async def _send_first_time_payment_destination(
     method_slug: str | None = None,
 ) -> bool:
     slug = (method_slug or "").strip().lower()
-    mode = (response_data.get("venmo_response_mode") or "").strip().lower()
+    mode = _destination_mode(response_data, slug)
     send_data = response_data
     if slug == "venmo" and mode == "default":
-        link = (response_data.get("venmo_link") or "").strip()
+        link = _destination_link(response_data, "venmo")
         raw = (
             response_data.get("response_text")
             or response_data.get("response_caption")
@@ -1250,9 +1288,9 @@ async def _send_first_time_payment_destination(
                 venmo_link=link,
             )
             send_data = {"response_type": "text", "response_text": dest}
-    cashapp_mode = (response_data.get("cashapp_response_mode") or "").strip().lower()
+    cashapp_mode = _destination_mode(response_data, "cashapp")
     if slug == "cashapp" and cashapp_mode == "default":
-        link = (response_data.get("cashapp_link") or "").strip()
+        link = _destination_link(response_data, "cashapp")
         raw = (
             response_data.get("response_text")
             or response_data.get("response_caption")

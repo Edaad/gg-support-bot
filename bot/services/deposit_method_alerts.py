@@ -619,6 +619,8 @@ def _variant_text_blob(variant: Any) -> str:
             "label",
             "response_text",
             "response_caption",
+            "tag",
+            "link",
             "venmo_tag",
             "venmo_link",
             "cashapp_tag",
@@ -637,11 +639,13 @@ def variant_match_key(method: str, variant: Any) -> str | None:
             extract_venmo_handle_from_text,
         )
 
-        tag = _variant_field(variant, "venmo_tag")
+        tag = _variant_field(variant, "tag")
+        if not (isinstance(tag, str) and tag.strip()):
+            tag = _variant_field(variant, "venmo_tag")
         if isinstance(tag, str) and tag.strip():
             handle = extract_venmo_handle_from_text(tag) or _normalize_venmo_handle(tag)
             return handle or None
-        for name in ("response_text", "response_caption", "venmo_link"):
+        for name in ("response_text", "response_caption", "link", "venmo_link"):
             handle = extract_venmo_handle_from_text(_variant_field(variant, name))
             if handle:
                 return handle
@@ -652,19 +656,25 @@ def variant_match_key(method: str, variant: Any) -> str | None:
             extract_cashapp_handle_from_text,
         )
 
-        tag = _variant_field(variant, "cashapp_tag")
+        tag = _variant_field(variant, "tag")
+        if not (isinstance(tag, str) and tag.strip()):
+            tag = _variant_field(variant, "cashapp_tag")
         if isinstance(tag, str) and tag.strip():
             return _normalize_cashapp_handle(tag) or None
-        for name in ("response_text", "response_caption", "cashapp_link"):
+        for name in ("response_text", "response_caption", "link", "cashapp_link"):
             handle = extract_cashapp_handle_from_text(_variant_field(variant, name))
             if handle:
                 return handle
         return None
     if method_slug == "zelle":
         from bot.services.payment_method_binding import (
+            canonicalize_zelle_recipient,
             extract_zelle_recipient_from_text,
         )
 
+        tag = _variant_field(variant, "tag")
+        if isinstance(tag, str) and tag.strip():
+            return canonicalize_zelle_recipient(tag) or None
         for name in ("response_text", "response_caption"):
             recipient = extract_zelle_recipient_from_text(_variant_field(variant, name))
             if recipient:

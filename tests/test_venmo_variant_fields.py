@@ -203,7 +203,7 @@ class ApplyVenmoVariantFieldsApiTests(unittest.TestCase):
         from api.routes.v2_payment import _apply_venmo_variant_fields
 
         method = MagicMock()
-        method.slug = "zelle"
+        method.slug = "paypal"
         out = _apply_venmo_variant_fields(
             method,
             {

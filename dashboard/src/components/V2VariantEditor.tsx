@@ -29,11 +29,13 @@ import {
   textContainsCashappLink,
   validateCashappTagAndLink,
 } from '../lib/cashappVariantFields'
+import { validateZelleTag } from '../lib/zelleVariantFields'
 
 function variantSavePayload(
   form: Partial<V2Variant>,
   isVenmo: boolean,
   isCashAppNative: boolean,
+  isZelle: boolean,
 ): Partial<V2Variant> {
   // Checkout link fields are edited on the tier, so they are omitted here to
   // leave any per-variant override untouched.
@@ -49,18 +51,21 @@ function variantSavePayload(
     checkout_max_amount: form.checkout_max_amount ?? null,
   }
   if (isVenmo) {
-    const mode = (form.venmo_response_mode || 'default') as VenmoResponseMode
-    base.venmo_tag = form.venmo_tag ?? ''
-    base.venmo_link = form.venmo_link ?? ''
-    base.venmo_response_mode = mode
+    const mode = (form.response_mode || 'default') as VenmoResponseMode
+    base.tag = form.tag ?? ''
+    base.link = form.link ?? ''
+    base.response_mode = mode
     base.response_type = responseTypeForVenmoMode(mode)
   }
   if (isCashAppNative) {
-    const mode = (form.cashapp_response_mode || 'default') as CashAppResponseMode
-    base.cashapp_tag = form.cashapp_tag ?? ''
-    base.cashapp_link = form.cashapp_link ?? ''
-    base.cashapp_response_mode = mode
+    const mode = (form.response_mode || 'default') as CashAppResponseMode
+    base.tag = form.tag ?? ''
+    base.link = form.link ?? ''
+    base.response_mode = mode
     base.response_type = responseTypeForCashappMode(mode)
+  }
+  if (isZelle) {
+    base.tag = form.tag ?? ''
   }
   return base
 }
@@ -77,15 +82,17 @@ function variantSetupWarning(
   v: V2Variant,
   isVenmo: boolean,
   isCashAppNative: boolean,
+  isZelle: boolean,
 ): string | null {
   if (isVenmo) {
-    if (!v.venmo_tag || !v.venmo_link) return 'Missing Venmo tag or link'
-    if (v.venmo_response_mode === 'default') return null
+    if (!v.tag || !v.link) return 'Missing Venmo tag or link'
+    if (v.response_mode === 'default') return null
   }
   if (isCashAppNative) {
-    if (!v.cashapp_tag || !v.cashapp_link) return 'Missing Cash App tag or link'
-    if (v.cashapp_response_mode === 'default') return null
+    if (!v.tag || !v.link) return 'Missing Cash App tag or link'
+    if (v.response_mode === 'default') return null
   }
+  if (isZelle && !v.tag) return 'Missing Zelle tag'
   if (v.response_type === 'photo') {
     return v.response_file_id || v.response_caption ? null : 'No photo or caption'
   }
@@ -130,6 +137,7 @@ export default function V2VariantEditor({
   const cashappTagId = useId()
   const cashappLinkId = useId()
   const cashappModeId = useId()
+  const zelleTagId = useId()
   const [variants, setVariants] = useState<V2Variant[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
@@ -139,10 +147,11 @@ export default function V2VariantEditor({
 
   const isVenmo = (methodSlug || '').trim().toLowerCase() === 'venmo'
   const isCashApp = (methodSlug || '').trim().toLowerCase() === 'cashapp'
+  const isZelle = (methodSlug || '').trim().toLowerCase() === 'zelle'
   const isCashAppNative =
     isCashApp && !isCashAppCheckoutVariant(form, tierStripeEnabled)
-  const venmoMode = (form.venmo_response_mode || 'default') as VenmoResponseMode
-  const cashappMode = (form.cashapp_response_mode || 'default') as CashAppResponseMode
+  const venmoMode = (form.response_mode || 'default') as VenmoResponseMode
+  const cashappMode = (form.response_mode || 'default') as CashAppResponseMode
 
   const load = async () => {
     const rows = await listV2TierVariants(token, tierId).catch(() => [] as V2Variant[])
@@ -171,11 +180,11 @@ export default function V2VariantEditor({
     const base: Partial<V2Variant> =
       requiresVariants && variants.length === 0 ? { label: 'Default' } : {}
     if (isVenmo) {
-      base.venmo_response_mode = 'default'
+      base.response_mode = 'default'
       base.response_type = 'text'
     }
     if (isCashApp && !tierStripeEnabled) {
-      base.cashapp_response_mode = 'default'
+      base.response_mode = 'default'
       base.response_type = 'text'
     }
     setForm(base)
@@ -189,12 +198,12 @@ export default function V2VariantEditor({
 
     const nextForm = { ...form }
     if (isVenmo) {
-      const checked = validateVenmoTagAndLink(form.venmo_tag || '', form.venmo_link || '')
+      const checked = validateVenmoTagAndLink(form.tag || '', form.link || '')
       if ('error' in checked) {
         setSaveError(checked.error)
         return
       }
-      const mode = (form.venmo_response_mode || 'default') as VenmoResponseMode
+      const mode = (form.response_mode || 'default') as VenmoResponseMode
       if (mode === 'text' || mode === 'photo') {
         const body =
           mode === 'photo'
@@ -206,21 +215,21 @@ export default function V2VariantEditor({
           )
         }
       }
-      nextForm.venmo_tag = checked.tag
-      nextForm.venmo_link = checked.link
+      nextForm.tag = checked.tag
+      nextForm.link = checked.link
       setForm(nextForm)
     }
 
     if (isCashAppNative) {
       const checked = validateCashappTagAndLink(
-        form.cashapp_tag || '',
-        form.cashapp_link || '',
+        form.tag || '',
+        form.link || '',
       )
       if ('error' in checked) {
         setSaveError(checked.error)
         return
       }
-      const mode = (form.cashapp_response_mode || 'default') as CashAppResponseMode
+      const mode = (form.response_mode || 'default') as CashAppResponseMode
       if (mode === 'text' || mode === 'photo') {
         const body =
           mode === 'photo'
@@ -232,12 +241,31 @@ export default function V2VariantEditor({
           )
         }
       }
-      nextForm.cashapp_tag = checked.tag
-      nextForm.cashapp_link = checked.link
+      nextForm.tag = checked.tag
+      nextForm.link = checked.link
       setForm(nextForm)
     }
 
-    const payload = variantSavePayload(nextForm, isVenmo, isCashAppNative)
+    if (isZelle) {
+      const checked = validateZelleTag(form.tag || '')
+      if ('error' in checked) {
+        setSaveError(checked.error)
+        return
+      }
+      nextForm.tag = checked.tag
+      setForm(nextForm)
+      const body = `${form.response_text || ''}\n${form.response_caption || ''}`
+      const mentioned = checked.tag.includes('@')
+        ? body.toLowerCase().includes(checked.tag)
+        : body.replace(/\D/g, '').includes(checked.tag)
+      if ((form.response_text || form.response_caption) && !mentioned) {
+        setLinkWarning(
+          'Warning: the player message does not include this Zelle tag. Saving anyway.',
+        )
+      }
+    }
+
+    const payload = variantSavePayload(nextForm, isVenmo, isCashAppNative, isZelle)
     if (isPrimaryTier) {
       const existing = editId ? variants.find((v) => v.id === editId) : null
       payload.checkout_min_amount = existing?.checkout_min_amount ?? null
@@ -272,12 +300,13 @@ export default function V2VariantEditor({
     const nativeCashApp = isCashApp && !isCashAppCheckoutVariant(v, tierStripeEnabled)
     setForm({
       ...v,
-      venmo_response_mode:
+      tag: v.tag || v.venmo_tag || v.cashapp_tag || '',
+      link: v.link || v.venmo_link || v.cashapp_link || '',
+      response_mode:
+        v.response_mode ||
         v.venmo_response_mode ||
-        (v.response_type === 'photo' ? 'photo' : isVenmo ? 'text' : null),
-      cashapp_response_mode:
         v.cashapp_response_mode ||
-        (v.response_type === 'photo' ? 'photo' : nativeCashApp ? 'text' : null),
+        (v.response_type === 'photo' ? 'photo' : isVenmo || nativeCashApp ? 'text' : null),
     })
     setSaveError('')
     setLinkWarning('')
@@ -306,7 +335,7 @@ export default function V2VariantEditor({
   const setVenmoMode = (mode: VenmoResponseMode) => {
     setForm({
       ...form,
-      venmo_response_mode: mode,
+      response_mode: mode,
       response_type: responseTypeForVenmoMode(mode),
     })
   }
@@ -314,20 +343,20 @@ export default function V2VariantEditor({
   const setCashappMode = (mode: CashAppResponseMode) => {
     setForm({
       ...form,
-      cashapp_response_mode: mode,
+      response_mode: mode,
       response_type: responseTypeForCashappMode(mode),
     })
   }
 
   const venmoDefaultPreview = useMemo(() => {
-    const link = (form.venmo_link || '').trim() || 'https://venmo.com/u/example'
+    const link = (form.link || '').trim() || 'https://venmo.com/u/example'
     return VENMO_DEFAULT_TEMPLATE(link)
-  }, [form.venmo_link])
+  }, [form.link])
 
   const cashappDefaultPreview = useMemo(() => {
-    const link = (form.cashapp_link || '').trim() || 'https://cash.app/$example'
+    const link = (form.link || '').trim() || 'https://cash.app/$example'
     return CASHAPP_DEFAULT_TEMPLATE(link)
-  }, [form.cashapp_link])
+  }, [form.link])
 
   const activeVariants = variants.filter((v) => v.is_active !== false)
   const totalWeight = activeVariants.reduce((sum, v) => sum + v.weight, 0)
@@ -366,25 +395,28 @@ export default function V2VariantEditor({
                   {pct(v.weight)}% (weight: {v.weight})
                 </span>
               )}
-              {isVenmo && destinationModeLabel(v.venmo_response_mode) && (
+              {isVenmo && destinationModeLabel(v.response_mode) && (
                 <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-ink-muted">
-                  {destinationModeLabel(v.venmo_response_mode)}
+                  {destinationModeLabel(v.response_mode)}
                 </span>
               )}
-              {rowCashAppNative && destinationModeLabel(v.cashapp_response_mode) && (
+              {rowCashAppNative && destinationModeLabel(v.response_mode) && (
                 <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-ink-muted">
-                  {destinationModeLabel(v.cashapp_response_mode)}
+                  {destinationModeLabel(v.response_mode)}
                 </span>
               )}
-              {isVenmo && v.venmo_tag && (
-                <span className="text-xs text-ink-muted">{v.venmo_tag}</span>
+              {isVenmo && v.tag && (
+                <span className="text-xs text-ink-muted">{v.tag}</span>
               )}
-              {rowCashAppNative && v.cashapp_tag && (
-                <span className="text-xs text-ink-muted">{v.cashapp_tag}</span>
+              {rowCashAppNative && v.tag && (
+                <span className="text-xs text-ink-muted">{v.tag}</span>
               )}
-              {variantSetupWarning(v, isVenmo, rowCashAppNative) && (
+              {isZelle && v.tag && (
+                <span className="text-xs text-ink-muted">{v.tag}</span>
+              )}
+              {variantSetupWarning(v, isVenmo, rowCashAppNative, isZelle) && (
                 <span className="rounded bg-warning-bg px-1.5 py-0.5 text-xs font-medium text-warning-ink">
-                  {variantSetupWarning(v, isVenmo, rowCashAppNative)}
+                  {variantSetupWarning(v, isVenmo, rowCashAppNative, isZelle)}
                 </span>
               )}
               {v.use_group_checkout_link === false && tierStripeEnabled && (
@@ -402,8 +434,8 @@ export default function V2VariantEditor({
                 </span>
               )}
             </div>
-            {(v.venmo_response_mode === 'default' ||
-              (rowCashAppNative && v.cashapp_response_mode === 'default')) ? (
+            {(v.response_mode === 'default' ||
+              (rowCashAppNative && v.response_mode === 'default')) ? (
               <p className="mt-0.5 max-w-md truncate text-xs text-ink-muted">
                 Default cover-memo template
               </p>
@@ -411,8 +443,8 @@ export default function V2VariantEditor({
               <p className="mt-0.5 max-w-md truncate text-xs text-ink-muted">{v.response_text}</p>
             ) : null}
             {v.response_type === 'photo' &&
-              v.venmo_response_mode !== 'default' &&
-              !(rowCashAppNative && v.cashapp_response_mode === 'default') && (
+              v.response_mode !== 'default' &&
+              !(rowCashAppNative && v.response_mode === 'default') && (
               <p className="mt-0.5 text-xs text-ink-muted">Photo response</p>
             )}
           </div>
@@ -524,8 +556,8 @@ export default function V2VariantEditor({
                   </label>
                   <input
                     id={venmoTagId}
-                    value={form.venmo_tag || ''}
-                    onChange={(e) => setForm({ ...form, venmo_tag: e.target.value })}
+                    value={form.tag || ''}
+                    onChange={(e) => setForm({ ...form, tag: e.target.value })}
                     className="input-field-sm"
                     placeholder="@username"
                     required
@@ -537,8 +569,8 @@ export default function V2VariantEditor({
                   </label>
                   <input
                     id={venmoLinkId}
-                    value={form.venmo_link || ''}
-                    onChange={(e) => setForm({ ...form, venmo_link: e.target.value })}
+                    value={form.link || ''}
+                    onChange={(e) => setForm({ ...form, link: e.target.value })}
                     className="input-field-sm"
                     placeholder="https://venmo.com/u/username"
                     required
@@ -608,8 +640,8 @@ export default function V2VariantEditor({
                   </label>
                   <input
                     id={cashappTagId}
-                    value={form.cashapp_tag || ''}
-                    onChange={(e) => setForm({ ...form, cashapp_tag: e.target.value })}
+                    value={form.tag || ''}
+                    onChange={(e) => setForm({ ...form, tag: e.target.value })}
                     className="input-field-sm"
                     placeholder="$cashtag"
                     required
@@ -621,8 +653,8 @@ export default function V2VariantEditor({
                   </label>
                   <input
                     id={cashappLinkId}
-                    value={form.cashapp_link || ''}
-                    onChange={(e) => setForm({ ...form, cashapp_link: e.target.value })}
+                    value={form.link || ''}
+                    onChange={(e) => setForm({ ...form, link: e.target.value })}
                     className="input-field-sm"
                     placeholder="https://cash.app/$cashtag"
                     required
@@ -684,13 +716,30 @@ export default function V2VariantEditor({
           )}
 
           {!isVenmo && !isCashAppNative && (
-            <ResponseEditor
-              type={form.response_type || 'text'}
-              text={form.response_text || ''}
-              fileId={form.response_file_id || ''}
-              caption={form.response_caption || ''}
-              onChange={(field, value) => setForm({ ...form, [field]: value })}
-            />
+            <>
+              {isZelle && (
+                <div>
+                  <label htmlFor={zelleTagId} className="label-field-xs">
+                    Zelle tag
+                  </label>
+                  <input
+                    id={zelleTagId}
+                    value={form.tag || ''}
+                    onChange={(e) => setForm({ ...form, tag: e.target.value })}
+                    className="input-field-sm"
+                    placeholder="email or phone"
+                    required
+                  />
+                </div>
+              )}
+              <ResponseEditor
+                type={form.response_type || 'text'}
+                text={form.response_text || ''}
+                fileId={form.response_file_id || ''}
+                caption={form.response_caption || ''}
+                onChange={(field, value) => setForm({ ...form, [field]: value })}
+              />
+            </>
           )}
 
           {showCheckoutBounds && (
