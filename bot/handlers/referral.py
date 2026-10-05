@@ -40,9 +40,7 @@ _BLOCKING_DM_FLOWS = frozenset(
 )
 
 
-async def referral_handler(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+async def referral_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Post the referral program, this group's link, then credited referrals.
 
     Silent outside support groups. ``/referral_link`` and ``/myreferrals``

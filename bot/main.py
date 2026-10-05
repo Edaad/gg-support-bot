@@ -475,9 +475,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("whoami", h.whoami_handler))
     app.add_handler(CommandHandler("fileid", h.fileid_handler))
     app.add_handler(
-        CommandHandler(
-            ["referral", "referral_link", "myreferrals"], h.referral_handler
-        )
+        CommandHandler(["referral", "referral_link", "myreferrals"], h.referral_handler)
     )
     h.register_issue_report_handlers(app)
     app.add_handler(
