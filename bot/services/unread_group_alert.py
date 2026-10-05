@@ -34,8 +34,7 @@ BACKOFF_BASE_MINUTES = 5
 BACKOFF_CAP_MINUTES = 30
 FAILED_RETRY_SEC = 30.0
 PUSHOVER_MAX_LEN = 1024
-PUSHOVER_TITLE = "Unread group chats"
-PUSHOVER_SOURCE = "unread_group_alert"
+ESCALATION_SOURCE = "unread_group_alert"
 
 _clients: dict[str, TelegramClient] = {}
 _dialogs: dict[str, dict[int, "LiveDialog"]] = {}
@@ -170,10 +169,13 @@ def alert_action(
     now: datetime,
     delay: timedelta,
 ) -> str:
-    """``clear`` below 5, ``send`` when due, ``wait`` inside the current gap."""
+    """``hold`` below 5, ``send`` when the gap since the last send has elapsed, ``wait`` inside it.
+
+    The gap is not cleared when the count falls below 5.
+    """
 
     if count < THRESHOLD:
-        return "clear"
+        return "hold"
     if last_sent_at is None:
         return "send"
     if as_utc(now) - as_utc(last_sent_at) >= delay:
@@ -619,10 +621,8 @@ async def _evaluate() -> None:
     last_sent, step = await asyncio.to_thread(load_alert_control)
     delay = timedelta(minutes=backoff_delay_minutes(step))
     action = alert_action(count, last_sent, now, delay)
-    if action == "clear":
+    if action == "hold":
         _cancel_timer()
-        if last_sent is not None or step != 0:
-            await asyncio.to_thread(save_alert_control, None, 0)
         return
     if action == "wait":
         assert last_sent is not None
@@ -630,8 +630,8 @@ async def _evaluate() -> None:
         _ensure_timer(max(remaining.total_seconds(), 1.0))
         return
     message = format_unread_alert(count, [title for _club, title in rows])
-    if not await _fanout(message):
-        logger.warning("unread_group_alert: pushover failed count=%s", count)
+    if not await _post_escalation(message):
+        logger.warning("unread_group_alert: escalation post failed count=%s", count)
         _schedule_timer(FAILED_RETRY_SEC, replace=True)
         return
     next_step = 0 if last_sent is None else step_after_send(step)
@@ -915,44 +915,7 @@ def save_alert_control(last_sent_at: datetime | None, backoff_step: int) -> None
         session.commit()
 
 
-def recipient_keys() -> list[str]:
-    """Every cashout Pushover key, ignoring payment-method filters."""
+async def _post_escalation(message: str) -> bool:
+    from bot.services.slack_ops_notify import notify_slack_escalation
 
-    from db.connection import get_db
-    from db.models import StaffCashoutNotifyRecipient
-
-    with get_db() as session:
-        rows = (
-            session.query(StaffCashoutNotifyRecipient.pushover_user_key)
-            .order_by(StaffCashoutNotifyRecipient.id.asc())
-            .all()
-        )
-    seen: set[str] = set()
-    keys: list[str] = []
-    for (raw,) in rows:
-        key = (raw or "").strip()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        keys.append(key)
-    return keys
-
-
-async def _fanout(message: str) -> bool:
-    from bot.services.pushover_notify import notify_pushover
-
-    keys = await asyncio.to_thread(recipient_keys)
-    if not keys:
-        logger.warning("unread_group_alert: no pushover recipients")
-        return False
-    ok_any = False
-    for key in keys:
-        ok = await notify_pushover(
-            message,
-            user=key,
-            title=PUSHOVER_TITLE,
-            priority=1,
-            source=PUSHOVER_SOURCE,
-        )
-        ok_any = ok_any or ok
-    return ok_any
+    return await notify_slack_escalation(message, source=ESCALATION_SOURCE)

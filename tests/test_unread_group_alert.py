@@ -67,15 +67,11 @@ class ReadStateTests(unittest.TestCase):
 
 
 class AlertActionTests(unittest.TestCase):
-    def test_below_threshold_clears(self) -> None:
+    def test_below_threshold_keeps_the_gap(self) -> None:
+        sent = NOW - timedelta(minutes=1)
         self.assertEqual(
-            alert_action(
-                THRESHOLD - 1,
-                NOW - timedelta(minutes=1),
-                NOW,
-                timedelta(minutes=5),
-            ),
-            "clear",
+            alert_action(THRESHOLD - 1, sent, NOW, timedelta(minutes=5)),
+            "hold",
         )
 
     def test_first_crossing_sends(self) -> None:
