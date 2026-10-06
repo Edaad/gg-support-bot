@@ -451,6 +451,43 @@ class IdleEpisodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state["staff_unanswered_fired_at"])
         self.assertIsNone(state["staff_unanswered_message_text"])
 
+    async def test_staff_unanswered_skips_fire_when_latest_message_is_bot(self):
+        t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        fire_at = t0 + timedelta(seconds=301)
+        _FakeSession.store[1] = _FakeRow(1)
+        row = _FakeSession.store[1]
+        row.episode_started_at = t0
+        row.last_human_at = fire_at - timedelta(seconds=10)
+        row.staff_unanswered_armed_at = t0
+        row.staff_unanswered_message_text = "still waiting"
+        row.title = "GC"
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(
+                data={"chat_id": 1, "club_id": 9, "title": "GC"},
+                chat_id=1,
+            ),
+            job_queue=self.jq,
+        )
+        with patch.object(ep, "_now", return_value=fire_at):
+            with patch.object(
+                ep,
+                "_latest_group_message_is_bot",
+                new_callable=AsyncMock,
+                return_value=True,
+            ):
+                with patch.object(
+                    ep,
+                    "notify_staff_unanswered_issue_channel",
+                    new_callable=AsyncMock,
+                ) as notify:
+                    await ep._idle_staff_unanswered_callback(ctx)
+        notify.assert_not_awaited()
+        state = ep.load_episode_state(1)
+        self.assertIsNotNone(state)
+        self.assertIsNone(state["staff_unanswered_armed_at"])
+        self.assertIsNone(state["staff_unanswered_fired_at"])
+        self.assertIsNone(state["staff_unanswered_message_text"])
+
     async def test_staff_unanswered_fires_once_and_blocks_rearm(self):
         # Recent human activity so silence is not due — episode stays open after fire.
         t0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)

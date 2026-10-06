@@ -3,6 +3,8 @@
 Open on player free text (or deposit Slack feed): immediate Slack (unless already
 sent), no-op menu hook, then 1m quiet burst for follow-ups. After a successful
 follow-up Slack, arm a 5m staff-unanswered timer (escalation channel, once).
+That timer does not fire when the admin unread tracker says the latest
+message in the group is from a bot.
 Player gratitude closers (thanks/ty/…) do not reset the 5m silence clock.
 Episode ends on 5 minutes of any-human silence, 30m hard cap from open, or
 flow-end close.
@@ -891,6 +893,49 @@ async def _idle_debounce_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
 
 
+def _clear_staff_unanswered_arm(chat_id: int, now: datetime) -> bool:
+    with get_db() as session:
+        row = session.get(SupportGroupIdleEpisodeState, chat_id)
+        if row is None or row.episode_started_at is None:
+            return False
+        row.staff_unanswered_armed_at = None
+        row.staff_unanswered_message_text = None
+        row.updated_at = now
+    return True
+
+
+def _close_episode_if_silence_due(
+    chat_id: int,
+    state: dict[str, Any],
+    now: datetime,
+    *,
+    job_queue: Any | None,
+) -> bool:
+    last_at = state.get("last_human_at")
+    if last_at is not None and (
+        (now - last_at).total_seconds() + 0.5 < float(idle_episode_silence_seconds())
+    ):
+        return False
+    close_episode(chat_id, job_queue=job_queue, close_reason=CLOSE_REASON_SILENCE)
+    return True
+
+
+async def _latest_group_message_is_bot(chat_id: int) -> bool:
+    """True only when the admin unread tracker has this chat and its latest sender is a bot."""
+    try:
+        from bot.services.unread_group_alert import chat_latest_from_bot
+
+        latest = await chat_latest_from_bot(int(chat_id))
+    except Exception:
+        logger.warning(
+            "support_group_idle_episode: latest-bot check failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return False
+    return latest is True
+
+
 async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     data = context.job.data or {}
     chat_id = int(data.get("chat_id") or context.job.chat_id)
@@ -913,28 +958,37 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
     body = state.get("staff_unanswered_message_text")
     # Already-armed gratitude-only follow-ups (or legacy rows): drop without Slack.
     if is_gratitude_only_message_text(body):
-        with get_db() as session:
-            row = session.get(SupportGroupIdleEpisodeState, chat_id)
-            if row is None or row.episode_started_at is None:
-                return
-            row.staff_unanswered_armed_at = None
-            row.staff_unanswered_message_text = None
-            row.updated_at = now
+        if not _clear_staff_unanswered_arm(chat_id, now):
+            return
         logger.info(
             "support_group_idle_episode: skip staff_unanswered fire "
             "(gratitude-only) chat_id=%s",
             chat_id,
         )
-        last_at = state.get("last_human_at")
-        if last_at is None or (
-            (now - last_at).total_seconds() + 0.5
-            >= float(idle_episode_silence_seconds())
-        ):
-            close_episode(
-                chat_id,
-                job_queue=getattr(context, "job_queue", None),
-                close_reason=CLOSE_REASON_SILENCE,
-            )
+        _close_episode_if_silence_due(
+            chat_id,
+            state,
+            now,
+            job_queue=getattr(context, "job_queue", None),
+        )
+        return
+
+    # Same signal as the unread-group admin alert: a bot's latest message
+    # means staff does not need this ping.
+    if await _latest_group_message_is_bot(chat_id):
+        if not _clear_staff_unanswered_arm(chat_id, now):
+            return
+        logger.info(
+            "support_group_idle_episode: skip staff_unanswered fire "
+            "(latest message is from a bot) chat_id=%s",
+            chat_id,
+        )
+        _close_episode_if_silence_due(
+            chat_id,
+            state,
+            now,
+            job_queue=getattr(context, "job_queue", None),
+        )
         return
 
     try:
@@ -967,15 +1021,12 @@ async def _idle_staff_unanswered_callback(context: ContextTypes.DEFAULT_TYPE) ->
     )
 
     # Quiet chat: silence was deferred for this ping — close now if still quiet.
-    last_at = state.get("last_human_at")
-    if last_at is None or (
-        (now - last_at).total_seconds() + 0.5 >= float(idle_episode_silence_seconds())
+    if _close_episode_if_silence_due(
+        chat_id,
+        state,
+        now,
+        job_queue=getattr(context, "job_queue", None),
     ):
-        close_episode(
-            chat_id,
-            job_queue=getattr(context, "job_queue", None),
-            close_reason=CLOSE_REASON_SILENCE,
-        )
         logger.info(
             "support_group_idle_episode: silence closed after staff_unanswered "
             "chat_id=%s",

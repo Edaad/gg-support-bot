@@ -90,6 +90,21 @@ def sender_is_bot(sender: Any) -> bool:
     return bool(getattr(sender, "bot", False))
 
 
+async def chat_latest_from_bot(chat_id: int) -> bool | None:
+    """Whether this chat's latest message is from a bot, on the admin-account view.
+
+    ``None`` when the live unread snapshot does not have the chat yet.
+    """
+
+    async with _lock_for():
+        cid = int(chat_id)
+        for dialogs in _dialogs.values():
+            live = dialogs.get(cid)
+            if live is not None:
+                return bool(live.latest_from_bot)
+    return None
+
+
 def top_message_from_bot(messages: Any, users: Any, top_id: int) -> bool | None:
     """True when the dialog's latest message was sent by a bot. None if unknown."""
 

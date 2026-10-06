@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 
+from bot.services import unread_group_alert as unread
 from bot.services.unread_group_alert import (
     THRESHOLD,
     DialogSnap,
@@ -12,6 +14,7 @@ from bot.services.unread_group_alert import (
     LiveDialog,
     alert_action,
     backoff_delay_minutes,
+    chat_latest_from_bot,
     format_unread_alert,
     note_incoming,
     note_inbox_read,
@@ -141,6 +144,33 @@ class VisibleUnreadTests(unittest.TestCase):
         groups = [_group(1, "round_table", internal=True)]
         dialogs = {("round_table", 1): DialogSnap(4, "Test", archived=False)}
         self.assertEqual(visible_unreads(groups, dialogs, {"round_table"}), [])
+
+    def test_chat_latest_from_bot_reads_live_dialog(self) -> None:
+        saved = unread._dialogs
+        unread._dialogs = {
+            "round_table": {
+                5: LiveDialog(
+                    unread_count=1,
+                    title="Bot chat",
+                    archived=False,
+                    top_message_id=9,
+                    latest_from_bot=True,
+                ),
+                6: LiveDialog(
+                    unread_count=1,
+                    title="Player chat",
+                    archived=False,
+                    top_message_id=10,
+                    latest_from_bot=False,
+                ),
+            }
+        }
+        try:
+            self.assertTrue(asyncio.run(chat_latest_from_bot(5)))
+            self.assertFalse(asyncio.run(chat_latest_from_bot(6)))
+            self.assertIsNone(asyncio.run(chat_latest_from_bot(7)))
+        finally:
+            unread._dialogs = saved
 
     def test_latest_bot_message_is_left_out_of_the_sum(self) -> None:
         groups = [
