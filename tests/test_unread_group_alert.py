@@ -65,6 +65,18 @@ class ReadStateTests(unittest.TestCase):
         self.assertFalse(note_incoming(live, 20))
         self.assertEqual(live.unread_count, 0)
 
+    def test_player_message_after_a_bot_counts_again(self) -> None:
+        live = LiveDialog(
+            unread_count=1,
+            title="Amy",
+            archived=False,
+            top_message_id=1,
+            latest_from_bot=True,
+        )
+        self.assertTrue(note_incoming(live, 2, from_bot=False))
+        self.assertFalse(live.latest_from_bot)
+        self.assertEqual(live.unread_count, 2)
+
 
 class AlertActionTests(unittest.TestCase):
     def test_below_threshold_keeps_the_gap(self) -> None:
@@ -129,6 +141,22 @@ class VisibleUnreadTests(unittest.TestCase):
         groups = [_group(1, "round_table", internal=True)]
         dialogs = {("round_table", 1): DialogSnap(4, "Test", archived=False)}
         self.assertEqual(visible_unreads(groups, dialogs, {"round_table"}), [])
+
+    def test_latest_bot_message_is_left_out_of_the_sum(self) -> None:
+        groups = [
+            _group(1, "round_table", name="Bot chat"),
+            _group(2, "round_table", name="Player chat"),
+        ]
+        dialogs = {
+            ("round_table", 1): DialogSnap(
+                4, "Bot chat", archived=False, latest_from_bot=True
+            ),
+            ("round_table", 2): DialogSnap(1, "Player chat", archived=False),
+        }
+        self.assertEqual(
+            visible_unreads(groups, dialogs, {"round_table"}),
+            [("round_table", "Player chat")],
+        )
 
     def test_archived_chat_included(self) -> None:
         groups = [_group(1, "round_table", name="Fallback")]

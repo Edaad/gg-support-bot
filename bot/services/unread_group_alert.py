@@ -65,6 +65,7 @@ class DialogSnap:
     unread_count: int
     title: str
     archived: bool
+    latest_from_bot: bool = False
 
 
 @dataclass
@@ -74,25 +75,52 @@ class LiveDialog:
     archived: bool
     top_message_id: int
     read_inbox_max_id: int = 0
+    latest_from_bot: bool = False
 
     def snap(self) -> DialogSnap:
         return DialogSnap(
             unread_count=self.unread_count,
             title=self.title,
             archived=self.archived,
+            latest_from_bot=self.latest_from_bot,
         )
 
 
-def note_incoming(live: LiveDialog, message_id: int, title: str = "") -> bool:
-    """Count a new incoming message. Already-read ids do not raise the badge."""
+def sender_is_bot(sender: Any) -> bool:
+    return bool(getattr(sender, "bot", False))
+
+
+def top_message_from_bot(messages: Any, users: Any, top_id: int) -> bool | None:
+    """True when the dialog's latest message was sent by a bot. None if unknown."""
+
+    for message in messages or []:
+        if int(getattr(message, "id", 0) or 0) != int(top_id):
+            continue
+        from_id = getattr(message, "from_id", None)
+        user_id = getattr(from_id, "user_id", None)
+        if user_id is None:
+            return False
+        for user in users or []:
+            if int(getattr(user, "id", 0) or 0) == int(user_id):
+                return bool(getattr(user, "bot", False))
+        return None
+    return None
+
+
+def note_incoming(
+    live: LiveDialog, message_id: int, title: str = "", *, from_bot: bool = False
+) -> bool:
+    """Count a new incoming message. A bot's latest message does not raise the sum."""
 
     if title:
         live.title = title
     if message_id <= live.top_message_id:
         return False
     live.top_message_id = message_id
+    bot_changed = live.latest_from_bot != from_bot
+    live.latest_from_bot = from_bot
     if message_id <= live.read_inbox_max_id:
-        return False
+        return bot_changed
     live.unread_count += 1
     return True
 
@@ -117,6 +145,7 @@ def apply_server_unread(
     read_inbox_max_id: int,
     title: str = "",
     archived: bool | None = None,
+    latest_from_bot: bool | None = None,
 ) -> None:
     """Replace the badge with a ``messages.getPeerDialogs`` result."""
 
@@ -129,6 +158,8 @@ def apply_server_unread(
         live.title = title
     if archived is not None:
         live.archived = archived
+    if latest_from_bot is not None:
+        live.latest_from_bot = latest_from_bot
 
 
 def _lock_for() -> asyncio.Lock:
@@ -202,7 +233,7 @@ def visible_unreads(
         if group.club_key not in ready_clubs or group.is_internal:
             continue
         snap = dialogs.get((group.club_key, group.chat_id))
-        if snap is None or snap.unread_count < 1:
+        if snap is None or snap.unread_count < 1 or snap.latest_from_bot:
             continue
         rows.append((group.club_display_name, display_title(snap.title, group.name)))
     rows.sort(key=lambda row: (row[0].casefold(), row[1].casefold()))
@@ -370,11 +401,19 @@ async def _collect_dialogs(
                 archived=bool(dialog.archived),
                 top_message_id=top,
                 read_inbox_max_id=int(getattr(raw, "read_inbox_max_id", 0) or 0),
+                latest_from_bot=sender_is_bot(getattr(dialog.message, "sender", None)),
             )
     return found
 
 
-def _schedule_unknown(club_key: str, chat_id: int, message_id: int, title: str) -> None:
+def _schedule_unknown(
+    club_key: str,
+    chat_id: int,
+    message_id: int,
+    title: str,
+    *,
+    from_bot: bool = False,
+) -> None:
     """Caller holds ``_lock_for``. Look up a chat the snapshot did not see."""
 
     if chat_id in _ignored.get(club_key, set()):
@@ -384,7 +423,7 @@ def _schedule_unknown(club_key: str, chat_id: int, message_id: int, title: str) 
         return
     _unknown_inflight.add(key)
     task = asyncio.create_task(
-        _resolve_unknown(club_key, chat_id, message_id, title),
+        _resolve_unknown(club_key, chat_id, message_id, title, from_bot=from_bot),
         name=f"unread-unknown-{club_key}-{chat_id}",
     )
     _unknown_tasks.add(task)
@@ -392,7 +431,12 @@ def _schedule_unknown(club_key: str, chat_id: int, message_id: int, title: str) 
 
 
 async def _resolve_unknown(
-    club_key: str, chat_id: int, message_id: int, title: str
+    club_key: str,
+    chat_id: int,
+    message_id: int,
+    title: str,
+    *,
+    from_bot: bool = False,
 ) -> None:
     try:
         tracked = await asyncio.to_thread(load_tracked_groups)
@@ -410,7 +454,7 @@ async def _resolve_unknown(
         async with _lock_for():
             live = _dialogs.get(club_key, {}).get(chat_id)
             if live is not None:
-                note_incoming(live, message_id, title)
+                note_incoming(live, message_id, title, from_bot=from_bot)
         schedule_evaluate()
     except FloodWaitError as exc:
         logger.warning(
@@ -441,6 +485,7 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
     chat = getattr(event, "chat", None)
     if chat is not None:
         title = (getattr(chat, "title", None) or "").strip()
+    from_bot = sender_is_bot(getattr(event, "sender", None))
     changed = False
     async with _lock_for():
         if _stopped or club_key not in _ready:
@@ -449,7 +494,9 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
         current = dialogs.get(int(chat_id))
         if current is None:
             if int(chat_id) not in _absent.get(club_key, set()):
-                _schedule_unknown(club_key, int(chat_id), int(message_id), title)
+                _schedule_unknown(
+                    club_key, int(chat_id), int(message_id), title, from_bot=from_bot
+                )
                 return
             _absent.get(club_key, set()).discard(int(chat_id))
             created = LiveDialog(
@@ -458,11 +505,11 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
                 archived=False,
                 top_message_id=0,
             )
-            note_incoming(created, int(message_id), title)
+            note_incoming(created, int(message_id), title, from_bot=from_bot)
             dialogs[int(chat_id)] = created
-            changed = created.unread_count > 0
+            changed = True
         else:
-            changed = note_incoming(current, int(message_id), title)
+            changed = note_incoming(current, int(message_id), title, from_bot=from_bot)
     if changed:
         schedule_evaluate()
 
@@ -580,13 +627,16 @@ async def _fill_missing(
             await _fetch_one(client, club_key, chat_id)
 
 
-def _live_from_tl(dialog: Any, title: str) -> LiveDialog:
+def _live_from_tl(
+    dialog: Any, title: str, *, latest_from_bot: bool = False
+) -> LiveDialog:
     return LiveDialog(
         unread_count=int(dialog.unread_count or 0),
         title=title,
         archived=dialog.folder_id is not None,
         top_message_id=int(dialog.top_message or 0),
         read_inbox_max_id=int(dialog.read_inbox_max_id or 0),
+        latest_from_bot=latest_from_bot,
     )
 
 
@@ -657,6 +707,9 @@ async def _refresh_chunk(
                 read_inbox_max_id=int(dialog.read_inbox_max_id or 0),
                 title=titles.get(chat_id, ""),
                 archived=dialog.folder_id is not None,
+                latest_from_bot=top_message_from_bot(
+                    result.messages, result.users, int(dialog.top_message or 0)
+                ),
             )
 
 
@@ -686,11 +739,16 @@ async def _fetch_one(client: TelegramClient, club_key: str, chat_id: int) -> Non
         return
     dialog = result.dialogs[0]
     title = _title_from_chats(result.chats, chat_id)
+    from_bot = top_message_from_bot(
+        result.messages, result.users, int(dialog.top_message or 0)
+    )
     async with _lock_for():
         if _stopped:
             return
         _absent.get(club_key, set()).discard(chat_id)
-        _dialogs.setdefault(club_key, {})[chat_id] = _live_from_tl(dialog, title)
+        _dialogs.setdefault(club_key, {})[chat_id] = _live_from_tl(
+            dialog, title, latest_from_bot=bool(from_bot)
+        )
 
 
 def _title_from_chats(chats: list[Any], chat_id: int) -> str:
