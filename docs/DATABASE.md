@@ -121,6 +121,11 @@ First-click attribution: clicker Telegram user → referrer link for one club. S
 | `referred_chat_id` | bigint nullable | New support group chat id. |
 | `status` | string(32) | `pending` / `credited` / `closed_duplicate`. |
 | `credited_at` / `acked_at` | timestamptz nullable | First credit / first dual-group ack. |
+| `deposit_met_at` | timestamptz nullable | Bound Venmo, Cash App, PayPal, Zelle, and crypto on the referred group first reached $100. |
+| `deposit_telegram_sent_at` | timestamptz nullable | Referrer support group was told the $30 bonus is coming. |
+| `deposit_slack_sent_at` | timestamptz nullable | Escalation Slack post succeeded. |
+| `deposit_slack_skipped_at` | timestamptz nullable | Escalation notifications were off, so Slack was not required. |
+| `deposit_notify_suppressed` | boolean | Already at $100 when this shipped (or a later bind found them already over). No message. |
 | `created_at` / `updated_at` | timestamptz | |
 
 **Constraints:** `uq_referral_attr_club_clicker` — unique `(club_id, clicker_telegram_user_id)` (first click wins); partial unique `uq_referral_attr_club_referred_chat` on `(club_id, referred_chat_id)` where chat id is set.
@@ -325,7 +330,7 @@ Pydantic schemas: [`api/schemas_v2.py`](../api/schemas_v2.py). Router: [`api/rou
 
 ### Data-entry workflow
 
-1. Draft per-club config (methods, tiers, variants, copy, Stripe) — e.g. from ChatGPT prompts using CSV exports in `backups/` as human reference only.
+1. Draft per-club config (methods, tiers, variants, copy, Stripe) — e.g. from ChatGPT prompts using CSV exports in `local/backups/` as human reference only.
 2. Enter data in dashboard **Deposit Methods** / **Cashout Methods** or call `/api/v2` directly. Crypto methods store player copy on **sub-options**; non-sub-option methods store copy on **tier variants** (≥ 1 per tier), not on tier `response_*`.
 3. Save and reload to validate structure (Details + Amount tiers tabs).
 

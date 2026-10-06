@@ -52,12 +52,14 @@ REASON_TRANSFER_ESCALATION = "transfer_escalation"
 REASON_UNION_DEPOSIT_FIRST = "union_deposit_first"
 REASON_UNION_DEPOSIT_REPEAT = "union_deposit_repeat"
 REASON_LARGE_CASHOUT_PAYOUT = "large_cashout_payout"
+REASON_REFERRAL_DEPOSIT_COMPLETE = "referral_deposit_complete"
 # Logged (not Slacked separately) when a payment notification says
 # "Manual action required" for a known support group.
 REASON_PAYMENT_MANUAL_ACTION = "payment_manual_action"
 
 _UNION_DEPOSIT_HEADLINE = "Union method deposit"
 _LARGE_CASHOUT_HEADLINE = "Large cashout payout"
+_REFERRAL_DEPOSIT_HEADLINE = "Referral deposit complete — add 30 credits."
 _LARGE_CASHOUT_CONTEXT = "Check dashboard trade record."
 _UNION_DEPOSIT_SCREEN_RECORDING_REQUIRED = "SCREEN RECORDING REQUIRED"
 _UNION_DEPOSIT_INSTRUCTION = (
@@ -586,6 +588,27 @@ def format_union_deposit_slack_text(
     evidence = _union_deposit_evidence_line(deposit_union)
     if evidence:
         lines.append(evidence)
+    return "\n".join(lines)
+
+
+def format_referral_deposit_slack_text(
+    *,
+    club_id: int | None,
+    chat_id: int,
+    title: str | None,
+    referred_player_id: str,
+) -> str:
+    """Slack body for a referred player whose bound deposits reached $100."""
+    club = _club_display_name(club_id)
+    group_title = (title or get_group_name(chat_id) or "").strip() or "(no title)"
+    player = (referred_player_id or "").strip() or "(unknown)"
+    lines = [
+        f"*{_REFERRAL_DEPOSIT_HEADLINE}*",
+        f"Club: {club}",
+        _slack_code_span(group_title),
+        f"Referred player: {player}",
+        f"Amount: {_union_deposit_amount_str(Decimal(30))}",
+    ]
     return "\n".join(lines)
 
 

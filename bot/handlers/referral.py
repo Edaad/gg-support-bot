@@ -17,7 +17,7 @@ from bot.services.referrals import (
     ensure_referral_link,
     format_referral_link_message,
     format_my_referrals_messages,
-    get_credited_referral_player_ids,
+    get_referral_bonus_sections,
     handle_start_payload,
     hop_message,
     is_referral_start_payload,
@@ -92,11 +92,11 @@ async def referral_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     url = build_referral_url(bot_username=bot_username, code=link.code)
     await update.message.reply_text(format_referral_link_message(url))
 
-    player_ids = get_credited_referral_player_ids(
+    waiting_ids, earned_ids = get_referral_bonus_sections(
         club_id=int(club_id),
         referrer_chat_id=int(chat.id),
     )
-    for text in format_my_referrals_messages(player_ids):
+    for text in format_my_referrals_messages(waiting_ids, earned_ids):
         await update.message.reply_text(text)
 
 

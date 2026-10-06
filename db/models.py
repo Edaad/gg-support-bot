@@ -752,6 +752,16 @@ class ReferralAttribution(Base):
     )
     credited_at = Column(DateTime(timezone=True), nullable=True)
     acked_at = Column(DateTime(timezone=True), nullable=True)
+    deposit_met_at = Column(DateTime(timezone=True), nullable=True)
+    deposit_telegram_sent_at = Column(DateTime(timezone=True), nullable=True)
+    deposit_slack_sent_at = Column(DateTime(timezone=True), nullable=True)
+    deposit_slack_skipped_at = Column(DateTime(timezone=True), nullable=True)
+    deposit_notify_suppressed = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

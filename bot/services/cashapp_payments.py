@@ -581,6 +581,16 @@ async def ingest_cashapp_payment(
         is_test=bool(test),
     )
 
+    if bound_chat_id is not None:
+        from bot.services.referrals import maybe_notify_referral_deposit
+
+        await maybe_notify_referral_deposit(
+            int(bound_chat_id),
+            already_over_counts=False,
+            bound_amount_cents=int(amount_cents),
+            bound_is_test=bool(test),
+        )
+
     if auto_bound and bound_chat_id is not None:
         from bot.services.payment_multi_payer_warning import maybe_warn_multi_payer
 
@@ -775,6 +785,15 @@ async def bind_cashapp_payment_by_id(
         notification_chat_id=notif_chat_id,
         notification_message_id=notif_message_id,
         is_test=bool(getattr(payment, "is_test", False)),
+    )
+
+    from bot.services.referrals import maybe_notify_referral_deposit
+
+    await maybe_notify_referral_deposit(
+        int(group.telegram_chat_id),
+        already_over_counts=False,
+        bound_amount_cents=int(payment.amount_cents),
+        bound_is_test=bool(getattr(payment, "is_test", False)),
     )
 
     return BindResult(

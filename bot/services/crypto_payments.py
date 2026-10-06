@@ -541,6 +541,16 @@ async def ingest_crypto_payment(
         is_test=bool(test),
     )
 
+    if bound_chat_id is not None:
+        from bot.services.referrals import maybe_notify_referral_deposit
+
+        await maybe_notify_referral_deposit(
+            int(bound_chat_id),
+            already_over_counts=False,
+            bound_amount_cents=int(amount_cents),
+            bound_is_test=bool(test),
+        )
+
     from bot.services.payment_auto_deposit import schedule_auto_deposit_from_payment
 
     schedule_auto_deposit_from_payment(
@@ -694,6 +704,15 @@ async def bind_crypto_payment_by_id(
                 notif_chat_id,
                 notif_message_id,
             )
+
+    from bot.services.referrals import maybe_notify_referral_deposit
+
+    await maybe_notify_referral_deposit(
+        int(group.telegram_chat_id),
+        already_over_counts=False,
+        bound_amount_cents=int(payment.amount_cents),
+        bound_is_test=bool(getattr(payment, "is_test", False)),
+    )
 
     return BindResult(
         ok=True,

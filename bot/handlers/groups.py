@@ -224,19 +224,28 @@ async def on_my_chat_member_updated(update: Update, context: ContextTypes.DEFAUL
                         ),
                     ),
                 )
-                for msg in on_player_id_bound(
+                bind_msgs = on_player_id_bound(
                     chat_id=live_id,
                     club_id=res.club_id,
                     gg_player_id=res.gg_player_id,
                     previous_gg_player_id=None,
                     conflict=False,
-                ):
+                )
+                for msg in bind_msgs:
                     try:
                         await context.bot.send_message(
                             chat_id=msg.chat_id, text=msg.text
                         )
                     except Exception:
                         pass
+                if bind_msgs.just_credited:
+                    from bot.services.referrals import maybe_notify_referral_deposit
+
+                    await maybe_notify_referral_deposit(
+                        int(live_id),
+                        already_over_counts=True,
+                        bot=context.bot,
+                    )
             elif res.error and is_same_club_player_conflict_message(res.error):
                 live_id = await _bot_call_chat(
                     context.bot,

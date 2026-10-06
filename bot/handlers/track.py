@@ -68,12 +68,20 @@ def _bind_result(update: Update) -> BindResult:
     return bind_chat_from_title(chat_id=chat.id, title=chat.title)
 
 
-async def _send_referral_bind_messages(bot, messages) -> None:
+async def _send_referral_bind_messages(bot, messages, *, chat_id: int) -> None:
     for msg in messages:
         try:
             await bot.send_message(chat_id=msg.chat_id, text=msg.text)
         except Exception:
             pass
+    if getattr(messages, "just_credited", False):
+        from bot.services.referrals import maybe_notify_referral_deposit
+
+        await maybe_notify_referral_deposit(
+            int(chat_id),
+            already_over_counts=True,
+            bot=bot,
+        )
 
 
 async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -112,6 +120,7 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     previous_gg_player_id=previous_gg_player_id,
                     conflict=True,
                 ),
+                chat_id=update.effective_chat.id,
             )
         return
     if context.bot and update.effective_chat and res.gg_player_id:
@@ -136,6 +145,7 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     previous_gg_player_id=previous_gg_player_id,
                     conflict=False,
                 ),
+                chat_id=chat.id,
             )
         schedule_save_player_contact_named_group(
             chat_id=chat.id,
@@ -227,6 +237,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     previous_gg_player_id=previous_gg_player_id,
                     conflict=False,
                 ),
+                chat_id=chat.id,
             )
         schedule_save_player_contact_named_group(
             chat_id=chat.id,
@@ -251,6 +262,7 @@ async def track_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                         previous_gg_player_id=previous_gg_player_id,
                         conflict=True,
                     ),
+                    chat_id=chat.id,
                 )
         else:
             await update.message.reply_text(f"Invalid group name format. {_EXPECTED}")

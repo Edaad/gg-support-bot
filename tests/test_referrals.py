@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from os import environ
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from bot.handlers import referral as referral_handler
 from bot.services import referrals as ref
@@ -121,30 +121,57 @@ class ReferralHelpersTest(unittest.TestCase):
 
     def test_format_my_referrals(self):
         self.assertEqual(
-            ref.format_my_referrals_messages(["5323-5255", "8190-5287", "2342-4223"]),
-            ["You have referred 3 players:\n\n• 5323-5255\n• 8190-5287\n• 2342-4223"],
+            ref.format_my_referrals_messages(["8190-5287"], ["2342-4223"]),
+            [
+                "Still waiting on a $100 deposit\n\n"
+                "• 8190-5287\n\n"
+                "$30 bonus earned\n\n"
+                "• 2342-4223"
+            ],
         )
         self.assertEqual(
-            ref.format_my_referrals_messages([]),
+            ref.format_my_referrals_messages([], []),
             ["You haven't referred any players yet."],
         )
+        text = ref.format_my_referrals_messages(["8190-5287"], [])[0]
+        self.assertIn("Nobody here yet.", text)
+        self.assertIn("$30 bonus earned", text)
 
     def test_format_my_referrals_splits_without_truncating(self):
         player_ids = [f"{i:04d}-{i:04d}" for i in range(20)]
-        messages = ref.format_my_referrals_messages(player_ids, max_chars=80)
+        messages = ref.format_my_referrals_messages(player_ids, [], max_chars=80)
         self.assertGreater(len(messages), 1)
         self.assertTrue(all(len(message) <= 80 for message in messages))
         combined = "\n".join(messages)
         for player_id in player_ids:
             self.assertIn(f"• {player_id}", combined)
+        self.assertIn("Nobody here yet.", combined)
+
+    def test_deposit_complete_message(self):
+        self.assertEqual(
+            ref.format_referral_deposit_complete_message("8190-5287"),
+            "🎉 Your referral 8190-5287 has completed their deposit obligations! "
+            "30 credits will be added to your account!",
+        )
 
 
 class MyReferralsQueryTest(unittest.TestCase):
+    @patch.object(ref, "bound_deposit_cents_by_chat", return_value={-2: 10000, -3: 0})
     @patch.object(ref, "get_db")
-    def test_returns_current_credited_ids_in_query_order(self, mock_get_db):
+    def test_splits_waiting_and_earned_in_query_order(self, mock_get_db, _cents):
         rows = [
-            SimpleNamespace(referred_gg_player_id="5323-5255"),
-            SimpleNamespace(referred_gg_player_id="8190-5287"),
+            SimpleNamespace(
+                referred_gg_player_id="8190-5287",
+                referred_chat_id=-2,
+                deposit_notify_suppressed=False,
+                deposit_met_at=None,
+            ),
+            SimpleNamespace(
+                referred_gg_player_id="2342-4223",
+                referred_chat_id=-3,
+                deposit_notify_suppressed=False,
+                deposit_met_at=None,
+            ),
         ]
         session = MagicMock()
         query = session.query.return_value
@@ -153,10 +180,9 @@ class MyReferralsQueryTest(unittest.TestCase):
         mock_get_db.return_value.__exit__.return_value = False
 
         self.assertEqual(
-            ref.get_credited_referral_player_ids(club_id=4, referrer_chat_id=-1001),
-            ["5323-5255", "8190-5287"],
+            ref.get_referral_bonus_sections(club_id=4, referrer_chat_id=-1001),
+            (["2342-4223"], ["8190-5287"]),
         )
-        query.join.return_value.filter.assert_called_once()
 
 
 class EnsureReferralLinkTest(unittest.TestCase):
@@ -362,6 +388,7 @@ class OnPlayerIdBoundTest(unittest.TestCase):
         self.assertEqual(attr.status, ref.STATUS_CREDITED)
         self.assertEqual(attr.referred_gg_player_id, "8190-5287")
         self.assertEqual(attr.referred_chat_id, -2002)
+        self.assertTrue(msgs.just_credited)
         texts = {m.text for m in msgs}
         self.assertIn("Your referral 8190-5287 joined the club.", texts)
         self.assertIn("Referred by 1111-2222.", texts)
@@ -532,8 +559,8 @@ class ReferralHandlerTest(unittest.IsolatedAsyncioTestCase):
     )
     @patch.object(
         referral_handler,
-        "get_credited_referral_player_ids",
-        return_value=["5323-5255", "8190-5287"],
+        "get_referral_bonus_sections",
+        return_value=(["5323-5255"], ["8190-5287"]),
     )
     async def test_sends_program_then_credited_list(
         self, mock_get_ids, _link, _title, _club, _sgc
@@ -559,7 +586,10 @@ class ReferralHandlerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             texts[1],
-            "You have referred 2 players:\n\n• 5323-5255\n• 8190-5287",
+            "Still waiting on a $100 deposit\n\n"
+            "• 5323-5255\n\n"
+            "$30 bonus earned\n\n"
+            "• 8190-5287",
         )
 
     @patch.object(
@@ -574,7 +604,9 @@ class ReferralHandlerTest(unittest.IsolatedAsyncioTestCase):
         "ensure_referral_link",
         return_value=SimpleNamespace(code="ref_AbCdEfGhIjKl"),
     )
-    @patch.object(referral_handler, "get_credited_referral_player_ids", return_value=[])
+    @patch.object(
+        referral_handler, "get_referral_bonus_sections", return_value=([], [])
+    )
     async def test_empty_referrals_still_sends_second_message(
         self, _get_ids, _link, _title, _club, _sgc
     ):
@@ -591,6 +623,346 @@ class ReferralHandlerTest(unittest.IsolatedAsyncioTestCase):
         texts = [call.args[0] for call in update.message.reply_text.await_args_list]
         self.assertEqual(len(texts), 2)
         self.assertEqual(texts[1], "You haven't referred any players yet.")
+
+
+def _snap(**overrides) -> ref.DepositSnapshot:
+    data = dict(
+        attribution_id=7,
+        club_id=4,
+        referrer_chat_id=-1001,
+        referred_player_id="8190-5287",
+        suppressed=False,
+        telegram_sent=False,
+        slack_sent=False,
+        slack_skipped=False,
+        total_cents=10_000,
+    )
+    data.update(overrides)
+    return ref.DepositSnapshot(**data)
+
+
+class DepositNotifyActionTest(unittest.TestCase):
+    def test_crossing_payment_notifies(self):
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=False,
+                telegram_sent=False,
+                slack_sent=False,
+                slack_skipped=False,
+                total_after=10_000,
+                total_before=0,
+                already_over_counts=False,
+            ),
+            "notify",
+        )
+
+    def test_already_over_bind_suppresses(self):
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=False,
+                telegram_sent=False,
+                slack_sent=False,
+                slack_skipped=False,
+                total_after=15_000,
+                total_before=14_000,
+                already_over_counts=False,
+            ),
+            "suppress",
+        )
+
+    def test_first_credit_already_over_notifies(self):
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=False,
+                telegram_sent=False,
+                slack_sent=False,
+                slack_skipped=False,
+                total_after=15_000,
+                total_before=15_000,
+                already_over_counts=True,
+            ),
+            "notify",
+        )
+
+    def test_under_threshold_and_finished_are_noop(self):
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=False,
+                telegram_sent=False,
+                slack_sent=False,
+                slack_skipped=False,
+                total_after=9999,
+                total_before=0,
+                already_over_counts=False,
+            ),
+            "noop",
+        )
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=True,
+                telegram_sent=False,
+                slack_sent=False,
+                slack_skipped=False,
+                total_after=20_000,
+                total_before=0,
+                already_over_counts=True,
+            ),
+            "noop",
+        )
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=False,
+                telegram_sent=True,
+                slack_sent=False,
+                slack_skipped=True,
+                total_after=20_000,
+                total_before=10_000,
+                already_over_counts=False,
+            ),
+            "noop",
+        )
+
+    def test_slack_pending_retries_slack_only(self):
+        self.assertEqual(
+            ref.deposit_notify_action(
+                suppressed=False,
+                telegram_sent=True,
+                slack_sent=False,
+                slack_skipped=False,
+                total_after=10_000,
+                total_before=10_000,
+                already_over_counts=False,
+            ),
+            "slack_only",
+        )
+
+    def test_suppress_rule_for_existing_qualifiers(self):
+        row = SimpleNamespace(
+            status=ref.STATUS_CREDITED,
+            deposit_notify_suppressed=False,
+            deposit_telegram_sent_at=None,
+            referred_chat_id=-2002,
+            referred_gg_player_id="8190-5287",
+        )
+        self.assertTrue(ref.attribution_should_suppress(row, 10_000))
+        self.assertFalse(ref.attribution_should_suppress(row, 9999))
+        told = SimpleNamespace(**{**row.__dict__, "deposit_telegram_sent_at": object()})
+        self.assertFalse(ref.attribution_should_suppress(told, 10_000))
+
+
+class BoundDepositCentsTest(unittest.TestCase):
+    def test_sums_each_method_and_filters(self):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.group_by.return_value.all.side_effect = [
+            [(-2002, 4000)],
+            [(-2002, 3000)],
+            [],
+            [],
+            [(-2002, 3000)],
+        ]
+        self.assertEqual(ref.bound_deposit_cents(session, -2002), 10_000)
+        self.assertEqual(session.query.return_value.filter.call_count, 5)
+
+
+class MaybeNotifyReferralDepositTest(unittest.IsolatedAsyncioTestCase):
+    async def test_crossing_sends_telegram_then_slack(self):
+        with (
+            patch.object(ref, "_fetch_deposit_snapshot", return_value=_snap()),
+            patch.object(ref, "_save_deposit_flags") as save,
+            patch.object(
+                ref,
+                "_deliver_referrer_message",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as telegram,
+            patch.object(
+                ref,
+                "_post_referral_deposit_slack",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as slack,
+            patch(
+                "bot.services.escalation_notification.escalation_notification_enabled",
+                return_value=True,
+            ),
+        ):
+            await ref.maybe_notify_referral_deposit(
+                -2002, already_over_counts=False, bound_amount_cents=10_000
+            )
+        telegram.assert_awaited_once()
+        self.assertEqual(telegram.await_args.args[1], -1001)
+        self.assertIn("8190-5287", telegram.await_args.args[2])
+        slack.assert_awaited_once()
+        save.assert_any_call(7, met=True)
+        save.assert_any_call(7, telegram_sent=True)
+
+    async def test_already_over_bind_suppresses_without_sending(self):
+        with (
+            patch.object(
+                ref, "_fetch_deposit_snapshot", return_value=_snap(total_cents=15_000)
+            ),
+            patch.object(ref, "_save_deposit_flags") as save,
+            patch.object(
+                ref, "_deliver_referrer_message", new_callable=AsyncMock
+            ) as telegram,
+            patch(
+                "bot.services.escalation_notification.escalation_notification_enabled",
+                return_value=True,
+            ),
+        ):
+            await ref.maybe_notify_referral_deposit(
+                -2002, already_over_counts=False, bound_amount_cents=1000
+            )
+        telegram.assert_not_awaited()
+        save.assert_called_once_with(7, suppressed=True)
+
+    async def test_test_payment_is_ignored(self):
+        with (
+            patch.object(
+                ref, "_fetch_deposit_snapshot", return_value=_snap(total_cents=0)
+            ),
+            patch.object(ref, "_save_deposit_flags") as save,
+            patch.object(
+                ref, "_deliver_referrer_message", new_callable=AsyncMock
+            ) as telegram,
+        ):
+            await ref.maybe_notify_referral_deposit(
+                -2002,
+                already_over_counts=False,
+                bound_amount_cents=10_000,
+                bound_is_test=True,
+            )
+        telegram.assert_not_awaited()
+        save.assert_not_called()
+
+    async def test_first_credit_already_at_threshold_sends(self):
+        with (
+            patch.object(
+                ref, "_fetch_deposit_snapshot", return_value=_snap(total_cents=15_000)
+            ),
+            patch.object(ref, "_save_deposit_flags"),
+            patch.object(
+                ref,
+                "_deliver_referrer_message",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as telegram,
+            patch.object(ref, "_post_referral_deposit_slack", new_callable=AsyncMock),
+            patch(
+                "bot.services.escalation_notification.escalation_notification_enabled",
+                return_value=True,
+            ),
+        ):
+            await ref.maybe_notify_referral_deposit(-2002, already_over_counts=True)
+        telegram.assert_awaited_once()
+
+    async def test_slack_off_records_skip(self):
+        with (
+            patch.object(ref, "_fetch_deposit_snapshot", return_value=_snap()),
+            patch.object(ref, "_save_deposit_flags") as save,
+            patch.object(
+                ref,
+                "_deliver_referrer_message",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                ref, "_post_referral_deposit_slack", new_callable=AsyncMock
+            ) as slack,
+            patch(
+                "bot.services.escalation_notification.escalation_notification_enabled",
+                return_value=False,
+            ),
+        ):
+            await ref.maybe_notify_referral_deposit(
+                -2002, already_over_counts=False, bound_amount_cents=10_000
+            )
+        slack.assert_not_awaited()
+        save.assert_any_call(7, slack_skipped=True)
+
+    async def test_telegram_failure_does_not_mark_sent_or_post_slack(self):
+        with (
+            patch.object(ref, "_fetch_deposit_snapshot", return_value=_snap()),
+            patch.object(ref, "_save_deposit_flags") as save,
+            patch.object(
+                ref,
+                "_deliver_referrer_message",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch.object(
+                ref, "_post_referral_deposit_slack", new_callable=AsyncMock
+            ) as slack,
+            patch(
+                "bot.services.escalation_notification.escalation_notification_enabled",
+                return_value=True,
+            ),
+        ):
+            await ref.maybe_notify_referral_deposit(
+                -2002, already_over_counts=False, bound_amount_cents=10_000
+            )
+        slack.assert_not_awaited()
+        self.assertNotIn(call(7, telegram_sent=True), save.call_args_list)
+
+    async def test_slack_failure_retries_without_a_second_telegram(self):
+        with (
+            patch.object(
+                ref,
+                "_fetch_deposit_snapshot",
+                side_effect=[_snap(), _snap(telegram_sent=True)],
+            ),
+            patch.object(ref, "_save_deposit_flags"),
+            patch.object(
+                ref,
+                "_deliver_referrer_message",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as telegram,
+            patch.object(
+                ref,
+                "_post_referral_deposit_slack",
+                new_callable=AsyncMock,
+                side_effect=[False, True],
+            ) as slack,
+            patch(
+                "bot.services.escalation_notification.escalation_notification_enabled",
+                return_value=True,
+            ),
+        ):
+            await ref.maybe_notify_referral_deposit(
+                -2002, already_over_counts=False, bound_amount_cents=10_000
+            )
+            await ref.maybe_notify_referral_deposit(
+                -2002, already_over_counts=False, bound_amount_cents=1000
+            )
+        self.assertEqual(telegram.await_count, 1)
+        self.assertEqual(slack.await_count, 2)
+
+
+class ReferralDepositSlackTextTest(unittest.TestCase):
+    @patch(
+        "bot.services.escalation_notification._club_display_name",
+        return_value="Round Table",
+    )
+    def test_shape(self, _club):
+        from bot.services.escalation_notification import (
+            format_referral_deposit_slack_text,
+        )
+
+        text = format_referral_deposit_slack_text(
+            club_id=1,
+            chat_id=-1001,
+            title="RT / 2342-4223 / Sam",
+            referred_player_id="8190-5287",
+        )
+        self.assertEqual(
+            text,
+            "*Referral deposit complete — add 30 credits.*\n"
+            "Club: Round Table\n"
+            "`RT / 2342-4223 / Sam`\n"
+            "Referred player: 8190-5287\n"
+            "Amount: $30",
+        )
 
 
 if __name__ == "__main__":
