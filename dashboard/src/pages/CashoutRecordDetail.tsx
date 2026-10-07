@@ -90,16 +90,16 @@ function choiceFromPayment(p: StaffCashoutPaymentT): MethodChoice {
   }
 }
 
-/** Default method for a new money-sent row: the cashout's first destination. */
+/** Default method for a new money-sent row: the cashout's destination, only when exactly one is listed. */
 function defaultSendChoice(record: StaffCashoutRecordT): MethodChoice {
-  const first = [...record.payments].sort((a, b) => a.sort_order - b.sort_order)[0]
-  return first ? choiceFromPayment(first) : emptyChoice()
+  return record.payments.length === 1 ? choiceFromPayment(record.payments[0]) : emptyChoice()
 }
 
-/** Default amount for a new money-sent row: whatever is still owed. */
+/** Default amount for a new money-sent row: the full cashout amount, only on the first add. */
 function defaultSendAmount(record: StaffCashoutRecordT): string {
-  const remaining = Number(record.remaining)
-  return Number.isFinite(remaining) && remaining > 0 ? remaining.toFixed(2) : ''
+  if (record.sends.length > 0) return ''
+  const amount = Number(record.amount)
+  return Number.isFinite(amount) && amount > 0 ? amount.toFixed(2) : ''
 }
 
 const SENDING_ACCOUNTS = ['RTsupport', 'Widget', 'Vaughn'] as const
