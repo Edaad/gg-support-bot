@@ -21,6 +21,7 @@ from bot.services.unread_group_alert import (
     format_unread_alert,
     note_incoming,
     note_inbox_read,
+    note_outgoing,
     ready_to_evaluate,
     step_after_send,
     visible_unreads,
@@ -82,6 +83,21 @@ class ReadStateTests(unittest.TestCase):
         self.assertTrue(note_incoming(live, 2, from_bot=False))
         self.assertFalse(live.latest_from_bot)
         self.assertEqual(live.unread_count, 2)
+
+    def test_admin_send_clears_unread(self) -> None:
+        live = LiveDialog(
+            unread_count=5,
+            title="CC / 9181-4972 / rycu6148",
+            archived=False,
+            top_message_id=10,
+            latest_from_bot=False,
+        )
+        self.assertTrue(note_outgoing(live, 11, live.title))
+        self.assertEqual(live.unread_count, 0)
+        self.assertTrue(live.latest_from_self)
+        self.assertTrue(note_incoming(live, 12, from_bot=False))
+        self.assertFalse(live.latest_from_self)
+        self.assertEqual(live.unread_count, 1)
 
 
 class AlertActionTests(unittest.TestCase):
@@ -201,6 +217,15 @@ class VisibleUnreadTests(unittest.TestCase):
             visible_unreads(groups, dialogs, {"round_table"}),
             [("round_table", "Player chat")],
         )
+
+    def test_admin_reply_is_left_out_of_the_sum(self) -> None:
+        groups = [_group(1, "creator_club", name="CC player")]
+        dialogs = {
+            ("creator_club", 1): DialogSnap(
+                5, "CC player", archived=False, latest_from_self=True
+            ),
+        }
+        self.assertEqual(visible_unreads(groups, dialogs, {"creator_club"}), [])
 
     def test_archived_chat_included(self) -> None:
         groups = [_group(1, "round_table", name="Fallback")]

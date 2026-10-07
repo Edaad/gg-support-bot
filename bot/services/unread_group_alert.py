@@ -69,6 +69,7 @@ class DialogSnap:
     title: str
     archived: bool
     latest_from_bot: bool = False
+    latest_from_self: bool = False
 
 
 @dataclass
@@ -79,6 +80,7 @@ class LiveDialog:
     top_message_id: int
     read_inbox_max_id: int = 0
     latest_from_bot: bool = False
+    latest_from_self: bool = False
 
     def snap(self) -> DialogSnap:
         return DialogSnap(
@@ -86,6 +88,7 @@ class LiveDialog:
             title=self.title,
             archived=self.archived,
             latest_from_bot=self.latest_from_bot,
+            latest_from_self=self.latest_from_self,
         )
 
 
@@ -136,11 +139,34 @@ def note_incoming(
         return False
     live.top_message_id = message_id
     bot_changed = live.latest_from_bot != from_bot
+    self_changed = live.latest_from_self
     live.latest_from_bot = from_bot
+    live.latest_from_self = False
     if message_id <= live.read_inbox_max_id:
-        return bot_changed
+        return bot_changed or self_changed
     live.unread_count += 1
     return True
+
+
+def note_outgoing(live: LiveDialog, message_id: int, title: str = "") -> bool:
+    """The club account sent this message, so the chat is no longer unread."""
+
+    if title:
+        live.title = title
+    if message_id < live.top_message_id:
+        return False
+    changed = (
+        live.unread_count != 0
+        or live.latest_from_bot
+        or not live.latest_from_self
+        or message_id > live.top_message_id
+    )
+    live.top_message_id = message_id
+    live.read_inbox_max_id = max(live.read_inbox_max_id, message_id)
+    live.unread_count = 0
+    live.latest_from_bot = False
+    live.latest_from_self = True
+    return changed
 
 
 def note_inbox_read(live: LiveDialog, max_id: int, still_unread: int) -> bool:
@@ -263,7 +289,12 @@ def visible_unreads(
         if group.club_key not in ready_clubs or group.is_internal:
             continue
         snap = dialogs.get((group.club_key, group.chat_id))
-        if snap is None or snap.unread_count < 1 or snap.latest_from_bot:
+        if (
+            snap is None
+            or snap.unread_count < 1
+            or snap.latest_from_bot
+            or snap.latest_from_self
+        ):
             continue
         rows.append((group.club_display_name, display_title(snap.title, group.name)))
     rows.sort(key=lambda row: (row[0].casefold(), row[1].casefold()))
@@ -357,12 +388,19 @@ def attach_client(client: TelegramClient, cfg: ClubGcConfig) -> None:
     async def _on_message(event: events.NewMessage.Event) -> None:
         await _handle_incoming(club_key, event)
 
+    async def _on_outgoing(event: events.NewMessage.Event) -> None:
+        await _handle_outgoing(club_key, event)
+
     async def _on_raw(update: Any) -> None:
         await _handle_raw(club_key, update)
 
     client.add_event_handler(
         _on_message,
         events.NewMessage(incoming=True, func=lambda event: not event.is_private),
+    )
+    client.add_event_handler(
+        _on_outgoing,
+        events.NewMessage(outgoing=True, func=lambda event: not event.is_private),
     )
     client.add_event_handler(_on_raw, events.Raw)
     task = asyncio.create_task(
@@ -431,13 +469,20 @@ async def _collect_dialogs(
                 continue
             raw = dialog.dialog
             top = int(getattr(raw, "top_message", 0) or 0)
+            message = dialog.message
+            outgoing = bool(getattr(message, "out", False))
             found[int(dialog.id)] = LiveDialog(
-                unread_count=int(dialog.unread_count or 0),
+                unread_count=0 if outgoing else int(dialog.unread_count or 0),
                 title=(dialog.title or "").strip(),
                 archived=bool(dialog.archived),
                 top_message_id=top,
                 read_inbox_max_id=int(getattr(raw, "read_inbox_max_id", 0) or 0),
-                latest_from_bot=sender_is_bot(getattr(dialog.message, "sender", None)),
+                latest_from_bot=(
+                    False
+                    if outgoing
+                    else sender_is_bot(getattr(message, "sender", None))
+                ),
+                latest_from_self=outgoing,
             )
     return found
 
@@ -573,6 +618,41 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
         schedule_evaluate()
 
 
+async def _handle_outgoing(club_key: str, event: events.NewMessage.Event) -> None:
+    if _stopped or club_key not in _ready or event.is_private:
+        return
+    chat_id = event.chat_id
+    message_id = getattr(event, "id", None)
+    if chat_id is None or message_id is None:
+        return
+    title = ""
+    chat = getattr(event, "chat", None)
+    if chat is not None:
+        title = (getattr(chat, "title", None) or "").strip()
+    changed = False
+    unread_now = 0
+    logged_title = title
+    async with _lock_for():
+        if _stopped or club_key not in _ready:
+            return
+        dialogs = _dialogs.setdefault(club_key, {})
+        current = dialogs.get(int(chat_id))
+        if current is None:
+            return
+        changed = note_outgoing(current, int(message_id), title)
+        unread_now = current.unread_count
+        logged_title = current.title
+    if changed:
+        logger.info(
+            "unread_group_alert: outgoing club=%s chat_id=%s unread=%s title=%s",
+            club_key,
+            int(chat_id),
+            unread_now,
+            logged_title,
+        )
+        schedule_evaluate()
+
+
 async def _handle_raw(club_key: str, update: Any) -> None:
     if _stopped or club_key not in _ready:
         return
@@ -697,7 +777,9 @@ async def _evaluate() -> None:
             for club_key, dialogs in _dialogs.items()
             if club_key in ready
             for chat_id, live in dialogs.items()
-            if live.unread_count >= 1 and not live.latest_from_bot
+            if live.unread_count >= 1
+            and not live.latest_from_bot
+            and not live.latest_from_self
         ]
     logger.info(
         "unread_group_alert: count=%s threshold=%s %s",
