@@ -7,7 +7,16 @@ import json
 import os
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import Response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -619,9 +628,7 @@ async def service_reconcile_export(
         ...,
         description="Exactly four Trade Record .xlsx files (RT, AT, GTO, CC)",
     ),
-    x_audit_export_secret: str | None = Header(
-        None, alias=AUDIT_EXPORT_SECRET_HEADER
-    ),
+    x_audit_export_secret: str | None = Header(None, alias=AUDIT_EXPORT_SECRET_HEADER),
     db: Session = Depends(get_db_dependency),
 ):
     """Ingest four trade records and return the all-clubs reconcile workbook."""
