@@ -34,6 +34,7 @@ BACKOFF_BASE_MINUTES = 5
 BACKOFF_CAP_MINUTES = 30
 FAILED_RETRY_SEC = 30.0
 PUSHOVER_MAX_LEN = 1024
+ESCALATION_SOURCE = "unread_group_alert"
 
 _clients: dict[str, TelegramClient] = {}
 _dialogs: dict[str, dict[int, "LiveDialog"]] = {}
@@ -602,6 +603,61 @@ async def _evaluate() -> None:
     except FloodWaitError as exc:
         logger.warning("unread_group_alert: fill flood wait seconds=%s", exc.seconds)
         _schedule_timer(float(exc.seconds) + 1.0, replace=True)
+        return
+    async with _lock_for():
+        connected, ready = _connected_and_ready()
+        if not ready_to_evaluate(connected, ready):
+            return
+        rows = visible_unreads(
+            _group_list(tracked),
+            _dialog_index(),
+            ready,
+        )
+    if len(rows) >= THRESHOLD:
+        try:
+            await _refresh_unread(connected)
+        except FloodWaitError as exc:
+            logger.warning(
+                "unread_group_alert: refresh flood wait seconds=%s", exc.seconds
+            )
+            _schedule_timer(float(exc.seconds) + 1.0, replace=True)
+            return
+        async with _lock_for():
+            connected, ready = _connected_and_ready()
+            if not ready_to_evaluate(connected, ready):
+                return
+            rows = visible_unreads(
+                _group_list(tracked),
+                _dialog_index(),
+                ready,
+            )
+    count = len(rows)
+    now = datetime.now(timezone.utc)
+    last_sent, step = await asyncio.to_thread(load_alert_control)
+    delay = timedelta(minutes=backoff_delay_minutes(step))
+    action = alert_action(count, last_sent, now, delay)
+    if action == "hold":
+        _cancel_timer()
+        return
+    if action == "wait":
+        assert last_sent is not None
+        remaining = delay - (now - as_utc(last_sent))
+        _ensure_timer(max(remaining.total_seconds(), 1.0))
+        return
+    message = format_unread_alert(count, [title for _club, title in rows])
+    if not await _post_escalation(message):
+        logger.warning("unread_group_alert: escalation post failed count=%s", count)
+        _schedule_timer(FAILED_RETRY_SEC, replace=True)
+        return
+    next_step = 0 if last_sent is None else step_after_send(step)
+    wait_minutes = backoff_delay_minutes(next_step)
+    await asyncio.to_thread(save_alert_control, now, next_step)
+    logger.info(
+        "unread_group_alert: sent count=%s next_minutes=%s",
+        count,
+        wait_minutes,
+    )
+    _schedule_timer(wait_minutes * 60, replace=True)
 
 
 def _group_list(tracked: dict[str, dict[int, GroupRow]]) -> list[GroupRow]:
@@ -873,3 +929,9 @@ def save_alert_control(last_sent_at: datetime | None, backoff_step: int) -> None
         row.last_sent_at = last_sent_at
         row.backoff_step = int(backoff_step)
         session.commit()
+
+
+async def _post_escalation(message: str) -> bool:
+    from bot.services.slack_ops_notify import notify_slack_escalation
+
+    return await notify_slack_escalation(message, source=ESCALATION_SOURCE)
