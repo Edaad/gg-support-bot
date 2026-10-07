@@ -73,6 +73,44 @@ function choiceFromSend(s: StaffCashoutSendT): MethodChoice {
   }
 }
 
+function choiceFromPayment(p: StaffCashoutPaymentT): MethodChoice {
+  if (p.payment_method_id == null) {
+    return {
+      custom: true,
+      payment_method_id: null,
+      payment_sub_option_id: null,
+      custom_name: p.method_display_name || '',
+    }
+  }
+  return {
+    custom: false,
+    payment_method_id: p.payment_method_id,
+    payment_sub_option_id: p.payment_sub_option_id,
+    custom_name: '',
+  }
+}
+
+/** Default method for a new money-sent row: the cashout's destination, only when exactly one is listed. */
+function defaultSendChoice(record: StaffCashoutRecordT): MethodChoice {
+  return record.payments.length === 1 ? choiceFromPayment(record.payments[0]) : emptyChoice()
+}
+
+/** Default amount for a new money-sent row: the full cashout amount, only on the first add. */
+function defaultSendAmount(record: StaffCashoutRecordT): string {
+  if (record.sends.length > 0) return ''
+  const amount = Number(record.amount)
+  return Number.isFinite(amount) && amount > 0 ? amount.toFixed(2) : ''
+}
+
+const SENDING_ACCOUNTS = ['RTsupport', 'Widget', 'Vaughn'] as const
+type SenderPick = (typeof SENDING_ACCOUNTS)[number] | 'other' | ''
+
+function senderPickFromName(name: string): SenderPick {
+  const t = name.trim().toLowerCase()
+  if (!t) return ''
+  return SENDING_ACCOUNTS.find((a) => a.toLowerCase() === t) ?? 'other'
+}
+
 function payoutHref(raw: string): string | null {
   const t = raw.trim()
   if (/^https?:\/\//i.test(t)) return t
@@ -261,6 +299,7 @@ export default function CashoutRecordDetail({
   const [sendOpen, setSendOpen] = useState(false)
   const [sendEdit, setSendEdit] = useState<StaffCashoutSendT | null>(null)
   const [sendChoice, setSendChoice] = useState<MethodChoice>(emptyChoice())
+  const [sendSender, setSendSender] = useState<SenderPick>('')
   const [sendName, setSendName] = useState('')
   const [sendAmount, setSendAmount] = useState('')
   const [sendNotify, setSendNotify] = useState(false)
@@ -337,10 +376,14 @@ export default function CashoutRecordDetail({
   }
 
   const openSend = (s?: StaffCashoutSendT) => {
+    if (!record) return
     setSendEdit(s ?? null)
-    setSendChoice(s ? choiceFromSend(s) : emptyChoice())
-    setSendName(s?.sender_name || '')
-    setSendAmount(s ? String(s.amount) : '')
+    setSendChoice(s ? choiceFromSend(s) : defaultSendChoice(record))
+    const pick = s ? senderPickFromName(s.sender_name) : ''
+    setSendSender(pick)
+    setSendName(pick === 'other' && s ? s.sender_name : '')
+    setSendAmount(s ? String(s.amount) : defaultSendAmount(record))
+    setError(null)
     setSendNotify(!s && Boolean(record?.chat_connected))
     setSendProof(null)
     setSendProofLink('')
@@ -471,8 +514,17 @@ export default function CashoutRecordDetail({
   const saveSend = async () => {
     if (!record) return
     const amount = parseMoney(sendAmount)
-    if (!sendName.trim() || !amount || amount <= 0) {
-      setError('Name and amount are required')
+    const senderName = sendSender === 'other' ? sendName.trim() : sendSender
+    if (!senderName) {
+      setError(
+        sendSender === 'other'
+          ? 'Enter the name of the sending account'
+          : 'Sending account is required',
+      )
+      return
+    }
+    if (!amount || amount <= 0) {
+      setError('Amount is required')
       return
     }
     const methodError = validateMethodChoice(sendChoice, methods, ['Chips'])
@@ -494,7 +546,7 @@ export default function CashoutRecordDetail({
     }
     const payload = {
       ...choicePayload(sendChoice),
-      sender_name: sendName.trim(),
+      sender_name: senderName,
       amount,
     }
     const crypto = isCryptoChoice(sendChoice, methods)
@@ -868,14 +920,39 @@ export default function CashoutRecordDetail({
         title={sendEdit ? 'Edit Money Sent' : 'Add Money Sent'}
       >
         <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-muted">Name</label>
-            <input
-              value={sendName}
-              onChange={(e) => setSendName(e.target.value)}
-              placeholder="Sending account"
-              className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-            />
+          <div className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+              Sending account
+            </p>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Sending account">
+              {[...SENDING_ACCOUNTS, 'other' as const].map((opt) => {
+                const on = sendSender === opt
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setSendSender(opt)}
+                    className={
+                      on
+                        ? 'inline-flex items-center rounded-full border border-accent bg-accent/12 px-3 py-2 text-sm font-medium text-accent'
+                        : 'inline-flex items-center rounded-full border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-ink hover:bg-control'
+                    }
+                  >
+                    {opt === 'other' ? 'Other' : opt}
+                  </button>
+                )
+              })}
+            </div>
+            {sendSender === 'other' && (
+              <input
+                value={sendName}
+                onChange={(e) => setSendName(e.target.value)}
+                placeholder="Sending account name"
+                autoFocus
+                className="w-full rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              />
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-muted">Amount</label>
