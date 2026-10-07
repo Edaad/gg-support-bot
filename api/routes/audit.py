@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hmac
 import json
+import os
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -75,8 +77,11 @@ router = APIRouter(
     tags=["audit"],
     dependencies=[Depends(get_current_admin)],
 )
+service_router = APIRouter(prefix="/api/audit/service", tags=["audit"])
 
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+AUDIT_EXPORT_WEBHOOK_SECRET_ENV = "AUDIT_EXPORT_WEBHOOK_SECRET"
+AUDIT_EXPORT_SECRET_HEADER = "x-audit-export-secret"
 
 
 def _parse_audit_date(raw: str) -> date:
@@ -251,18 +256,21 @@ def _report_to_schema(report: AuditReconcileReport) -> AuditReconcileReportSchem
     )
 
 
-@router.post(
-    "/trade-records/upload-all",
-    response_model=list[TradeRecordUploadReport],
-)
-async def upload_all_trade_records(
-    files: list[UploadFile] = File(
-        ...,
-        description="Exactly four Trade Record .xlsx files (RT, AT, GTO, CC)",
-    ),
-    db: Session = Depends(get_db_dependency),
-):
-    """Parse four files, validate clubs + same audit day, then persist all."""
+def _verify_audit_export_secret(secret: str | None) -> None:
+    expected = (os.getenv(AUDIT_EXPORT_WEBHOOK_SECRET_ENV) or "").strip()
+    if not expected:
+        raise HTTPException(
+            503,
+            f"{AUDIT_EXPORT_WEBHOOK_SECRET_ENV} is not configured on the server",
+        )
+    got = (secret or "").strip().encode()
+    if not hmac.compare_digest(got, expected.encode()):
+        raise HTTPException(401, "Invalid webhook secret")
+
+
+async def _parsed_four_trade_files(
+    files: list[UploadFile],
+) -> list[tuple[str, TradeRecordParseResult]]:
     if len(files) != 4:
         raise HTTPException(
             400,
@@ -286,13 +294,18 @@ async def upload_all_trade_records(
         except TradeRecordParseError as exc:
             raise HTTPException(400, f"{filename}: {exc}") from exc
         parsed_with_names.append((filename, parsed))
+    return parsed_with_names
 
+
+def _commit_four_trade_uploads(
+    db: Session,
+    parsed_with_names: list[tuple[str, TradeRecordParseResult]],
+) -> list[TradeRecordUploadReport]:
     try:
         by_slug = validate_all_clubs_trade_uploads([p for _, p in parsed_with_names])
     except TradeRecordValidationError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    # Preserve filename associated with each slug
     filename_by_slug: dict[str, str] = {}
     for filename, parsed in parsed_with_names:
         filename_by_slug[parsed.club_slug] = filename
@@ -311,8 +324,43 @@ async def upload_all_trade_records(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "Upload conflict for this club and date") from exc
-
     return reports
+
+
+def _matching_workbook_bytes(db: Session, parsed_date: date) -> bytes:
+    missing = _missing_trade_upload_slugs(db, parsed_date)
+    if missing:
+        labels = [CLUB_SLUG_TO_NAME.get(s, s) for s in missing]
+        raise HTTPException(
+            400,
+            "All clubs export requires trade uploads for: " + ", ".join(labels),
+        )
+
+    reports_by_slug: dict[str, AuditReconcileReport] = {}
+    for unit_slug in ALL_CLUBS_RECONCILE_UNITS:
+        reports_by_slug[unit_slug] = run_audit_reconcile(
+            db,
+            club_slug=unit_slug,
+            audit_date=parsed_date,
+            persist=False,
+        )
+    return build_all_clubs_matching_workbook(reports_by_slug)
+
+
+@router.post(
+    "/trade-records/upload-all",
+    response_model=list[TradeRecordUploadReport],
+)
+async def upload_all_trade_records(
+    files: list[UploadFile] = File(
+        ...,
+        description="Exactly four Trade Record .xlsx files (RT, AT, GTO, CC)",
+    ),
+    db: Session = Depends(get_db_dependency),
+):
+    """Parse four files, validate clubs + same audit day, then persist all."""
+    parsed_with_names = await _parsed_four_trade_files(files)
+    return _commit_four_trade_uploads(db, parsed_with_names)
 
 
 @router.get("/trade-records", response_model=list[TradeRecordUploadSummary])
@@ -556,25 +604,32 @@ def export_reconcile_all_clubs(
 ):
     """Matching-only workbook for Round Table, Aces Table, ClubGTO, and Creator Club."""
     parsed_date = _parse_audit_date(audit_date)
-    missing = _missing_trade_upload_slugs(db, parsed_date)
-    if missing:
-        labels = [CLUB_SLUG_TO_NAME.get(s, s) for s in missing]
-        raise HTTPException(
-            400,
-            "All clubs export requires trade uploads for: " + ", ".join(labels),
-        )
-
-    reports_by_slug: dict[str, AuditReconcileReport] = {}
-    for unit_slug in ALL_CLUBS_RECONCILE_UNITS:
-        reports_by_slug[unit_slug] = run_audit_reconcile(
-            db,
-            club_slug=unit_slug,
-            audit_date=parsed_date,
-            persist=False,
-        )
-
-    content = build_all_clubs_matching_workbook(reports_by_slug)
+    content = _matching_workbook_bytes(db, parsed_date)
     filename = f"reconcile-all-clubs-{parsed_date.isoformat()}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@service_router.post("/reconcile-export")
+async def service_reconcile_export(
+    files: list[UploadFile] = File(
+        ...,
+        description="Exactly four Trade Record .xlsx files (RT, AT, GTO, CC)",
+    ),
+    x_audit_export_secret: str | None = Header(
+        None, alias=AUDIT_EXPORT_SECRET_HEADER
+    ),
+    db: Session = Depends(get_db_dependency),
+):
+    """Ingest four trade records and return the all-clubs reconcile workbook."""
+    _verify_audit_export_secret(x_audit_export_secret)
+    parsed_with_names = await _parsed_four_trade_files(files)
+    reports = _commit_four_trade_uploads(db, parsed_with_names)
+    content = _matching_workbook_bytes(db, reports[0].audit_date)
+    filename = f"reconcile-all-clubs-{reports[0].audit_date.isoformat()}.xlsx"
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
