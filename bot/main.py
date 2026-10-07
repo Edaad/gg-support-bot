@@ -146,6 +146,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         schedule_response_audit_heartbeat_job(app)
 
+        from bot.services.gto_zelle_night import schedule_gto_zelle_night_window_job
+
+        schedule_gto_zelle_night_window_job(app)
+
 
 async def _post_shutdown_dm_gc_listener(app, *, test_mode: bool = False):
     if test_mode:

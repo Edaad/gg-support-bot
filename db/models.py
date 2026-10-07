@@ -465,6 +465,8 @@ class ClubPaymentTierVariant(Base):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     paused_until = Column(DateTime(timezone=True), nullable=True)
+    # Eastern date a head admin turned this tag back on during the night window.
+    night_release_on = Column(Date, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
     response_type = Column(
         String(10),

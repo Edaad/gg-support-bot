@@ -94,10 +94,12 @@ def variant_is_active(variant) -> bool:
     Weight is only the share among active variants. A missing flag counts as
     active so older callers that do not set it keep the previous default.
     A paused_until still in the future keeps the variant out of rotation.
+    The ClubGTO Zelle night window keeps that tag out until 2:00am Eastern.
     """
+    from bot.services.gto_zelle_night import night_window_suppressed
     from bot.services.variant_pause import pause_deadline
 
-    if pause_deadline(variant) is not None:
+    if night_window_suppressed(variant) or pause_deadline(variant) is not None:
         return False
     if isinstance(variant, dict):
         flag = variant.get("is_active", True)

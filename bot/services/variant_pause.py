@@ -51,6 +51,9 @@ def pause_deadline(variant, now: datetime | None = None) -> datetime | None:
 
 def release_expired_variant_pauses(session: Session) -> None:
     """Turn variants back on once paused_until has passed."""
+    from bot.services.gto_zelle_night import sync_gto_zelle_night_window
+
+    sync_gto_zelle_night_window(session)
     now = datetime.now(timezone.utc)
     rows = (
         session.query(ClubPaymentTierVariant)
@@ -72,6 +75,10 @@ def release_expired_variant_pauses(session: Session) -> None:
 
 
 def card_state(variant, now: datetime | None = None) -> str:
+    from bot.services.gto_zelle_night import night_window_suppressed
+
+    if night_window_suppressed(variant, now):
+        return "disabled"
     if pause_deadline(variant, now) is not None:
         return "paused"
     flag = (
@@ -192,9 +199,13 @@ def pause_gto_zelle_variant(
 def resume_gto_zelle_variant(
     session: Session, variant_id: int, now: datetime | None = None
 ) -> dict:
+    from bot.services.gto_zelle_night import night_window_suppressed
+
     variant = _gto_zelle_variant(session, variant_id)
     if variant is None:
         raise LookupError("Variant not found")
+    if night_window_suppressed(variant, now):
+        raise ValueError("Variant is not paused")
     apply_resume(variant, now)
     session.flush()
     cards = build_gto_zelle_cards(gto_zelle_rows(session), now)

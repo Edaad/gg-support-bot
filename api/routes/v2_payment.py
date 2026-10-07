@@ -646,6 +646,12 @@ def update_variant(
     tier = _get_tier(db, variant.tier_id)
     data = body.model_dump(exclude_unset=True)
     clear_pause_if_active_flag_saved(data)
+    from bot.services.gto_zelle_night import guard_night_window_activation
+
+    try:
+        guard_night_window_activation(variant, data, _v2_role.get())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if is_primary_tier(tier, list(method.tiers or [])):
         data.pop("checkout_min_amount", None)
     if "weight" in data and data["weight"] < 0:
