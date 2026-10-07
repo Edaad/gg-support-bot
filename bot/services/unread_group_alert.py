@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -30,6 +31,7 @@ from club_gc_settings import CLUB_GC_CONFIG, ClubGcConfig
 logger = logging.getLogger(__name__)
 
 THRESHOLD = 5
+THRESHOLD_ENV = "GC_UNREAD_GROUP_ALERT_THRESHOLD"
 BACKOFF_BASE_MINUTES = 5
 BACKOFF_CAP_MINUTES = 30
 FAILED_RETRY_SEC = 30.0
@@ -191,6 +193,18 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def unread_alert_threshold() -> int:
+    """Groups required before the Slack alert. ``GC_UNREAD_GROUP_ALERT_THRESHOLD``, default 5."""
+
+    raw = os.getenv(THRESHOLD_ENV)
+    if raw is None or not str(raw).strip():
+        return THRESHOLD
+    try:
+        return max(1, int(str(raw).strip()))
+    except ValueError:
+        return THRESHOLD
+
+
 def ready_to_evaluate(connected: set[str], ready: set[str]) -> bool:
     """True once every club connected in this cycle has finished its snapshot."""
 
@@ -220,7 +234,7 @@ def alert_action(
     The gap is not cleared when the count falls below 5.
     """
 
-    if count < THRESHOLD:
+    if count < unread_alert_threshold():
         return "hold"
     if last_sent_at is None:
         return "send"
@@ -396,6 +410,12 @@ async def _snapshot_once(client: TelegramClient, cfg: ClubGcConfig) -> None:
         _dialogs[cfg.club_key] = found
         _absent[cfg.club_key] = wanted - set(found)
         _ready.add(cfg.club_key)
+    logger.info(
+        "unread_group_alert: snapshot club=%s dialogs=%s absent=%s",
+        cfg.club_key,
+        len(found),
+        len(wanted - set(found)),
+    )
     schedule_evaluate()
 
 
@@ -503,6 +523,7 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
         title = (getattr(chat, "title", None) or "").strip()
     from_bot = sender_is_bot(getattr(event, "sender", None))
     changed = False
+    logged: tuple[int, int, str, bool] | None = None
     async with _lock_for():
         if _stopped or club_key not in _ready:
             return
@@ -524,8 +545,30 @@ async def _handle_incoming(club_key: str, event: events.NewMessage.Event) -> Non
             note_incoming(created, int(message_id), title, from_bot=from_bot)
             dialogs[int(chat_id)] = created
             changed = True
+            logged = (
+                int(chat_id),
+                created.unread_count,
+                created.title,
+                created.latest_from_bot,
+            )
         else:
             changed = note_incoming(current, int(message_id), title, from_bot=from_bot)
+            if changed:
+                logged = (
+                    int(chat_id),
+                    current.unread_count,
+                    current.title,
+                    current.latest_from_bot,
+                )
+    if logged is not None:
+        logger.info(
+            "unread_group_alert: incoming club=%s chat_id=%s unread=%s from_bot=%s title=%s",
+            club_key,
+            logged[0],
+            logged[1],
+            logged[3],
+            logged[2],
+        )
     if changed:
         schedule_evaluate()
 
@@ -554,8 +597,24 @@ async def _handle_raw(club_key: str, update: Any) -> None:
             return
         current = _dialogs.get(club_key, {}).get(chat_id)
         if current is None:
+            logger.info(
+                "unread_group_alert: read club=%s chat_id=%s still=%s matched=0",
+                club_key,
+                chat_id,
+                still,
+            )
             return
         changed = note_inbox_read(current, max_id, still)
+        title = current.title
+        unread_now = current.unread_count
+    logger.info(
+        "unread_group_alert: read club=%s chat_id=%s still=%s unread=%s title=%s",
+        club_key,
+        chat_id,
+        still,
+        unread_now,
+        title,
+    )
     if changed:
         schedule_evaluate()
 
@@ -613,7 +672,7 @@ async def _evaluate() -> None:
             _dialog_index(),
             ready,
         )
-    if len(rows) >= THRESHOLD:
+    if len(rows) >= unread_alert_threshold():
         try:
             await _refresh_unread(connected)
         except FloodWaitError as exc:
@@ -632,6 +691,20 @@ async def _evaluate() -> None:
                 ready,
             )
     count = len(rows)
+    async with _lock_for():
+        details = [
+            f"{club_key} {chat_id} unread={live.unread_count} from_bot={live.latest_from_bot} {live.title}"
+            for club_key, dialogs in _dialogs.items()
+            if club_key in ready
+            for chat_id, live in dialogs.items()
+            if live.unread_count >= 1 and not live.latest_from_bot
+        ]
+    logger.info(
+        "unread_group_alert: count=%s threshold=%s %s",
+        count,
+        unread_alert_threshold(),
+        " | ".join(details),
+    )
     now = datetime.now(timezone.utc)
     last_sent, step = await asyncio.to_thread(load_alert_control)
     delay = timedelta(minutes=backoff_delay_minutes(step))

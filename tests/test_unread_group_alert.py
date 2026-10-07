@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from bot.services import unread_group_alert as unread
 from bot.services.unread_group_alert import (
     THRESHOLD,
+    THRESHOLD_ENV,
     DialogSnap,
     GroupRow,
     LiveDialog,
@@ -113,6 +116,17 @@ class AlertActionTests(unittest.TestCase):
             delays.append(backoff_delay_minutes(step))
             step = step_after_send(step)
         self.assertEqual(delays, [5, 10, 20, 30, 5, 10])
+
+    def test_threshold_defaults_to_five_and_reads_env(self) -> None:
+        from bot.services.unread_group_alert import unread_alert_threshold
+
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop(THRESHOLD_ENV, None)
+            self.assertEqual(unread_alert_threshold(), 5)
+        with patch.dict("os.environ", {THRESHOLD_ENV: "8"}):
+            self.assertEqual(unread_alert_threshold(), 8)
+        with patch.dict("os.environ", {THRESHOLD_ENV: "nope"}):
+            self.assertEqual(unread_alert_threshold(), 5)
 
 
 class StartupGateTests(unittest.TestCase):
