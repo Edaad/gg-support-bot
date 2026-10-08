@@ -395,7 +395,7 @@ class DestinationStickinessPickTests(unittest.TestCase):
 
         self.assertTrue(dep._stripe_checkout_enabled(response_data))
 
-    def test_venmo_uses_linking_variant_when_no_display_sticky(self):
+    def test_venmo_ignores_linking_variant_and_uses_weight(self):
         binding = SimpleNamespace(variant_id=31)
         with (
             patch.object(dep, "get_tier_for_amount", return_value=OVER_TIER),
@@ -406,7 +406,9 @@ class DestinationStickinessPickTests(unittest.TestCase):
             ),
             patch.object(dep, "get_destination_stickiness", return_value=None),
             patch.object(dep, "get_chat_binding", return_value=binding),
-            patch.object(dep, "_pick_weighted_variant_dicts") as pick_mock,
+            patch.object(
+                dep, "_pick_weighted_variant_dicts", return_value=dict(VENMO_B)
+            ) as pick_mock,
         ):
             response_data, _tier = dep._pick_deposit_variant_response(
                 5,
@@ -416,8 +418,10 @@ class DestinationStickinessPickTests(unittest.TestCase):
                 method_slug="venmo",
             )
 
-        pick_mock.assert_not_called()
-        self.assertEqual(response_data.get("variant_id"), 31)
+        pick_mock.assert_called_once()
+        picked = pick_mock.call_args[0][0]
+        self.assertEqual([v["variant_id"] for v in picked], [31, 32])
+        self.assertEqual(response_data.get("variant_id"), 32)
 
     def test_venmo_ignores_display_sticky(self):
         sticky = SimpleNamespace(destination_tag="@alice", variant_id=31)

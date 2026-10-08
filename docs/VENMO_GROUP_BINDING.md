@@ -2,9 +2,9 @@
 
 For the **full Venmo flow** (payment tracking, manual bind, and how setup connects to Zapier ingest), see [`VENMO_FLOW.md`](VENMO_FLOW.md).
 
-Before a support group can use a configured deposit method in `/deposit`, the chat may need a **one-time link** step. After linking, deposits use the sticky variant that was confirmed during setup.
+Before a support group can use a configured deposit method in `/deposit`, the chat may need a **one-time link** step. After linking, Venmo picks a weighted active handle in the amount tier. Zelle keeps showing the variant confirmed during setup.
 
-**Multiple accounts per group:** One player may use more than one Venmo or Zelle account with the same support group. Each payer name is remembered separately for auto-bind on future payments. The group keeps one sticky deposit variant after the first successful link.
+**Multiple accounts per group:** One player may use more than one Venmo or Zelle account with the same support group. Each payer name is remembered separately for auto-bind on future payments. Zelle keeps that one deposit variant after the first successful link. Venmo picks by weight on each deposit.
 
 - **First account on an unbound group:** `/deposit` → Venmo/Zelle runs first-time setup automatically.
 - **Already linked:** `/deposit` → Venmo/Zelle shows normal deposit instructions.

@@ -1038,22 +1038,6 @@ def _pick_venmo_cashapp_destination_response(
         return None, tier
 
     if native:
-        if slug == "venmo" and chat_id is not None:
-            binding = get_chat_binding(int(chat_id), slug)
-            if binding and binding.variant_id:
-                linked = next(
-                    (
-                        v
-                        for v in native
-                        if int(v.get("variant_id") or 0) == int(binding.variant_id)
-                    ),
-                    None,
-                )
-                if linked:
-                    return (
-                        _merged_deposit_variant_response(linked, method, tier=tier),
-                        tier,
-                    )
         chosen = _pick_weighted_variant_dicts(native)
         if chosen:
             return (

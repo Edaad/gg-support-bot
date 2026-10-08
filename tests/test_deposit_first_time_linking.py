@@ -160,7 +160,7 @@ class PickDepositVariantTestCase(unittest.TestCase):
         native_ids = [v["variant_id"] for v in pick_mock.call_args[0][0]]
         self.assertEqual(native_ids, [21])
 
-    def test_venmo_still_uses_linking_binding_when_no_display_sticky(self):
+    def test_venmo_ignores_linking_binding_and_uses_weight(self):
         binding = SimpleNamespace(variant_id=99)
         venmo_method = {**METHOD, "slug": "venmo", "name": "Venmo"}
         linked = {
@@ -182,7 +182,9 @@ class PickDepositVariantTestCase(unittest.TestCase):
             patch.object(dep, "list_tier_variants", return_value=[linked, other]),
             patch.object(dep, "get_destination_stickiness", return_value=None),
             patch.object(dep, "get_chat_binding", return_value=binding),
-            patch.object(dep, "_pick_weighted_variant_dicts") as pick_mock,
+            patch.object(
+                dep, "_pick_weighted_variant_dicts", return_value=dict(other)
+            ) as pick_mock,
         ):
             response_data, _tier = dep._pick_deposit_variant_response(
                 4,
@@ -192,8 +194,10 @@ class PickDepositVariantTestCase(unittest.TestCase):
                 method_slug="venmo",
             )
 
-        pick_mock.assert_not_called()
-        self.assertEqual(response_data.get("variant_id"), 99)
+        pick_mock.assert_called_once()
+        picked = pick_mock.call_args[0][0]
+        self.assertEqual([v["variant_id"] for v in picked], [99, 2])
+        self.assertEqual(response_data.get("variant_id"), 2)
 
 
 class FirstTimeSetupFromChoiceTestCase(unittest.IsolatedAsyncioTestCase):

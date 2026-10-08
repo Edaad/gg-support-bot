@@ -149,7 +149,7 @@ Only **Venmo** and **Zelle** auto-link via ingest today (see [`ZELLE_FLOW.md`](Z
    - Payment is **bound** to that support group (`venmo_payments`).
    - Group is **linked** to the Venmo variant (`group_payment_method_bindings`, `bound_via`: `memo_emoji` or `special_amount`).
    - Payer binding is updated for future repeat deposits.
-4. On success, the next `/deposit` in that group uses **normal** Venmo instructions (sticky variant — no setup again).
+4. On success, the next `/deposit` in that group skips setup and picks a weighted active handle in the amount tier.
 
 ### Already linked?
 
@@ -182,7 +182,7 @@ For **every** POST to `/api/venmo/payments`:
 
 | Action | Behavior |
 |--------|----------|
-| `/deposit` + Venmo | Normal instructions. Destination-tag stickiness is off, so each deposit picks a weighted active handle in that amount tier. A first-time link still prefers its variant when that variant is in the tier. |
+| `/deposit` + Venmo | Normal instructions. Each deposit picks a weighted active handle in that amount tier. |
 | New payment from same payer | Usually auto-binds to last group via payer binding |
 | New payment, new payer, linked group | Payment may still need manual bind unless setup or payer binding applies |
 | `/unbindmethod` | Clears group link **and** display destination stickiness; `/deposit` may assign a new tag and triggers setup again if enabled |
