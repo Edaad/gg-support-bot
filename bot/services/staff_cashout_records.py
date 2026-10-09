@@ -14,6 +14,7 @@ from bot.services.club import (
     get_method_by_id,
     get_sub_option_by_id,
 )
+from bot.services.cashout_handle_validation import venmo_payout_as_link
 from bot.services.player_details import parse_tracking_title
 from club_gc_settings import get_club_gc_config_by_link_club_id
 from db.connection import get_db
@@ -301,8 +302,8 @@ def _validate_method_choice(
     if method_id is None:
         if not display:
             raise ValueError("Custom method name is required")
-        if require_payout_details:
-            pass
+        if display.lower() == "venmo":
+            details = venmo_payout_as_link(details) or ""
         return None, None, display, (details or None)
 
     method = get_method_by_id(method_id)
@@ -324,6 +325,8 @@ def _validate_method_choice(
         sub_id = None
     if require_payout_details and not details:
         raise ValueError("Payout details are required for this method")
+    if (method.get("slug") or "").lower() == "venmo":
+        details = venmo_payout_as_link(details) or ""
     return method_id, sub_id, display, (details or None)
 
 

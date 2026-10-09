@@ -30,7 +30,7 @@ import CashoutMethodFields, {
 import Modal from '../components/Modal'
 import { useConfirm } from '../components/ConfirmProvider'
 import EasternInstant from '../components/EasternInstant'
-import { MethodName } from '../components/PaymentMethodIcon'
+import { MethodName, methodIconSlug } from '../components/PaymentMethodIcon'
 import { hasMethodChoice, isCryptoChoice } from '../lib/cashoutSendProof'
 import type { DashboardRole } from '../lib/rbac'
 
@@ -115,6 +115,21 @@ function payoutHref(raw: string): string | null {
   const t = raw.trim()
   if (/^https?:\/\//i.test(t)) return t
   return null
+}
+
+const VENMO_BARE_HANDLE_RE = /^@([A-Za-z0-9_.-]{2,30})\.*$/
+
+/**
+ * Venmo rows saved before handles were stored as links still hold "@handle";
+ * show those as the payment link the newer rows carry.
+ */
+function displayPayout(p: StaffCashoutPaymentT, methods: V2Method[]): string {
+  const raw = (p.payout_details || '').trim()
+  const method = p.payment_method_id != null ? methods.find((m) => m.id === p.payment_method_id) : undefined
+  const slug = (method?.slug || '').toLowerCase() || methodIconSlug(p.method_display_name)
+  if (slug !== 'venmo') return raw
+  const m = VENMO_BARE_HANDLE_RE.exec(raw)
+  return m ? `https://venmo.com/u/${m[1].replace(/\.+$/, '').toLowerCase()}` : raw
 }
 
 function PayoutTag({ value }: { value: string }) {
@@ -794,7 +809,7 @@ export default function CashoutRecordDetail({
               >
                 <p className="text-sm font-medium text-ink">{paymentLabel(p)}</p>
                 {p.payout_details?.trim() ? (
-                  <PayoutTag value={p.payout_details.trim()} />
+                  <PayoutTag value={displayPayout(p, methods)} />
                 ) : (
                   <p className="mt-2 text-sm text-ink-muted">No tag</p>
                 )}

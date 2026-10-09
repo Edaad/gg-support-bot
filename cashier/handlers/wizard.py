@@ -23,6 +23,7 @@ from bot.services.club import (
     get_sub_option_by_id,
     get_sub_options,
 )
+from bot.services.cashout_handle_validation import venmo_payout_as_link
 from bot.services.method_resolution import resolve_method_display
 from bot.services.player_details import (
     parse_tracking_title,
@@ -692,6 +693,8 @@ async def payout_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please enter payout details.")
         return GC_PAYOUT
 
+    if (context.user_data.get("gc_slug") or "").lower() == "venmo":
+        details = venmo_payout_as_link(details) or details
     context.user_data["gc_payout_details"] = details
     logger.info(
         "wizard payout entered job_id=%s method=%s len=%s",
