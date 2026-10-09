@@ -620,6 +620,76 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             self.assertEqual(added.method_display_name, "Revolut")
             self.assertIsNone(added.payment_method_id)
 
+    def test_validate_method_choice_turns_venmo_handle_into_link(self) -> None:
+        from bot.services.staff_cashout_records import _validate_method_choice
+
+        with patch(
+            "bot.services.staff_cashout_records.get_method_by_id",
+            return_value={
+                "id": 7,
+                "name": "Venmo",
+                "slug": "venmo",
+                "has_sub_options": False,
+            },
+        ):
+            _, _, display, details = _validate_method_choice(
+                payment_method_id=7,
+                payment_sub_option_id=None,
+                method_display_name=None,
+                payout_details="@Player.",
+                require_payout_details=True,
+            )
+        self.assertEqual(display, "Venmo")
+        self.assertEqual(details, "https://venmo.com/u/player")
+
+        # A link the player sent is kept exactly as sent.
+        with patch(
+            "bot.services.staff_cashout_records.get_method_by_id",
+            return_value={
+                "id": 7,
+                "name": "Venmo",
+                "slug": "venmo",
+                "has_sub_options": False,
+            },
+        ):
+            _, _, _, details = _validate_method_choice(
+                payment_method_id=7,
+                payment_sub_option_id=None,
+                method_display_name=None,
+                payout_details="https://account.venmo.com/u/Player",
+                require_payout_details=True,
+            )
+        self.assertEqual(details, "https://account.venmo.com/u/Player")
+
+        # Custom "Venmo" rows (no catalog id) get the same treatment.
+        _, _, _, details = _validate_method_choice(
+            payment_method_id=None,
+            payment_sub_option_id=None,
+            method_display_name="Venmo",
+            payout_details="@player",
+            require_payout_details=False,
+        )
+        self.assertEqual(details, "https://venmo.com/u/player")
+
+        # Other methods are left alone.
+        with patch(
+            "bot.services.staff_cashout_records.get_method_by_id",
+            return_value={
+                "id": 8,
+                "name": "Cash App",
+                "slug": "cashapp",
+                "has_sub_options": False,
+            },
+        ):
+            _, _, _, details = _validate_method_choice(
+                payment_method_id=8,
+                payment_sub_option_id=None,
+                method_display_name=None,
+                payout_details="@player",
+                require_payout_details=True,
+            )
+        self.assertEqual(details, "@player")
+
     def test_list_paginates_active_status(self) -> None:
         from datetime import datetime
 

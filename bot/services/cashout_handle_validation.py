@@ -16,7 +16,9 @@ flow low-friction: "my venmo is @john" still works.
 A link is recorded as a link, never boiled down to the handle inside it: the
 dashboard turns a payout that starts with a scheme into a clickable link, and
 one tap beats retyping a handle into an app. A handle is likewise recorded
-whole. So whichever form the player sends is the form the payer sees.
+whole, except for Venmo: a bare ``@handle`` becomes the matching
+``https://venmo.com/u/<handle>`` payment link, since every Venmo profile link
+has that one shape and the link is the easier thing to pay.
 """
 
 from __future__ import annotations
@@ -35,6 +37,9 @@ _VENMO_URL_RE = re.compile(_LINK_PREFIX + r"venmo\.com" + _LINK_PATH, re.IGNOREC
 # Skip an ``@`` that is part of an email (``john@gmail.com``) — that is not a Venmo
 # handle, and silently recording ``@gmail.com`` would mis-pay the player.
 _VENMO_HANDLE_RE = re.compile(r"(?<![A-Za-z0-9._%+-])@([A-Za-z0-9_.-]{2,30})")
+# A stored payout that is nothing but a Venmo handle (``@john``), possibly with a
+# stray trailing period from the sentence it was pasted out of.
+_VENMO_BARE_HANDLE_RE = re.compile(r"^@([A-Za-z0-9_.-]{2,30})\.*$")
 
 _CASHAPP_URL_RE = re.compile(_LINK_PREFIX + r"cash\.app" + _LINK_PATH, re.IGNORECASE)
 _CASHAPP_TAG_RE = re.compile(r"(?<![A-Za-z0-9])\$([A-Za-z0-9_-]{1,30})(?![A-Za-z0-9])")
@@ -70,6 +75,26 @@ def _link(match: Optional[re.Match]) -> Optional[str]:
     return url
 
 
+def venmo_payment_link(handle: str) -> str:
+    """The Venmo payment link for ``handle`` (with or without a leading ``@``)."""
+    username = handle.strip().lstrip("@").rstrip(".").lower()
+    return f"https://venmo.com/u/{username}"
+
+
+def venmo_payout_as_link(details: Optional[str]) -> Optional[str]:
+    """Rewrite a payout recorded as a bare Venmo ``@handle`` into its payment link.
+
+    Anything else (a link, an empty value, free text) comes back untouched, so
+    this is safe to run over whatever a payer typed.
+    """
+    if details is None:
+        return None
+    m = _VENMO_BARE_HANDLE_RE.match(details.strip())
+    if not m:
+        return details
+    return venmo_payment_link(m.group(1))
+
+
 def _validate_venmo(text: str) -> Optional[str]:
     link = _link(_VENMO_URL_RE.search(text))
     if link:
@@ -77,7 +102,7 @@ def _validate_venmo(text: str) -> Optional[str]:
     m = _VENMO_HANDLE_RE.search(text)
     if not m:
         return None
-    return f"@{m.group(1).lstrip('@')}".lower()
+    return venmo_payment_link(m.group(1))
 
 
 def _validate_cashapp(text: str) -> Optional[str]:

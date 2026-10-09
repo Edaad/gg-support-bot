@@ -16,11 +16,33 @@ from bot.handlers import cashout as co
 
 class HandleValidationTests(unittest.TestCase):
     def test_venmo_accepts_handle_and_link(self):
-        self.assertEqual(cv.validate_cashout_handle("venmo", "@John_Doe"), "@john_doe")
+        # A bare handle is stored as the payment link it maps to.
+        self.assertEqual(
+            cv.validate_cashout_handle("venmo", "@John_Doe"),
+            "https://venmo.com/u/john_doe",
+        )
+        self.assertEqual(
+            cv.validate_cashout_handle("venmo", "my venmo is @jane."),
+            "https://venmo.com/u/jane",
+        )
         self.assertEqual(
             cv.validate_cashout_handle("venmo", "pay https://venmo.com/u/jane"),
             "https://venmo.com/u/jane",
         )
+
+    def test_venmo_payout_as_link(self):
+        for stored, expected in [
+            ("@John-Doe", "https://venmo.com/u/john-doe"),
+            ("  @jane. ", "https://venmo.com/u/jane"),
+            ("https://venmo.com/u/jane", "https://venmo.com/u/jane"),
+            ("https://account.venmo.com/u/jane", "https://account.venmo.com/u/jane"),
+            ("john@gmail.com", "john@gmail.com"),
+            ("johnny", "johnny"),
+            ("", ""),
+        ]:
+            with self.subTest(stored=stored):
+                self.assertEqual(cv.venmo_payout_as_link(stored), expected)
+        self.assertIsNone(cv.venmo_payout_as_link(None))
 
     def test_venmo_link_is_recorded_whole(self):
         # The link is the destination, not a wrapper to pull a handle out of.
@@ -330,7 +352,9 @@ class PreviousTagTests(unittest.TestCase):
             ["please use @Jane", "not a tag", "@jane", "@other"],
             "venmo",
         )
-        self.assertEqual(tags, ["@jane", "@other"])
+        self.assertEqual(
+            tags, ["https://venmo.com/u/jane", "https://venmo.com/u/other"]
+        )
 
     def test_long_address_button_keeps_both_ends(self):
         tag = "0x" + ("a" * 80)
@@ -447,10 +471,12 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
         ):
             state = await co.cashout_auto_previous_chosen(update, context)
         claim.assert_awaited_once()
-        self.assertEqual(context.chat_data["cashout_auto_payout_details"], "@jane")
+        self.assertEqual(
+            context.chat_data["cashout_auto_payout_details"], "https://venmo.com/u/jane"
+        )
         self.assertEqual(
             update.callback_query.edit_message_text.await_args.args[0],
-            "Using @jane.",
+            "Using https://venmo.com/u/jane.",
         )
         self.assertIs(state, claim.return_value)
 
