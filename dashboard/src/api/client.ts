@@ -449,6 +449,59 @@ export const updateOutboundSend = (token: string, id: number, data: OutboundSend
 export const deleteOutboundSend = (token: string, id: number) =>
   request<void>(`/outbound-sends/${id}`, { method: 'DELETE' }, token)
 
+export type AccountBalanceCardT = {
+  method: 'venmo' | 'cashapp'
+  tag: string
+  balance_cents: number
+  offset_cents: number
+  received_week_cents: number
+  inflow_max_cents: number
+  sending_remaining_cents: number
+  sending_ceiling_cents: number
+  send_power_maxed: boolean
+  inflow_maxed: boolean
+}
+
+export type AccountBalanceListT = {
+  venmo: AccountBalanceCardT[]
+  cashapp: AccountBalanceCardT[]
+}
+
+export type BlockingSendT = {
+  id: number
+  amount_cents: number
+  recipient: string
+  occurred_at: string
+  expires_at: string
+}
+
+export type AccountBalanceSettingsIn = {
+  offset_cents: number
+  sending_ceiling_cents: number
+  inflow_max_cents: number
+}
+
+function accountBalancePath(method: string, tag: string): string {
+  return `/account-balances/${encodeURIComponent(method)}/${encodeURIComponent(tag)}`
+}
+
+export const listAccountBalances = (token: string) =>
+  request<AccountBalanceListT>('/account-balances', {}, token)
+
+export const listBlockingSends = (token: string, method: string, tag: string) =>
+  request<BlockingSendT[]>(`${accountBalancePath(method, tag)}/sends`, {}, token)
+
+export const updateAccountBalanceSettings = (
+  token: string,
+  method: string,
+  tag: string,
+  data: AccountBalanceSettingsIn,
+) =>
+  request<AccountBalanceCardT>(accountBalancePath(method, tag), {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }, token)
+
 export async function downloadExpensesXlsx(token: string, opts?: ExpenseListOpts): Promise<void> {
   const qs = expenseQueryParams(opts)
   const res = await fetch(apiUrl(`/api/expenses/export${qs ? `?${qs}` : ''}`), {

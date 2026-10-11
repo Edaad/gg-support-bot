@@ -3478,6 +3478,42 @@ class OutboundSend(Base):
     )
 
 
+class AccountBalanceSettings(Base):
+    """Per-tag offset and limits for the Round Table balance cards."""
+
+    __tablename__ = "account_balance_settings"
+    __table_args__ = (
+        UniqueConstraint(
+            "method", "tag", name="uq_account_balance_settings_method_tag"
+        ),
+        CheckConstraint(
+            "method IN ('venmo', 'cashapp')",
+            name="ck_account_balance_settings_method",
+        ),
+        CheckConstraint(
+            "sending_ceiling_cents > 0",
+            name="ck_account_balance_settings_sending_ceiling",
+        ),
+        CheckConstraint(
+            "inflow_max_cents > 0",
+            name="ck_account_balance_settings_inflow_max",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    method = Column(String(16), nullable=False)
+    tag = Column(String(64), nullable=False)
+    offset_cents = Column(Integer, nullable=False)
+    sending_ceiling_cents = Column(Integer, nullable=False)
+    inflow_max_cents = Column(Integer, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 # BIGINT/BIGSERIAL in Postgres; INTEGER on SQLite so in-memory unit tests autoincrement.
 _BigIntPk = BigInteger().with_variant(Integer, "sqlite")
 

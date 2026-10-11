@@ -134,6 +134,7 @@ def create_app() -> FastAPI:
     from api.routes.escalation_events import router as escalation_events_router
     from api.routes.response_audit import router as response_audit_router
     from api.routes.outbound_sends import router as outbound_sends_router
+    from api.routes.account_balances import router as account_balances_router
     from api.routes.plaid_items import router as plaid_items_router
     from api.routes.plaid_webhook import router as plaid_webhook_router
 
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(escalation_events_router)
     app.include_router(response_audit_router)
     app.include_router(outbound_sends_router)
+    app.include_router(account_balances_router)
     app.include_router(plaid_items_router)
     app.include_router(plaid_webhook_router)
 

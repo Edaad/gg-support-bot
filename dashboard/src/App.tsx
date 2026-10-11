@@ -15,6 +15,7 @@ import GtoZelle from './pages/GtoZelle'
 import ManualDepositRequests from './pages/ManualDepositRequests'
 import Audit from './pages/Audit'
 import Alerts from './pages/Alerts'
+import Balances from './pages/Balances'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 import {
@@ -101,6 +102,7 @@ export default function App() {
               />
               <Route path="/audit" element={<Audit token={token} />} />
               <Route path="/alerts" element={<Alerts token={token} />} />
+              <Route path="/balances" element={<Balances token={token} />} />
               <Route
                 path="/analytics"
                 element={
