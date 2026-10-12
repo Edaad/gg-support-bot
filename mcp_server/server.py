@@ -16,6 +16,11 @@ expenses and pool-pay requests use dollars. Dates: payments/escalations/sends
 filter on UTC datetimes (YYYY-MM-DD = that America/New_York day); tickets,
 activity and audits use one ET activity_date.
 
+Monday Review is the heads' weekly checklist: get_monday_review_board shows what
+must be done this Monday (links, notes, assignees, done state);
+complete_monday_review_task checks a task off and add_monday_review_note queues a
+reminder for a later Monday.
+
 PII is masked unless include_pii=true. Write tools require confirm=true, return a
 dry run otherwise, and every call is logged with your token name to
 mcp_tool_calls (see list_mcp_tool_calls)."""

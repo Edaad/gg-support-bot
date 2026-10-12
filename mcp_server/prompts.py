@@ -43,6 +43,25 @@ def daily_ops_check(date: str = "") -> str:
     )
 
 
+def monday_review(week_of: str = "") -> str:
+    """Walk the heads' Monday Review checklist and report what is still open."""
+    week = week_of.strip() or "the current week"
+    return (
+        f"Run the Monday Review for {week}.\n\n"
+        "1. Call get_monday_review_board (pass week_of if given) and read every "
+        "task: title, assignees, links, persistent_notes and week_notes.\n"
+        "2. List the pending tasks first, grouped by assignee, each with its "
+        "links and the notes to keep in mind; then the done tasks with who "
+        "completed them and their completion notes.\n"
+        "3. Mention upcoming_notes that are queued for later Mondays.\n"
+        "4. If asked to check something off, call complete_monday_review_task "
+        "with confirm=true only after the operator confirms who did it; to "
+        "remember something for next Monday, use add_monday_review_note.\n"
+        "5. For trends, call list_monday_review_history and point out tasks "
+        "that were missed in recent weeks."
+    )
+
+
 def register(mcp: MCPServer) -> None:
     mcp.prompt(
         name="investigate_player",
@@ -54,3 +73,8 @@ def register(mcp: MCPServer) -> None:
         title="Daily ops check",
         description="Morning checklist over unbound payments, pool pay, cashouts.",
     )(daily_ops_check)
+    mcp.prompt(
+        name="monday_review",
+        title="Monday Review",
+        description="Walk the heads' weekly checklist: pending, done, notes.",
+    )(monday_review)

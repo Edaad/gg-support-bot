@@ -143,7 +143,9 @@ class ResourcesAndPromptsTests(unittest.IsolatedAsyncioTestCase):
         async with Client(self.server) as client:
             listed = await client.list_prompts()
             names = {p.name for p in listed.prompts}
-            self.assertEqual(names, {"investigate_player", "daily_ops_check"})
+            self.assertEqual(
+                names, {"investigate_player", "daily_ops_check", "monday_review"}
+            )
             investigate = next(
                 p for p in listed.prompts if p.name == "investigate_player"
             )

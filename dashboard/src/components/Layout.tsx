@@ -21,6 +21,7 @@ type NavIconName =
   | 'sends'
   | 'balances'
   | 'zelle'
+  | 'monday'
 
 type NavLinkItem = {
   to: string
@@ -41,6 +42,7 @@ const ADMIN_TOP_NAV: NavLinkItem[] = [
 ]
 
 const ADMIN_MORE_NAV: NavLinkItem[] = [
+  { to: '/monday-review', label: 'Monday Review', icon: 'monday' },
   { to: '/outbound-sends', label: 'Sends', icon: 'sends' },
   { to: '/balances', label: 'Balances', icon: 'balances' },
   { to: '/expenses', label: 'Expenses', icon: 'expenses' },
@@ -216,6 +218,17 @@ function NavIcon({ name }: { name: NavIconName }) {
         <rect width="18" height="14" x="3" y="5" rx="2" />
         <path d="M3 10h18" />
         <path d="M7 15h4" />
+      </StrokeIcon>
+    )
+  }
+  if (name === 'monday') {
+    return (
+      <StrokeIcon>
+        <rect width="18" height="18" x="3" y="4" rx="2" />
+        <path d="M16 2v4" />
+        <path d="M8 2v4" />
+        <path d="M3 10h18" />
+        <path d="m9 16 2 2 4-4" />
       </StrokeIcon>
     )
   }
