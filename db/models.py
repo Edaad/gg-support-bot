@@ -3417,6 +3417,110 @@ class McpToolCall(Base):
     )
 
 
+class MondayReviewTask(Base):
+    """A recurring task heads review every Monday (dashboard Monday Review tab).
+
+    ``links_json`` is a list of ``{"label", "url"}``; ``assignees_json`` a list of
+    names (``Aiden``, ``Edaad`` or any free-text "other"). Archiving (``archived_at``)
+    hides a task from the weekly board while keeping its completion history.
+    """
+
+    __tablename__ = "monday_review_tasks"
+    __table_args__ = (Index("ix_mrt_archived_sort", "archived_at", "sort_order"),)
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    links_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    assignees_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    notes = relationship(
+        "MondayReviewTaskNote",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    completions = relationship(
+        "MondayReviewCompletion",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class MondayReviewTaskNote(Base):
+    """Reminder attached to a Monday Review task.
+
+    ``persistent`` notes show every Monday (``week_of`` is NULL); ``temporary``
+    notes show only for the Monday in ``week_of``.
+    """
+
+    __tablename__ = "monday_review_task_notes"
+    __table_args__ = (
+        CheckConstraint("kind IN ('persistent', 'temporary')", name="ck_mrtn_kind"),
+        CheckConstraint(
+            "(kind = 'persistent' AND week_of IS NULL) "
+            "OR (kind = 'temporary' AND week_of IS NOT NULL)",
+            name="ck_mrtn_week_of_matches_kind",
+        ),
+        Index("ix_mrtn_task_week", "task_id", "week_of"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(
+        Integer,
+        ForeignKey("monday_review_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind = Column(String(16), nullable=False)
+    body = Column(Text, nullable=False)
+    week_of = Column(Date, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    task = relationship("MondayReviewTask", back_populates="notes")
+
+
+class MondayReviewCompletion(Base):
+    """A task checked off for one Monday (``week_of``), with who and optional notes."""
+
+    __tablename__ = "monday_review_completions"
+    __table_args__ = (
+        UniqueConstraint("task_id", "week_of", name="uq_mrc_task_week"),
+        Index("ix_mrc_week_of", "week_of"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(
+        Integer,
+        ForeignKey("monday_review_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    week_of = Column(Date, nullable=False)
+    completed_by = Column(String(64), nullable=True)
+    notes = Column(Text, nullable=True)
+    completed_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    task = relationship("MondayReviewTask", back_populates="completions")
+
+
 class DepositMethodAlert(Base):
     """Named weekly deposit threshold alert for a method + destination variant."""
 

@@ -13,6 +13,9 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "create_expense",
         "pause_variant",
         "resume_variant",
+        "complete_monday_review_task",
+        "add_monday_review_note",
+        "create_monday_review_task",
     }
 )
 
@@ -25,6 +28,7 @@ def register_all(mcp: MCPServer) -> None:
         cashouts,
         escalations,
         expenses,
+        monday_review,
         ops,
         overview,
         payments,
@@ -46,7 +50,8 @@ def register_all(mcp: MCPServer) -> None:
         audit_tools,
         ops,
         overview,
+        monday_review,
     ):
         module.register(mcp)
-    for module in (payments, pool_pay, cashouts, expenses, ops):
+    for module in (payments, pool_pay, cashouts, expenses, ops, monday_review):
         module.register_writes(mcp)

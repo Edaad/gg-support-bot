@@ -99,10 +99,12 @@ UTC); day-based tools take `activity_date` / `audit_date`.
 | Escalations | `list_escalation_events`, `get_escalation_episode` |
 | Audit | `list_reconcile_runs`, `get_reconcile_report`, `list_trade_record_uploads`, `list_early_rakeback_snapshots` |
 | Ops | `list_deposit_method_alerts`, `list_gto_zelle_cards`, `list_plaid_zelle`, `list_issue_reports`, `list_mcp_tool_calls` |
-| **Writes** (confirm) | `bind_payment_to_group`, `update_cashout_record` (note / audited / sending / do_not_send), `update_manual_deposit_request` (trade_record_checked / amount), `create_expense`, `pause_variant`, `resume_variant` |
+| Monday Review | `get_monday_review_board` (one week: tasks, links, assignees, notes, done state), `list_monday_review_tasks`, `list_monday_review_history` (past weeks, done vs missed) |
+| **Writes** (confirm) | `bind_payment_to_group`, `update_cashout_record` (note / audited / sending / do_not_send), `update_manual_deposit_request` (trade_record_checked / amount), `create_expense`, `pause_variant`, `resume_variant`, `complete_monday_review_task` (check off / update who + notes), `add_monday_review_note` (persistent or temporary for a Monday), `create_monday_review_task` |
 
 Resources: `gg://reference/clubs`, `vocabulary`, `enums`, `conventions`,
-`caveats`. Prompts: `investigate_player(query)`, `daily_ops_check(date)`.
+`caveats`. Prompts: `investigate_player(query)`, `daily_ops_check(date)`,
+`monday_review(week_of)`.
 
 Not exposed in v1: weekly player stats (external gg-computer service),
 broadcasts, GC/MTProto login, response audit, quick links, flow simulator,
@@ -116,6 +118,9 @@ CSV/XLSX exports.
 - `group_title` (`SHORTHAND / GGPLAYERID / name`) stays visible even when PII
   is masked, because it is the main navigation key.
 - Test chats are excluded from analytics by default.
+- Monday Review weeks are identified by their Monday (`week_of`, America/New_York).
+  Persistent notes show every Monday; temporary notes only for their `week_of`
+  (default: next Monday). Completing a task for a future week is refused.
 - `list_payment_methods` reads pause state without releasing expired pauses
   (unlike the dashboard GET), so a lapsed pause may still read as paused until
   the dashboard or bot touches it.

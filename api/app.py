@@ -171,6 +171,7 @@ def create_app() -> FastAPI:
     from api.routes.account_balances import router as account_balances_router
     from api.routes.plaid_items import router as plaid_items_router
     from api.routes.plaid_webhook import router as plaid_webhook_router
+    from api.routes.monday_review import router as monday_review_router
 
     app.include_router(weekly_stats_proxy_router)
     app.include_router(stripe_deposit_router)
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
     app.include_router(account_balances_router)
     app.include_router(plaid_items_router)
     app.include_router(plaid_webhook_router)
+    app.include_router(monday_review_router)
 
     # ── MCP server (AI clients; bearer token; see docs/MCP.md) ───────────
     # Registered before the SPA catch-all so GET /mcp is not served index.html.
