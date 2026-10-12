@@ -60,6 +60,7 @@ Three independent long-running processes (see `Procfile`):
 | `web` | `api/app.py` (Uvicorn) | FastAPI REST API + serves `dashboard/dist` in production |
 | `worker` | `run_bot.py` → `bot/main.py` | Support bot: player-facing commands (`/start`, `/deposit`, `/cashout`, `/gc`, `/list`, `/set`, etc.) |
 | `cashier` | `run_cashier.py` → `cashier/main.py` | Staff wizard bot: guided cashout flow via DM, writes dashboard cashout records |
+| (in `web`) | `mcp_server/` mounted at `/mcp`; `run_mcp.py` for stdio | MCP server: read tools + confirm-gated writes for AI clients (`docs/MCP.md`) |
 
 ### Bot (`bot/`)
 
@@ -80,6 +81,13 @@ Three independent long-running processes (see `Procfile`):
 - `api/app.py` — FastAPI app factory; refuses to boot unless the DB is at the Alembic head (`db/schema_guard.py`)
 - `api/auth.py` — shared-password JWT auth (`DASHBOARD_PASSWORD`)
 - `api/routes/` — one router per resource; all protected by JWT bearer token
+
+### MCP server (`mcp_server/`)
+
+- `mcp_server/server.py` — `build_server()` registers tools (`mcp_server/tools/*.py`, one module per domain, plain functions + `register()`), resources and prompts; `api/app.py` adds the `/mcp` route when `MCP_ENABLED` and runs the SDK session manager in its lifespan
+- `mcp_server/auth.py` — static bearer tokens (`MCP_API_TOKENS`); `mcp_server/audit.py` logs every call to `mcp_tool_calls`
+- Reads use `mcp_server/db.py:read_session()` (READ ONLY + statement_timeout); results go through `envelope.py` → `redact.py` (PII masked unless `include_pii`); writes take `confirm`
+- Tests: `python -m unittest discover -s tests -p 'test_mcp_*.py' -v`
 
 ### Database (`db/`)
 

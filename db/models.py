@@ -3394,6 +3394,29 @@ class WebhookIngestRequest(Base):
     )
 
 
+class McpToolCall(Base):
+    """Append-only log of MCP tool calls (actor = token name from MCP_API_TOKENS)."""
+
+    __tablename__ = "mcp_tool_calls"
+    __table_args__ = (
+        Index("ix_mtc_tool_created_at", "tool", "created_at"),
+        Index("ix_mtc_actor_created_at", "actor", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    actor = Column(String(64), nullable=False)
+    tool = Column(String(64), nullable=False)
+    transport = Column(String(16), nullable=False)
+    is_write = Column(Boolean, nullable=False, server_default=text("false"))
+    args_json = Column(JSONB, nullable=True)
+    outcome = Column(String(16), nullable=False)
+    error_message = Column(Text, nullable=True)
+    duration_ms = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class DepositMethodAlert(Base):
     """Named weekly deposit threshold alert for a method + destination variant."""
 

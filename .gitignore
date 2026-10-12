@@ -44,3 +44,4 @@ telegram_*moodezzela*
 
 # Spreadsheet exports
 *.csv
+.mcp.json

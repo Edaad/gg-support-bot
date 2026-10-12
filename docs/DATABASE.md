@@ -385,6 +385,10 @@ Schema changes are tracked with [Alembic](https://alembic.sqlalchemy.org/) in [`
 
 ---
 
+## Audit tables
+
+- `mcp_tool_calls` — append-only log of MCP tool calls (`actor` = token name from `MCP_API_TOKENS`, `tool`, `transport` http|stdio, `is_write`, redacted `args_json`, `outcome` ok|error|refused, `error_message`, `duration_ms`, `created_at`). Written by `mcp_server/audit.py`; see [MCP.md](MCP.md).
+
 ## Operational notes
 
 - **Schema changes:** see [Schema migrations (Alembic)](#schema-migrations-alembic).
@@ -394,4 +398,5 @@ Schema changes are tracked with [Alembic](https://alembic.sqlalchemy.org/) in [`
 ## See also
 
 - [API.md](API.md) — REST surface that edits most of these tables
+- [MCP.md](MCP.md) — MCP server for AI clients (reads most of these tables)
 - [LINKED_ACCOUNTS.md](LINKED_ACCOUNTS.md) — Linked accounts behavior in detail

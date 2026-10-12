@@ -29,6 +29,7 @@ known-first-party = [
     "club_gc_settings",
     "config",
     "db",
+    "mcp_server",
 ]
 
 [tool.ruff.format]
