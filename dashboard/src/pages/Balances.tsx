@@ -25,6 +25,20 @@ function fmtMoney(cents: number): string {
   )
 }
 
+function fmtPlain(cents: number): string {
+  const sign = cents < 0 ? '-' : ''
+  const abs = Math.abs(cents)
+  const dollars = Math.trunc(abs / 100)
+  const frac = abs % 100
+  const body =
+    frac === 0 ? String(dollars) : `${dollars}.${String(frac).padStart(2, '0')}`
+  return `${sign}$${body}`
+}
+
+function fmtRatio(currentCents: number, capCents: number): string {
+  return `${fmtPlain(currentCents)}/${fmtPlain(capCents)}`
+}
+
 function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2)
 }
@@ -56,25 +70,25 @@ function BalanceCard({
         }
       }}
       className={[
-        'rounded-xl border border-border bg-surface-raised p-4 text-left shadow-sm transition',
+        'rounded-lg border border-border bg-surface-raised px-3 py-2.5 text-left shadow-sm transition',
         'hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
       ].join(' ')}
     >
-      <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <PaymentMethodIcon slug={card.method} className="h-6 w-6" />
-            <h2 className="truncate text-base font-semibold text-ink">{card.tag}</h2>
+          <div className="flex items-center gap-1.5">
+            <PaymentMethodIcon slug={card.method} className="h-4 w-4" />
+            <h2 className="truncate text-sm font-semibold text-ink">{card.tag}</h2>
           </div>
           {(card.send_power_maxed || card.inflow_maxed) && (
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-1.5 flex flex-wrap gap-1">
               {card.send_power_maxed && (
-                <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-medium text-ink">
+                <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium leading-none text-ink">
                   Send power maxed
                 </span>
               )}
               {card.inflow_maxed && (
-                <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-medium text-ink">
+                <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] font-medium leading-none text-ink">
                   Inflow maxed
                 </span>
               )}
@@ -83,7 +97,7 @@ function BalanceCard({
         </div>
         <button
           type="button"
-          className="btn-secondary-sm shrink-0"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-control text-ink-muted transition hover:bg-control-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label={`Settings for ${card.tag}`}
           onClick={(e: MouseEvent) => {
             e.stopPropagation()
@@ -98,7 +112,7 @@ function BalanceCard({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-4 w-4"
+            className="h-3.5 w-3.5"
             aria-hidden="true"
           >
             <circle cx="12" cy="12" r="3" />
@@ -107,34 +121,29 @@ function BalanceCard({
         </button>
       </div>
 
-      <p className="text-xs text-ink-muted">Balance</p>
-      <p className="text-2xl font-semibold tabular-nums text-ink">
+      <p className="mt-2 text-lg font-semibold tabular-nums leading-none text-ink">
         {fmtMoney(card.balance_cents)}
       </p>
-      <p className="mt-1 text-sm text-ink-muted">
-        Offset {fmtMoney(card.offset_cents)}
-      </p>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-lg bg-control/60 px-3 py-2">
-          <p className="text-xs text-ink-muted">Received this week</p>
-          <p className="text-lg font-semibold tabular-nums text-ink">
-            {fmtMoney(card.received_week_cents)} of {fmtMoney(card.inflow_max_cents)}
-          </p>
+      <dl className="mt-2 space-y-1 text-xs">
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="min-w-0 text-ink-muted">Received this week</dt>
+          <dd className="shrink-0 font-semibold tabular-nums text-ink">
+            {fmtRatio(card.received_week_cents, card.inflow_max_cents)}
+          </dd>
         </div>
-        <div className="rounded-lg bg-control/60 px-3 py-2">
-          <p className="text-xs text-ink-muted">Rolling sending power</p>
-          <p
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="min-w-0 text-ink-muted">Rolling sending power</dt>
+          <dd
             className={[
-              'text-lg font-semibold tabular-nums',
+              'shrink-0 font-semibold tabular-nums',
               card.sending_remaining_cents < 0 ? 'text-danger-ink' : 'text-ink',
             ].join(' ')}
           >
-            {fmtMoney(card.sending_remaining_cents)} of{' '}
-            {fmtMoney(card.sending_ceiling_cents)}
-          </p>
+            {fmtRatio(card.sending_remaining_cents, card.sending_ceiling_cents)}
+          </dd>
         </div>
-      </div>
+      </dl>
     </article>
   )
 }
@@ -249,7 +258,7 @@ export default function Balances({ token }: { token: string }) {
                 {cards.length === 0 ? (
                   <p className="text-sm text-ink-muted">No {section.label} accounts.</p>
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {cards.map((card) => (
                       <BalanceCard
                         key={`${card.method}:${card.tag}`}
@@ -339,23 +348,26 @@ export default function Balances({ token }: { token: string }) {
               <p className="text-2xl font-semibold tabular-nums text-ink">
                 {fmtMoney(detailCard.balance_cents)}
               </p>
-              <p className="mt-1 text-sm text-ink-muted">
-                Offset {fmtMoney(detailCard.offset_cents)}
-              </p>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg bg-control/60 px-3 py-2">
                 <p className="text-xs text-ink-muted">Received this week</p>
                 <p className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(detailCard.received_week_cents)} of{' '}
-                  {fmtMoney(detailCard.inflow_max_cents)}
+                  {fmtRatio(detailCard.received_week_cents, detailCard.inflow_max_cents)}
                 </p>
               </div>
               <div className="rounded-lg bg-control/60 px-3 py-2">
                 <p className="text-xs text-ink-muted">Rolling sending power</p>
-                <p className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtMoney(detailCard.sending_remaining_cents)} of{' '}
-                  {fmtMoney(detailCard.sending_ceiling_cents)}
+                <p
+                  className={[
+                    'text-lg font-semibold tabular-nums',
+                    detailCard.sending_remaining_cents < 0 ? 'text-danger-ink' : 'text-ink',
+                  ].join(' ')}
+                >
+                  {fmtRatio(
+                    detailCard.sending_remaining_cents,
+                    detailCard.sending_ceiling_cents,
+                  )}
                 </p>
               </div>
             </div>
