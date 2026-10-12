@@ -472,6 +472,9 @@ async def _auto_escalate(update, context, *, detail):
     chat_id = context.chat_data.get("cashout_chat_id")
     amount = context.chat_data.get("cashout_amount")
     claimed = bool(context.chat_data.get("cashout_auto_claimed"))
+    method_display = context.chat_data.get("cashout_method_display_name")
+    if method_display:
+        detail = f"{detail} (method: {method_display})"
     chat = update.effective_chat
     if chat is not None:
         try:
@@ -862,9 +865,21 @@ def _tag_button_label(tag: str) -> str:
     return f"{tag[:head]}\u2026{tag[-tail:]}"
 
 
+async def _auto_show_method_pick(query, context):
+    """Replace the method keyboard with the pick so staff can still see it later."""
+    display = context.chat_data.get("cashout_method_display_name")
+    if not display:
+        return
+    try:
+        await query.edit_message_text(f"Cashout method: {display}")
+    except Exception:
+        pass
+
+
 async def _auto_continue_after_method(query, context, *, slug, asset):
     """Offer tags we have already sent, or ask them to type one."""
     context.chat_data["cashout_auto_asset"] = asset
+    await _auto_show_method_pick(query, context)
     tags: list[str] = []
     club_id = context.chat_data.get("cashout_club_id")
     chat_id = context.chat_data.get("cashout_chat_id")
@@ -888,7 +903,7 @@ async def _auto_continue_after_method(query, context, *, slug, asset):
             tags = []
     if not tags:
         context.chat_data.pop("cashout_auto_previous_tags", None)
-        await _auto_prompt_handle(query, slug=slug, asset=asset)
+        await _auto_prompt_handle(query, slug=slug, asset=asset, new_message=True)
         return CASHOUT_AUTO_HANDLE
 
     context.chat_data["cashout_auto_previous_tags"] = tags
@@ -902,15 +917,13 @@ async def _auto_continue_after_method(query, context, *, slug, asset):
     ]
     buttons.append([InlineKeyboardButton("New tag", callback_data="coautoprev:new")])
     markup = InlineKeyboardMarkup(buttons)
-    text = "Choose a previous tag, or add a new one."
+    text = "Choose a previous tag, or type a new one."
     try:
-        await query.edit_message_text(text, reply_markup=markup)
+        sent = await query.message.chat.send_message(text, reply_markup=markup)
+        register_flow_callback_message(context, sent.message_id, flow="cashout")
+        context.chat_data["cashout_auto_previous_message_id"] = sent.message_id
     except Exception:
-        try:
-            sent = await query.message.chat.send_message(text, reply_markup=markup)
-            register_flow_callback_message(context, sent.message_id, flow="cashout")
-        except Exception:
-            pass
+        pass
     return CASHOUT_AUTO_PREVIOUS
 
 
@@ -931,6 +944,7 @@ async def cashout_auto_previous_chosen(update, context):
     method = context.chat_data.get("cashout_current_method", {})
     slug = method.get("slug")
     asset = context.chat_data.get("cashout_auto_asset")
+    context.chat_data.pop("cashout_auto_previous_message_id", None)
     if data == "coautoprev:new":
         context.chat_data.pop("cashout_auto_previous_tags", None)
         await _auto_prompt_handle(query, slug=slug, asset=asset)
@@ -956,13 +970,19 @@ async def cashout_auto_previous_chosen(update, context):
     return await _auto_run_claim(update, context)
 
 
-async def _auto_prompt_handle(query, *, slug, asset):
+async def _auto_prompt_handle(query, *, slug, asset, new_message=False):
     prompt = _AUTO_HANDLE_PROMPTS.get(
         (slug or "").lower(),
         "Chips claimed! Please reply with your payout details.",
     )
     if "{asset}" in prompt:
         prompt = prompt.format(asset=asset or "crypto")
+    if new_message:
+        try:
+            await query.message.chat.send_message(prompt)
+        except Exception:
+            pass
+        return
     try:
         await query.edit_message_text(prompt)
     except Exception:
@@ -970,6 +990,33 @@ async def _auto_prompt_handle(query, *, slug, asset):
             await query.message.chat.send_message(prompt)
         except Exception:
             pass
+
+
+async def cashout_auto_previous_typed(update, context):
+    """A tag typed at the previous-tag step counts as "New tag" plus the reply."""
+    if not update.message:
+        return CASHOUT_AUTO_PREVIOUS
+    if is_update_too_old(update):
+        log_stale_update(update, handler="cashout_auto_previous_typed")
+        return CASHOUT_AUTO_PREVIOUS
+
+    sender_id = update.effective_user.id if update.effective_user else None
+    target = _auto_target_id(context)
+    if target is not None and sender_id != target:
+        return CASHOUT_AUTO_PREVIOUS
+
+    context.chat_data.pop("cashout_auto_previous_tags", None)
+    message_id = context.chat_data.pop("cashout_auto_previous_message_id", None)
+    if message_id is not None:
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=update.message.chat_id,
+                message_id=message_id,
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+    return await _auto_take_typed_handle(update, context)
 
 
 async def cashout_auto_handle_received(update, context):
@@ -985,6 +1032,10 @@ async def cashout_auto_handle_received(update, context):
     if target is not None and sender_id != target:
         return CASHOUT_AUTO_HANDLE
 
+    return await _auto_take_typed_handle(update, context)
+
+
+async def _auto_take_typed_handle(update, context):
     # Expected wizard input (the payout handle); suppress group_activity escalation.
     from bot.services.support_group_idle_episode import mark_expected_flow_input
 
@@ -1376,6 +1427,7 @@ def _cleanup(context):
         "cashout_auto_claimed",
         "cashout_auto_payout_details",
         "cashout_auto_previous_tags",
+        "cashout_auto_previous_message_id",
         "cashout_auto_asset",
         "cashout_union_shorthand",
         "cashout_method_display_name",
@@ -1502,7 +1554,12 @@ def get_cashout_handler() -> ConversationHandler:
                     cashout_auto_previous_chosen, pattern=r"^coautoprev:(new|\d+)$"
                 ),
                 _CASHOUT_CANCEL,
-                MessageHandler(~filters.COMMAND, cashout_auto_offscript),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, cashout_auto_previous_typed
+                ),
+                MessageHandler(
+                    ~filters.COMMAND & ~filters.TEXT, cashout_auto_offscript
+                ),
             ],
             CASHOUT_AUTO_HANDLE: [
                 MessageHandler(

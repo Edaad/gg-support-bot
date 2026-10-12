@@ -387,6 +387,7 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
                 "cashout_chat_id": -100,
                 "cashout_current_method": {"id": 7, "slug": "venmo", "name": "Venmo"},
                 "cashout_payment_sub_option_id": None,
+                "cashout_method_display_name": "Venmo",
             }
         )
         return update, context
@@ -401,7 +402,10 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
                 update.callback_query, context, slug="venmo", asset=None
             )
         self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
-        text = update.callback_query.edit_message_text.await_args.args[0]
+        update.callback_query.edit_message_text.assert_awaited_once_with(
+            "Cashout method: Venmo"
+        )
+        text = update.callback_query.message.chat.send_message.await_args.args[0]
         self.assertIn("Venmo @username", text)
         self.assertNotIn("cashout_auto_previous_tags", context.chat_data)
 
@@ -422,9 +426,12 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
             sub_option_id=None,
             slug="venmo",
         )
-        markup = update.callback_query.edit_message_text.await_args.kwargs[
-            "reply_markup"
-        ]
+        update.callback_query.edit_message_text.assert_awaited_once_with(
+            "Cashout method: Venmo"
+        )
+        send = update.callback_query.message.chat.send_message.await_args
+        self.assertEqual(send.args[0], "Choose a previous tag, or type a new one.")
+        markup = send.kwargs["reply_markup"]
         labels = [row[0].text for row in markup.inline_keyboard]
         callbacks = [row[0].callback_data for row in markup.inline_keyboard]
         self.assertEqual(labels, ["@jane", "@other", "New tag"])
@@ -488,6 +495,7 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
             "name": "Crypto",
         }
         context.chat_data["cashout_payment_sub_option_id"] = 42
+        context.chat_data["cashout_method_display_name"] = "Crypto \u2014 ETH"
         with patch(
             "bot.services.cashout_previous_tags.list_previous_cashout_tags",
             return_value=[],
@@ -501,6 +509,118 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
             method_id=9,
             sub_option_id=42,
             slug="crypto",
+        )
+        # The picked coin stays visible in the chat for staff after an escalation.
+        update.callback_query.edit_message_text.assert_awaited_once_with(
+            "Cashout method: Crypto \u2014 ETH"
+        )
+        text = update.callback_query.message.chat.send_message.await_args.args[0]
+        self.assertIn("ETH wallet address", text)
+
+
+class TypedTagAtPreviousStepTests(unittest.IsolatedAsyncioTestCase):
+    ADDRESS = "0x0649A3FcD37dF70D8e243AF773Ec5c7cf24002e4"
+
+    async def _type(self, text, *, slug="crypto", user_id=555):
+        message = SimpleNamespace(text=text, chat_id=-100, reply_text=AsyncMock())
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=user_id),
+            effective_chat=SimpleNamespace(id=-100),
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(edit_message_reply_markup=AsyncMock()),
+            chat_data={
+                "cashout_user_id": 555,
+                "cashout_current_method": {"id": 9, "slug": slug, "name": slug},
+                "cashout_auto_previous_tags": [self.ADDRESS],
+                "cashout_auto_previous_message_id": 77,
+            },
+        )
+        with (
+            patch.object(co, "is_update_too_old", return_value=False),
+            patch("bot.services.support_group_idle_episode.mark_expected_flow_input"),
+            patch.object(co, "_auto_escalate", new=AsyncMock()) as escalate,
+            patch.object(co, "_auto_run_claim", new=AsyncMock()) as claim,
+        ):
+            state = await co.cashout_auto_previous_typed(update, context)
+        return state, context, update, escalate, claim
+
+    async def test_typed_saved_address_claims_instead_of_escalating(self):
+        state, context, _update, escalate, claim = await self._type(self.ADDRESS)
+        escalate.assert_not_awaited()
+        claim.assert_awaited_once()
+        self.assertIs(state, claim.return_value)
+        self.assertEqual(context.chat_data["cashout_auto_payout_details"], self.ADDRESS)
+        context.bot.edit_message_reply_markup.assert_awaited_once_with(
+            chat_id=-100, message_id=77, reply_markup=None
+        )
+        self.assertNotIn("cashout_auto_previous_tags", context.chat_data)
+        self.assertNotIn("cashout_auto_previous_message_id", context.chat_data)
+
+    async def test_typed_new_valid_tag_claims(self):
+        _state, context, _update, escalate, claim = await self._type(
+            "@jane", slug="venmo"
+        )
+        escalate.assert_not_awaited()
+        claim.assert_awaited_once()
+        self.assertEqual(
+            context.chat_data["cashout_auto_payout_details"],
+            "https://venmo.com/u/jane",
+        )
+
+    async def test_bad_venmo_moves_to_typing_with_hint(self):
+        state, _context, update, escalate, claim = await self._type(
+            "john doe", slug="venmo"
+        )
+        self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
+        escalate.assert_not_awaited()
+        claim.assert_not_awaited()
+        self.assertIn("Venmo tag", update.message.reply_text.await_args.args[0])
+
+    async def test_bad_crypto_address_still_escalates(self):
+        state, _context, _update, escalate, claim = await self._type("hello there")
+        escalate.assert_awaited_once()
+        claim.assert_not_awaited()
+        self.assertIs(state, escalate.return_value)
+
+    async def test_other_senders_are_ignored(self):
+        state, context, _update, escalate, claim = await self._type(
+            self.ADDRESS, user_id=999
+        )
+        self.assertEqual(state, co.CASHOUT_AUTO_PREVIOUS)
+        escalate.assert_not_awaited()
+        claim.assert_not_awaited()
+        self.assertIn("cashout_auto_previous_tags", context.chat_data)
+
+
+class EscalationDetailTests(unittest.IsolatedAsyncioTestCase):
+    async def test_escalation_names_the_picked_method(self):
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(
+                id=-100, title="Group", send_message=AsyncMock()
+            )
+        )
+        context = SimpleNamespace(
+            chat_data={
+                "cashout_club_id": 1,
+                "cashout_chat_id": -100,
+                "cashout_amount": 1300,
+                "cashout_method_display_name": "Crypto \u2014 USDT",
+            }
+        )
+        with (
+            patch.object(co, "get_group_title_for_chat", return_value=("Group", -100)),
+            patch.object(co, "_cleanup_after_flow"),
+            patch(
+                "bot.services.escalation_notification.notify_auto_cashout_escalation",
+                new=AsyncMock(),
+            ) as notify,
+        ):
+            await co._auto_escalate(update, context, detail="Off-script message")
+        self.assertEqual(
+            notify.await_args.kwargs["detail"],
+            "Off-script message (method: Crypto \u2014 USDT)",
         )
 
 
