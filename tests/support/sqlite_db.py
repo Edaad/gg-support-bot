@@ -11,7 +11,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 from sqlalchemy import JSON, BigInteger, Integer, MetaData, create_engine, event
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -34,7 +34,8 @@ def make_sqlite_session_factory(table_names: list[str]):
         Base.metadata.tables[name].to_metadata(md)
     for table in md.tables.values():
         for col in table.columns:
-            if isinstance(col.type, JSONB):
+            if isinstance(col.type, (JSONB, ARRAY)):
+                # SQLite has neither; JSON keeps list/dict round-trips working.
                 col.type = JSON()
             if col.primary_key and isinstance(col.type, BigInteger):
                 # SQLite only autoincrements INTEGER PRIMARY KEY.

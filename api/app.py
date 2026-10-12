@@ -10,6 +10,8 @@ try:
 except ImportError:
     pass
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 
@@ -48,20 +50,34 @@ from db.connection import init_engine
 from db.schema_guard import ensure_schema_at_head
 
 
+def _build_mcp_route():
+    """Return the ``/mcp`` route and its server when MCP is enabled, else None."""
+    from mcp_server.settings import load_settings
+
+    try:
+        settings = load_settings()
+    except ValueError as exc:
+        logging.getLogger(__name__).error("MCP disabled: %s", exc)
+        return None
+    if not settings.enabled:
+        return None
+    if not settings.tokens:
+        logging.getLogger(__name__).warning(
+            "MCP_ENABLED is set but MCP_API_TOKENS is empty; /mcp not mounted"
+        )
+        return None
+    from mcp_server.http import build_http_route
+    from mcp_server.server import build_server
+
+    mcp = build_server()
+    return mcp, build_http_route(mcp, settings.tokens)
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="GG Support Dashboard API", version="1.0.0")
+    mcp_mount = _build_mcp_route()
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    app.add_middleware(WebhookIngestMiddleware)
-
-    @app.on_event("startup")
-    def on_startup():
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
         engine = init_engine()
         ensure_schema_at_head(engine)
         import threading
@@ -73,6 +89,24 @@ def create_app() -> FastAPI:
             name="plaid-webhook-register",
             daemon=True,
         ).start()
+        if mcp_mount is None:
+            yield
+            return
+        # The MCP session manager only runs inside a lifespan; nested Starlette
+        # apps do not get theirs started, so it is driven from here.
+        async with mcp_mount[0].session_manager.run():
+            yield
+
+    app = FastAPI(title="GG Support Dashboard API", version="1.0.0", lifespan=lifespan)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(WebhookIngestMiddleware)
 
     # ── Auth route (no token required) ────────────────────────────────────
     from api.auth import resolve_role, create_token
@@ -179,6 +213,12 @@ def create_app() -> FastAPI:
     app.include_router(account_balances_router)
     app.include_router(plaid_items_router)
     app.include_router(plaid_webhook_router)
+
+    # ── MCP server (AI clients; bearer token; see docs/MCP.md) ───────────
+    # Registered before the SPA catch-all so GET /mcp is not served index.html.
+    if mcp_mount is not None:
+        app.router.routes.append(mcp_mount[1])
+        logging.getLogger(__name__).info("MCP server mounted at /mcp")
 
     @app.api_route(
         "/api/{rest_of_path:path}",

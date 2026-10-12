@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "gg-dashboard": {
+      "type": "http",
+      "url": "https://<app>.herokuapp.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${GG_MCP_TOKEN}"
+      }
+    },
+    "gg-dashboard-local": {
+      "command": "python",
+      "args": ["run_mcp.py"],
+      "env": {
+        "MCP_ACTOR": "your-name"
+      }
+    }
+  }
+}

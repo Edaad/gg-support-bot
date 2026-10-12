@@ -1,0 +1,52 @@
+"""Tool registration. Each module exposes plain functions plus ``register(mcp)``."""
+
+from __future__ import annotations
+
+from mcp.server.mcpserver import MCPServer
+
+# Names of tools that change data; they take ``confirm`` and are logged as writes.
+WRITE_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "bind_payment_to_group",
+        "update_cashout_record",
+        "update_manual_deposit_request",
+        "create_expense",
+        "pause_variant",
+        "resume_variant",
+    }
+)
+
+
+def register_all(mcp: MCPServer) -> None:
+    from mcp_server.tools import (
+        analytics,
+        audit_tools,
+        bonuses,
+        cashouts,
+        escalations,
+        expenses,
+        ops,
+        overview,
+        payments,
+        pool_pay,
+        reference,
+        sends_balances,
+    )
+
+    for module in (
+        reference,
+        payments,
+        pool_pay,
+        cashouts,
+        bonuses,
+        expenses,
+        sends_balances,
+        analytics,
+        escalations,
+        audit_tools,
+        ops,
+        overview,
+    ):
+        module.register(mcp)
+    for module in (payments, pool_pay, cashouts, expenses, ops):
+        module.register_writes(mcp)

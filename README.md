@@ -29,6 +29,9 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier`
 | `DASHBOARD_PASSWORD` | No | Admin dashboard login password and JWT signing secret. Defaults to `changeme` — **set in production**. |
 | `DASHBOARD_AM_PASSWORD` | No | Optional account-manager login. Same JWT signing secret as above; UI limited to Cashout records, Payments, Bonuses. |
 | `DASHBOARD_GTO_PASSWORD` | No | Optional GTO login. Same JWT signing secret as above; UI limited to Cashout records and Bonuses (ClubGTO only). |
+| `MCP_ENABLED` | No | **Default off.** Serve the MCP server for AI clients at `POST /mcp` on the web dyno. See [`docs/MCP.md`](docs/MCP.md). |
+| `MCP_API_TOKENS` | Yes for MCP | `name:token,name:token` bearer tokens; the name is logged as the actor of every tool call. |
+| `MCP_STATEMENT_TIMEOUT_MS` | No | Postgres statement timeout per MCP tool call (default `15000`). |
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
 | `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon runs `/gc` when a player **DMs the club MTProto account** (any incoming private message) and when staff send **`/gc` in a private DM with a player** (outgoing). Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |

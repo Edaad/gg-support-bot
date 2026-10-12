@@ -1,0 +1,233 @@
+"""Static reference resources: the context an AI needs before querying tools.
+
+Everything here is built from code constants (no database access) so it never
+drifts from the bots and dashboard.
+"""
+
+from __future__ import annotations
+
+from mcp.server.mcpserver import MCPServer
+
+from api.club_slug import CLUB_SLUG_TO_NAME
+from config import CLUB_SHORTHAND_TO_NAME
+from mcp_server.tools._common import CLUB_KEY_TO_NAME
+
+
+def _constants(module_path: str, prefix: str) -> list[str]:
+    try:
+        import importlib
+
+        module = importlib.import_module(module_path)
+    except Exception:  # pragma: no cover - defensive; resources must never crash
+        return []
+    return [
+        str(getattr(module, name))
+        for name in sorted(dir(module))
+        if name.startswith(prefix) and isinstance(getattr(module, name), str)
+    ]
+
+
+def clubs_reference() -> str:
+    lines = [
+        "# Clubs",
+        "",
+        "Four poker clubs share one bot ecosystem. Clubs are referenced three ways:",
+        "`club_id` (integer in Postgres), `club_key` (string used by MTProto/support",
+        "chats) and `club_slug` (gg-computer / audit slug). Group titles use a",
+        "shorthand prefix.",
+        "",
+        "| clubs.name | key | slug | title shorthand |",
+        "|---|---|---|---|",
+    ]
+    for key, name in CLUB_KEY_TO_NAME.items():
+        slugs = [s for s, n in CLUB_SLUG_TO_NAME.items() if n == name]
+        shorthands = [s for s, n in CLUB_SHORTHAND_TO_NAME.items() if n == name]
+        lines.append(
+            f"| {name} | {key} | {', '.join(slugs)} | {', '.join(shorthands)} |"
+        )
+    lines += [
+        "",
+        "Aces Table (`aces-table`, shorthand `AT`) has no club row or groups of its",
+        "own: its deposits flow through Round Table or Creator Club groups via a",
+        "union picker, so `aces-table` resolves to the Round Table club.",
+        "",
+        "Use `list_clubs` for live ids and feature flags.",
+    ]
+    return "\n".join(lines)
+
+
+VOCABULARY = """# Vocabulary
+
+- **Support group / group chat**: one Telegram group per player, titled
+  `SHORTHAND / GGPLAYERID / name` (e.g. `GTO / 8190-5287 / ThePirate343`).
+  `chat_id` / `telegram_chat_id` is the Telegram id of that group and the primary
+  join key across payments, cashouts, tickets and escalations.
+- **gg_player_id**: the player's ClubGG id (`1234-5678`). `player_details` maps a
+  player to the chats they own; `gg_nickname` is their in-game nickname.
+- **Deposit**: money a player sends to the club. Ingested payments arrive from
+  Zapier webhooks per rail (venmo, zelle, cashapp, paypal, crypto) or Stripe.
+- **Bound / unbound**: an ingested payment is *bound* when it is linked to a
+  support group (`telegram_chat_id` set). Binding happens automatically (memo
+  emoji, special amount, repeat payer) or manually from the dashboard
+  (`bound_via` = manual_dashboard) or MCP (`bind_payment_to_group`).
+- **Bind attempt / first-time setup**: a player's first deposit with a rail is a
+  setup attempt (special_amount or memo_emoji) that creates a group binding.
+- **Auto deposit**: after a payment is bound, chips are added automatically on
+  ClubGG via RPA; `payment_auto_deposit_events` records succeeded/skipped/failed.
+- **Method / tier / variant / sub-option**: a payment method (e.g. Venmo deposit)
+  has tiers (amount bands); each tier has variants (weighted rotation of receiving
+  handles) and crypto methods have sub-options (networks). Variants can be paused
+  (48 h) or disabled.
+- **Method owner**: whose account receives money: `round-table` (RT),
+  `vaughn` (GTO) or `mateos`.
+- **Pool Pay / union method**: shared manual-deposit methods (`deposit_union`
+  tmt|massiv) and large cashouts tracked as `manual_deposit_requests`;
+  `trade_record_checked` marks a request verified against ClubGG trade records.
+- **Cashout**: money the club sends to a player. `staff_cashout_records` hold
+  destinations (`payments`) and money-sent rows (`sends`). Flags: `sending`
+  (in progress), `do_not_send` (hold), `audited`; status active|cleared|oversent.
+- **Early rakeback / earlyrb**: an advance on rakeback a player can claim.
+- **Trade records**: ClubGG XLSX exports uploaded for daily audits;
+  **net reconcile** compares them with early rakeback snapshots.
+- **Ticket**: an AI-classified support conversation segment for one chat and
+  one America/New_York day, with first-response time (FRT) and duration.
+- **Escalation**: a Slack alert episode for a chat (player idle, deposit sent but
+  unbound, cashout started, ...).
+- **Test chats**: groups whose title marks them as test/staging are excluded from
+  analytics by default.
+"""
+
+
+def enums_reference() -> str:
+    from bot.services.staff_cashout_records import STATUSES as CASHOUT_STATUSES
+
+    ticket_categories = _constants(
+        "bot.services.group_chat_analysis_prompts", "TICKET_CATEGORIES"
+    )
+    try:
+        from bot.services.group_chat_analysis_prompts import TICKET_CATEGORIES
+
+        ticket_categories = list(TICKET_CATEGORIES)
+    except Exception:  # pragma: no cover
+        pass
+    return "\n".join(
+        [
+            "# Enumerations",
+            "",
+            f"- cashout record status: {', '.join(CASHOUT_STATUSES)}",
+            f"- ticket category: {', '.join(ticket_categories)}",
+            "- payment rail (`method`): venmo, zelle, cashapp, paypal, crypto, "
+            "stripe; `all` and `union` are scopes of search_payments",
+            "- payment status filter: all, bound, unbound",
+            "- method owner: round-table, vaughn, mateos",
+            "- bound_via: "
+            + ", ".join(
+                _constants("bot.services.payment_method_binding", "BOUND_VIA_")
+            ),
+            "- deposit funnel step: "
+            + ", ".join(_constants("bot.services.deposit_funnel_events", "STEP_")),
+            "- escalation reason: "
+            + ", ".join(_constants("bot.services.escalation_notification", "REASON_")),
+            "- manual deposit request pool_pay_type: union_method, large_cashout",
+            "- manual deposit request deposit_union: tmt, massiv",
+            "- GTO Zelle variant state: active, paused, disabled",
+            "- mcp_tool_calls outcome: ok, error, refused",
+        ]
+    )
+
+
+CONVENTIONS = """# Conventions
+
+## Dates
+- Payments, bindings, escalations, outbound sends: filter on UTC datetimes.
+  `from_` / `to` accept `YYYY-MM-DD` (interpreted as an America/New_York calendar
+  day: `from_` = start of day, `to` = end of day) or ISO-8601 datetimes (no offset
+  = UTC).
+- Tickets, group chat activity, transcripts, audits: one `activity_date` /
+  `audit_date` per America/New_York day. Defaults to yesterday ET where allowed.
+- Timestamps in results are ISO-8601; a trailing `Z` means UTC.
+
+## Amounts
+- Ingested payments, Stripe, funnel events, outbound sends and balances use
+  integer `amount_cents` (plus `amount_usd` where available).
+- Cashouts, bonuses, expenses, manual deposit requests, trade records use
+  dollar amounts (`amount`, decimal rendered as a number).
+
+## Paging
+- List tools take `limit` (default 50, max 200) and `offset`; results carry
+  `total`, `returned` and `truncated`. Narrow with `club`, dates and `q` before
+  paging deep.
+
+## PII
+- Results are masked by default (`pii_masked: true`): payer names, handles,
+  emails, memos, payout details, invite links. Pass `include_pii=true` only when
+  the operator needs the real value. Secrets (bank tokens, session strings,
+  attachment bytes) are never returned.
+- `group_title` embeds the player's display name and stays visible because it is
+  the main navigation key in the dashboard.
+
+## Writes
+- Write tools (`bind_payment_to_group`, `update_cashout_record`,
+  `update_manual_deposit_request`, `create_expense`, `pause_variant`,
+  `resume_variant`) take `confirm`. Without `confirm=true` they return a dry run
+  (`refused: true`) showing the current state and the proposed change; with it
+  they apply and return `before` / `after`.
+- Every call is logged to `mcp_tool_calls` with the caller's token name
+  (`list_mcp_tool_calls`).
+"""
+
+CAVEATS = """# Data-quality caveats
+
+- Cashout, bonus and manual-deposit services open their own database sessions,
+  so their lists are not covered by the read-only transaction guard (they are
+  still read-only operations).
+- `list_bonus_records` has no offset paging; narrow with `club`, `bonus_type_id`
+  or `q`.
+- Stored reconcile reports (`get_reconcile_report`) exist only after an operator
+  ran the reconcile on the Audit page; most historical runs have status `fail`.
+- `search_payments` totals are summed per source; with `method=all` the summary
+  mixes Stripe, rails and union manual deposits.
+- Deposit funnel analytics exclude test chats by default.
+- Some `cashier_cashout_jobs` and bot flow sessions stay in a non-terminal status
+  after crashes; treat very old "active" rows with suspicion.
+- Weekly player stats (rake / rakeback / profit) live in the external
+  gg-computer service and are not exposed here.
+"""
+
+
+def register(mcp: MCPServer) -> None:
+    mcp.resource(
+        "gg://reference/clubs",
+        name="clubs",
+        title="Club map",
+        description="Club ids, keys, slugs and group-title shorthands.",
+        mime_type="text/markdown",
+    )(clubs_reference)
+    mcp.resource(
+        "gg://reference/vocabulary",
+        name="vocabulary",
+        title="Operator vocabulary",
+        description="What bound, variant, pool pay, cashout flags and tickets mean.",
+        mime_type="text/markdown",
+    )(lambda: VOCABULARY)
+    mcp.resource(
+        "gg://reference/enums",
+        name="enums",
+        title="Status and category values",
+        description="Valid values for status, category, reason and step filters.",
+        mime_type="text/markdown",
+    )(enums_reference)
+    mcp.resource(
+        "gg://reference/conventions",
+        name="conventions",
+        title="Dates, amounts, paging, PII and write conventions",
+        description="How to pass dates, read amounts, page results and use writes.",
+        mime_type="text/markdown",
+    )(lambda: CONVENTIONS)
+    mcp.resource(
+        "gg://reference/caveats",
+        name="caveats",
+        title="Data-quality caveats",
+        description="Known gaps and quirks in the underlying tables.",
+        mime_type="text/markdown",
+    )(lambda: CAVEATS)

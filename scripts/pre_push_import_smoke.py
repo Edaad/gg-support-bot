@@ -33,6 +33,20 @@ def _import_release_script() -> None:
     spec.loader.exec_module(module)
 
 
+def _build_mcp_server() -> None:
+    """Build the MCP server (tools, resources, prompts) without serving it."""
+    import asyncio
+    import os
+
+    os.environ.setdefault("MCP_API_TOKENS", "smoke:" + "x" * 32)
+    from mcp_server.server import build_server
+
+    server = build_server()
+    tools = asyncio.run(server.list_tools())
+    if len(tools) < 25:
+        raise RuntimeError(f"mcp_server registered only {len(tools)} tools")
+
+
 def main(*, log_prefix: str = "[pre-push build]") -> int:
     steps = [
         ("api.app", lambda: importlib.import_module("api.app")),
@@ -47,6 +61,8 @@ def main(*, log_prefix: str = "[pre-push build]") -> int:
         ("cashier.handlers.wizard.get_cashier_wizard_handler", _import_cashier_wizard),
         ("notification.main", lambda: importlib.import_module("notification.main")),
         ("scripts/notify_deploy_maintenance.py", _import_release_script),
+        ("run_mcp", lambda: importlib.import_module("run_mcp")),
+        ("mcp_server.server.build_server", _build_mcp_server),
     ]
     for label, fn in steps:
         print(f"{log_prefix} importing {label}...", flush=True)
