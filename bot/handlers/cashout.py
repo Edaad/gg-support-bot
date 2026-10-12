@@ -472,6 +472,9 @@ async def _auto_escalate(update, context, *, detail):
     chat_id = context.chat_data.get("cashout_chat_id")
     amount = context.chat_data.get("cashout_amount")
     claimed = bool(context.chat_data.get("cashout_auto_claimed"))
+    method_display = context.chat_data.get("cashout_method_display_name")
+    if method_display:
+        detail = f"{detail} (method: {method_display})"
     chat = update.effective_chat
     if chat is not None:
         try:
@@ -862,9 +865,21 @@ def _tag_button_label(tag: str) -> str:
     return f"{tag[:head]}\u2026{tag[-tail:]}"
 
 
+async def _auto_show_method_pick(query, context):
+    """Replace the method keyboard with the pick so staff can still see it later."""
+    display = context.chat_data.get("cashout_method_display_name")
+    if not display:
+        return
+    try:
+        await query.edit_message_text(f"Cashout method: {display}")
+    except Exception:
+        pass
+
+
 async def _auto_continue_after_method(query, context, *, slug, asset):
     """Offer tags we have already sent, or ask them to type one."""
     context.chat_data["cashout_auto_asset"] = asset
+    await _auto_show_method_pick(query, context)
     tags: list[str] = []
     club_id = context.chat_data.get("cashout_club_id")
     chat_id = context.chat_data.get("cashout_chat_id")
@@ -888,7 +903,7 @@ async def _auto_continue_after_method(query, context, *, slug, asset):
             tags = []
     if not tags:
         context.chat_data.pop("cashout_auto_previous_tags", None)
-        await _auto_prompt_handle(query, slug=slug, asset=asset)
+        await _auto_prompt_handle(query, slug=slug, asset=asset, new_message=True)
         return CASHOUT_AUTO_HANDLE
 
     context.chat_data["cashout_auto_previous_tags"] = tags
@@ -904,13 +919,10 @@ async def _auto_continue_after_method(query, context, *, slug, asset):
     markup = InlineKeyboardMarkup(buttons)
     text = "Choose a previous tag, or add a new one."
     try:
-        await query.edit_message_text(text, reply_markup=markup)
+        sent = await query.message.chat.send_message(text, reply_markup=markup)
+        register_flow_callback_message(context, sent.message_id, flow="cashout")
     except Exception:
-        try:
-            sent = await query.message.chat.send_message(text, reply_markup=markup)
-            register_flow_callback_message(context, sent.message_id, flow="cashout")
-        except Exception:
-            pass
+        pass
     return CASHOUT_AUTO_PREVIOUS
 
 
@@ -956,13 +968,19 @@ async def cashout_auto_previous_chosen(update, context):
     return await _auto_run_claim(update, context)
 
 
-async def _auto_prompt_handle(query, *, slug, asset):
+async def _auto_prompt_handle(query, *, slug, asset, new_message=False):
     prompt = _AUTO_HANDLE_PROMPTS.get(
         (slug or "").lower(),
         "Chips claimed! Please reply with your payout details.",
     )
     if "{asset}" in prompt:
         prompt = prompt.format(asset=asset or "crypto")
+    if new_message:
+        try:
+            await query.message.chat.send_message(prompt)
+        except Exception:
+            pass
+        return
     try:
         await query.edit_message_text(prompt)
     except Exception:

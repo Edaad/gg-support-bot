@@ -387,6 +387,7 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
                 "cashout_chat_id": -100,
                 "cashout_current_method": {"id": 7, "slug": "venmo", "name": "Venmo"},
                 "cashout_payment_sub_option_id": None,
+                "cashout_method_display_name": "Venmo",
             }
         )
         return update, context
@@ -401,7 +402,10 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
                 update.callback_query, context, slug="venmo", asset=None
             )
         self.assertEqual(state, co.CASHOUT_AUTO_HANDLE)
-        text = update.callback_query.edit_message_text.await_args.args[0]
+        update.callback_query.edit_message_text.assert_awaited_once_with(
+            "Cashout method: Venmo"
+        )
+        text = update.callback_query.message.chat.send_message.await_args.args[0]
         self.assertIn("Venmo @username", text)
         self.assertNotIn("cashout_auto_previous_tags", context.chat_data)
 
@@ -422,9 +426,12 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
             sub_option_id=None,
             slug="venmo",
         )
-        markup = update.callback_query.edit_message_text.await_args.kwargs[
-            "reply_markup"
-        ]
+        update.callback_query.edit_message_text.assert_awaited_once_with(
+            "Cashout method: Venmo"
+        )
+        send = update.callback_query.message.chat.send_message.await_args
+        self.assertEqual(send.args[0], "Choose a previous tag, or add a new one.")
+        markup = send.kwargs["reply_markup"]
         labels = [row[0].text for row in markup.inline_keyboard]
         callbacks = [row[0].callback_data for row in markup.inline_keyboard]
         self.assertEqual(labels, ["@jane", "@other", "New tag"])
@@ -488,6 +495,7 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
             "name": "Crypto",
         }
         context.chat_data["cashout_payment_sub_option_id"] = 42
+        context.chat_data["cashout_method_display_name"] = "Crypto \u2014 ETH"
         with patch(
             "bot.services.cashout_previous_tags.list_previous_cashout_tags",
             return_value=[],
@@ -501,6 +509,42 @@ class PreviousTagStepTests(unittest.IsolatedAsyncioTestCase):
             method_id=9,
             sub_option_id=42,
             slug="crypto",
+        )
+        # The picked coin stays visible in the chat for staff after an escalation.
+        update.callback_query.edit_message_text.assert_awaited_once_with(
+            "Cashout method: Crypto \u2014 ETH"
+        )
+        text = update.callback_query.message.chat.send_message.await_args.args[0]
+        self.assertIn("ETH wallet address", text)
+
+
+class EscalationDetailTests(unittest.IsolatedAsyncioTestCase):
+    async def test_escalation_names_the_picked_method(self):
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(
+                id=-100, title="Group", send_message=AsyncMock()
+            )
+        )
+        context = SimpleNamespace(
+            chat_data={
+                "cashout_club_id": 1,
+                "cashout_chat_id": -100,
+                "cashout_amount": 1300,
+                "cashout_method_display_name": "Crypto \u2014 USDT",
+            }
+        )
+        with (
+            patch.object(co, "get_group_title_for_chat", return_value=("Group", -100)),
+            patch.object(co, "_cleanup_after_flow"),
+            patch(
+                "bot.services.escalation_notification.notify_auto_cashout_escalation",
+                new=AsyncMock(),
+            ) as notify,
+        ):
+            await co._auto_escalate(update, context, detail="Off-script message")
+        self.assertEqual(
+            notify.await_args.kwargs["detail"],
+            "Off-script message (method: Crypto \u2014 USDT)",
         )
 
 
