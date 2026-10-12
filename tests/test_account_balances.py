@@ -252,6 +252,23 @@ class AccountBalanceServiceTestCase(unittest.TestCase):
         self.assertEqual(card.received_week_cents, 200_000)
         self.assertTrue(card.inflow_maxed)
 
+    def test_cards_sort_by_higher_of_balance_and_remaining(self):
+        self._add_variant(self.rt, "venmo", "deposit", "@alpha")
+        self._add_variant(self.rt, "venmo", "deposit", "@bravo")
+        self._add_variant(self.rt, "venmo", "deposit", "@charlie")
+        self._venmo("@bravo", 2_000_000)
+        self._send("venmo", "@bravo", 1_200_000, source_external_id="bravo-send")
+        self._venmo("@charlie", 1_500_000)
+        self.session.commit()
+
+        tags = [
+            card.tag for card in list_account_balances(self.session, now=NOW)["venmo"]
+        ]
+        self.assertEqual(
+            tags,
+            ["@charlie", "@alpha", "@godfather4444", "@bravo"],
+        )
+
 
 class AccountBalanceApiTestCase(unittest.TestCase):
     def setUp(self):

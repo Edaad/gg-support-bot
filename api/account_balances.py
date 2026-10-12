@@ -273,7 +273,7 @@ def list_account_balances(
     payments = _load_payments(db)
     sends = _load_sends(db)
     grouped: dict[str, list[AccountBalanceCard]] = {"venmo": [], "cashapp": []}
-    for method, tag in sorted(keys, key=lambda item: (item[0], item[1])):
+    for method, tag in keys:
         grouped[method].append(
             _card(
                 method,
@@ -284,6 +284,13 @@ def list_account_balances(
                 week_start=week.start_utc,
                 week_end=week.end_utc,
                 now=moment,
+            )
+        )
+    for cards in grouped.values():
+        cards.sort(
+            key=lambda card: (
+                -max(card.balance_cents, card.sending_remaining_cents),
+                card.tag,
             )
         )
     return grouped
