@@ -289,7 +289,7 @@ def list_account_balances(
     for cards in grouped.values():
         cards.sort(
             key=lambda card: (
-                -max(card.balance_cents, card.sending_remaining_cents),
+                -min(card.balance_cents, card.sending_remaining_cents),
                 card.tag,
             )
         )
