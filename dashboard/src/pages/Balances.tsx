@@ -39,6 +39,10 @@ function fmtRatio(currentCents: number, capCents: number): string {
   return `${fmtPlain(currentCents)}/${fmtPlain(capCents)}`
 }
 
+function buyingPowerCents(card: AccountBalanceCardT): number {
+  return Math.min(card.balance_cents, card.sending_remaining_cents)
+}
+
 function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2)
 }
@@ -126,6 +130,17 @@ function BalanceCard({
       </p>
 
       <dl className="mt-2 space-y-1 text-xs">
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="min-w-0 text-ink-muted">Remaining buying power</dt>
+          <dd
+            className={[
+              'shrink-0 font-semibold tabular-nums',
+              buyingPowerCents(card) < 0 ? 'text-danger-ink' : 'text-ink',
+            ].join(' ')}
+          >
+            {fmtPlain(buyingPowerCents(card))}
+          </dd>
+        </div>
         <div className="flex items-baseline justify-between gap-2">
           <dt className="min-w-0 text-ink-muted">Received this week</dt>
           <dd className="shrink-0 font-semibold tabular-nums text-ink">
@@ -350,6 +365,17 @@ export default function Balances({ token }: { token: string }) {
               </p>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg bg-control/60 px-3 py-2">
+                <p className="text-xs text-ink-muted">Remaining buying power</p>
+                <p
+                  className={[
+                    'text-lg font-semibold tabular-nums',
+                    buyingPowerCents(detailCard) < 0 ? 'text-danger-ink' : 'text-ink',
+                  ].join(' ')}
+                >
+                  {fmtPlain(buyingPowerCents(detailCard))}
+                </p>
+              </div>
               <div className="rounded-lg bg-control/60 px-3 py-2">
                 <p className="text-xs text-ink-muted">Received this week</p>
                 <p className="text-lg font-semibold tabular-nums text-ink">
