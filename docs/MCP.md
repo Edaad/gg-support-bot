@@ -4,7 +4,7 @@ The `mcp_server/` package exposes the data behind the GG Dashboard to AI clients
 over the [Model Context Protocol](https://modelcontextprotocol.io). It runs inside
 the existing `web` dyno at `POST /mcp` (Streamable HTTP, static bearer tokens) and
 locally over stdio via `run_mcp.py`. It exposes 43 read tools, 39 confirm-gated write tools that mirror dashboard
-actions, 5 reference resources and 2 prompts.
+actions, 2 Google Sheets export tools, 5 reference resources and 2 prompts.
 
 ## Security model
 
@@ -97,6 +97,50 @@ to rotate a token. The Request headers section is a beta that some
 organizations do not see; without it, use the stdio config above or a local
 `mcp-remote` bridge. The Anthropic Messages API MCP connector expects OAuth
 access tokens; a static bearer may work but is not documented.
+
+## Google Drive exports
+
+`export_bonus_records(from_, to, club, bonus_type_id, other)` and
+`export_expenses(club, pending, q, from_, to)` build the same files as the
+dashboard's Bonuses CSV and Expenses XLSX downloads, upload them to Google
+Drive as native Google Sheets in one folder, share them as **anyone with the
+link can view**, and return the link (`url`), file id, row count and total.
+They are not confirm-gated, but they are open-world tools logged as writes in
+`mcp_tool_calls`, and their descriptions tell the model to call them only when
+asked. Exports include player names (no masking). Limit: 20,000 rows.
+
+Files are owned by your own Google account through OAuth with the `drive.file`
+scope, which only lets the server see files and folders it created.
+
+One-time setup:
+
+1. In [Google Cloud console](https://console.cloud.google.com/) create a
+   project (or reuse one) and enable the **Google Drive API**.
+2. **OAuth consent screen** (Google Auth Platform, Branding/Audience): user type
+   External, add your email as a test user, add the scope
+   `.../auth/drive.file`, then **Publish app** to *In production*. `drive.file`
+   is a non-sensitive scope, so no Google verification is needed, and refresh
+   tokens from a production app do not expire after 7 days as testing-mode ones
+   do.
+3. **Credentials**, Create credentials, OAuth client ID, application type
+   **Desktop app**. Copy the client id and secret.
+4. On your machine, in the repo:
+
+   ```bash
+   GOOGLE_OAUTH_CLIENT_ID=... GOOGLE_OAUTH_CLIENT_SECRET=... \
+     python scripts/google_drive_auth.py
+   ```
+
+   A browser opens for consent with the Google account that should own the
+   exports. The script creates a "GG Dashboard exports" folder and prints a
+   `heroku config:set` line with all four variables.
+5. Run that line (with `-a gg-support-bot-2025`). Setting config vars restarts
+   the web dyno.
+6. In Claude Desktop: "export ClubGTO bonuses for last week" returns a Sheet
+   link inside the folder.
+
+If Google later rejects the token (password change, access removed at
+https://myaccount.google.com/permissions), the tools say so; re-run step 4.
 
 ## Claude Desktop skill
 
