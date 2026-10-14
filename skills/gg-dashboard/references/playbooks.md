@@ -4,8 +4,10 @@ Step-by-step tool sequences for the recurring jobs. Each step names the tool and
 the arguments that matter; everything else keeps its default.
 
 Contents: Daily ops check, Investigate a player, Unbound payment triage, Pool Pay
-check, Cashout review, Support quality review, Audit status, Monday Review,
-Binding a payment safely.
+check, Recording a cashout, Cashout review, Recording a bonus, Expenses, Outbound
+sends and balances, Deposit alerts, Filing an issue report, Support quality
+review, Audit status, Monday Review, Binding a payment safely, Undoing a
+mistake.
 
 ## Daily ops check
 
@@ -54,11 +56,29 @@ Binding a payment safely.
 
 1. `list_union_methods()` for capacity (`used_sum`, `remaining_limit`,
    `unchecked_count`) per method.
+1a. To log a new Pool Pay deposit: dry run `create_manual_deposit_request(
+   method_id, amount, group_title=... or telegram_chat_id=...)`, then confirm.
+   It posts to Slack for union and large-cashout methods unless
+   `notify_slack=false`. Capacity limits are not enforced, as on the dashboard.
 2. `list_manual_deposit_requests(trade_record_checked=false, method_slug=<slug>)`.
 3. When the operator has verified a request against the trade record:
    dry run `update_manual_deposit_request(request_id, trade_record_checked=true)`
-   then confirm. Use `amount` only to correct a typo, and say the old and new
-   value.
+   then confirm. Use `amount`, `telegram_chat_id` or `created_at` only to
+   correct a mistake, and say the old and new value.
+4. Remove a duplicate with `delete_manual_deposit_request`.
+
+## Recording a cashout
+
+1. `find_group(query=<player>)` for the exact `group_title` and club.
+2. `list_payment_methods(club, direction="cashout")` to get `payment_method_id`
+   and `payment_sub_option_id` for catalogue methods (crypto networks are
+   sub-options). Catalogue methods need `payout_details`; a custom method needs
+   `method_display_name` instead.
+3. Dry run `create_cashout_record(club, group_title, amount, payments=[{...}],
+   note=...)`. Amount is dollars and is rounded up to the next dollar with a
+   round-up expense, as on the dashboard. Show the operator the destinations.
+4. On yes, `confirm=true`. Staff get the "New cashout" Pushover.
+5. Fix destinations later with `add_/update_/remove_cashout_destination`.
 
 ## Cashout review
 
@@ -69,8 +89,63 @@ Binding a payment safely.
 3. `list_cashout_money_sends(from_=<day>, to=<day>)` to reconcile what left the
    accounts; `get_account_balances()` for Venmo / Cash App send capacity.
 4. Annotate with `update_cashout_record(record_id, note=..., sending=...,
-   do_not_send=..., audited=...)`: dry run, confirm. Amount and group title are
-   not editable here; those stay in the dashboard.
+   do_not_send=..., audited=..., amount=..., group_title=...)`: dry run,
+   confirm. Amount can only change while the record is active.
+5. Record money that left with `add_cashout_send(record_id, amount,
+   method_display_name, sender_name, notify=...)`. `notify=true` messages the
+   player's group ("Sent $X!") and only works on chat-linked records; the
+   default is off, as on the dashboard. Screenshot proofs stay on the
+   dashboard; crypto sends can carry a `proof_link`.
+6. Correct a send with `update_cashout_send` or `remove_cashout_send`. The
+   ledger and owed-pin clear recompute automatically.
+
+## Recording a bonus
+
+1. `list_bonus_types()` for `bonus_type_id`; for a one-off, omit it and pass
+   `custom_description` (shows as "Other").
+2. Dry run `create_bonus_record(club, amount, group_title=<full title> or
+   gg_player_id=..., bonus_type_id=...)`. Amount is dollars. The player is
+   resolved from the title exactly as the dashboard does.
+3. Confirm. No Telegram or Slack message is sent.
+4. Fix with `update_bonus_record` (`clear_bonus_type=true` turns it into
+   "Other") or remove with `delete_bonus_record`.
+5. Prefer `update_bonus_type(is_active=false)` over `delete_bonus_type`;
+   deleting a type turns its records into "Other".
+
+## Expenses
+
+1. `list_expenses(club, pending=..., from_=..., to=...)` to find the row.
+2. `create_expense`, `update_expense` (at least one field; amount must not be
+   zero) or `delete_expense`, each dry run then confirm. Dollars.
+
+## Outbound sends and balances
+
+1. `get_account_balances()` for each Venmo / Cash App tag's balance, weekly
+   inflow and remaining send capacity.
+2. Record money sent from a Round Table account with `record_outbound_send(
+   method, tag, amount, recipient, paid_at=...)`. Amount is dollars here and
+   stored as cents; it reduces that tag's balance and send capacity.
+3. Correct with `update_outbound_send` or `delete_outbound_send`.
+4. Adjust a card with `update_account_balance_settings(method, tag, offset=...,
+   sending_ceiling=..., inflow_max=...)` in dollars.
+
+## Deposit alerts
+
+1. `list_deposit_method_alerts()` for current alerts and this week's numbers.
+2. `create_deposit_method_alert(name, method, variant, conditions=[{type:
+   "weekly_volume", operator: "gte", threshold_usd: ...}], ...)`. Creating or
+   updating an active alert evaluates it at once, which can post to Slack and,
+   with `disable_enabled=true`, take the destination out of rotation. Say so in
+   the dry-run summary.
+3. `update_deposit_method_alert` / `delete_deposit_method_alert`; deleting an
+   alert that is currently disabling a destination re-enables it.
+
+## Filing an issue report
+
+1. Dry run `create_issue_report(title, description, category=..., tags=[...],
+   club=..., telegram_chat_id=...)`. Attachments stay on the dashboard.
+2. Confirm. It posts to the issue-report Slack channel unless
+   `notify_slack=false`.
 
 ## Support quality review
 
@@ -112,3 +187,19 @@ is the same as for a human on the dashboard:
 - Rebinding an already bound payment moves it; say so in the dry-run summary.
 - After `confirm=true`, re-read with `get_payment` and report `telegram_chat_id`
   and `group_title` from `after`.
+
+## Undoing a mistake
+
+Every write has an inverse; use it rather than leaving a wrong row.
+
+| Wrong action | Undo with |
+|---|---|
+| Bound a payment to the wrong group | `bind_payment_to_group` with the right title (rebinds), or `unbind_payment` |
+| Created a cashout, bonus, expense, Pool Pay request, send or alert | the matching `delete_*` / `remove_*` tool |
+| Paused a variant | `resume_variant` |
+| Checked off a Monday Review task | `complete_monday_review_task` again with corrected notes |
+
+`list_mcp_tool_calls(actor=<name>, from_=<day>)` shows exactly what was
+changed and when, which is the fastest way to find what to undo. Notifications
+already sent (Slack, Pushover, Telegram) cannot be recalled; tell the operator
+so they can follow up by hand.
