@@ -61,10 +61,26 @@ These trip people up, so check them before filtering (full detail in
 
 ## Writes: dry run first
 
-Seven tools change data: `bind_payment_to_group`, `update_cashout_record`,
-`update_manual_deposit_request`, `create_expense`, `pause_variant`,
-`resume_variant`, and the Monday Review writes (`complete_monday_review_task`,
-`add_monday_review_note`, `create_monday_review_task`). They all take `confirm`.
+Thirty-nine tools change data. They mirror dashboard actions one to one and
+all take `confirm`:
+
+- Payments: `bind_payment_to_group`, `unbind_payment`, quick links
+  (`create_/update_/delete_payment_quick_link`).
+- Cashouts: `create_cashout_record`, `update_cashout_record` (note, flags,
+  amount, group title), `delete_cashout_record`, destinations
+  (`add_/update_/remove_cashout_destination`), money sent
+  (`add_/update_/remove_cashout_send`).
+- Pool Pay: `create_/update_/delete_manual_deposit_request`.
+- Bonuses: `create_/update_/delete_bonus_record`, `create_/update_/delete_bonus_type`.
+- Expenses: `create_/update_/delete_expense`.
+- Sends and balances: `record_/update_/delete_outbound_send`,
+  `update_account_balance_settings`.
+- Ops: `pause_variant`, `resume_variant`, `create_/update_/delete_deposit_method_alert`,
+  `create_issue_report`.
+- Monday Review: `complete_monday_review_task`, `add_monday_review_note`,
+  `create_monday_review_task`.
+
+The protocol is the same for every one of them:
 
 1. Call without `confirm` (or `confirm=false`). The reply has `refused: true`
    with `current` and `proposed`.
@@ -72,11 +88,15 @@ Seven tools change data: `bind_payment_to_group`, `update_cashout_record`,
 3. Call again with `confirm=true`. The reply has `applied: true` with `before`
    and `after`.
 
-Binding a payment posts to the player's Telegram group and can trigger an
-automatic chip deposit, so treat it like the dashboard's bind button: confirm
-the group title matches the payment's amount and timing first. Every call,
-read or write, is logged under the caller's token name; `list_mcp_tool_calls`
-shows the trail.
+Some writes reach beyond the database, so say so when you propose them:
+binding a payment posts to the player's Telegram group and can trigger an
+automatic chip deposit; creating a cashout record sends a "New cashout"
+Pushover to staff; a money-sent entry with `notify=true` messages the player
+and feeds the balance cards; Pool Pay requests and issue reports post to Slack
+unless `notify_slack=false`; creating or updating a deposit alert evaluates it
+immediately and may disable a destination. Deletes are marked destructive and
+their dry run shows the full row. Every call, read or write, is logged under
+the caller's token name; `list_mcp_tool_calls` shows the trail.
 
 ## Picking the tool
 
@@ -98,6 +118,7 @@ shows the trail.
 | GTO Zelle handles paused or disabled | `list_gto_zelle_cards`, `list_payment_methods` |
 | Monday checklist | `get_monday_review_board`, `list_monday_review_history` |
 | What did the AI change? | `list_mcp_tool_calls` |
+| Record a bonus, expense, cashout, send, or Pool Pay request | the matching `create_*` / `add_*` write, dry run first |
 
 Full parameters for every tool are in `references/tools.md`. Step-by-step
 sequences for the recurring jobs (daily ops check, investigate a player,

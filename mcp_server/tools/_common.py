@@ -34,6 +34,12 @@ WRITE = ToolAnnotations(
     idempotent_hint=True,
     open_world_hint=False,
 )
+DESTRUCTIVE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=True,
+    open_world_hint=False,
+)
 WRITE_NON_IDEMPOTENT = ToolAnnotations(
     read_only_hint=False,
     destructive_hint=False,

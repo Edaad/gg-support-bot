@@ -16,6 +16,39 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "complete_monday_review_task",
         "add_monday_review_note",
         "create_monday_review_task",
+        # cashouts / expenses
+        "create_cashout_record",
+        "delete_cashout_record",
+        "add_cashout_destination",
+        "update_cashout_destination",
+        "remove_cashout_destination",
+        "add_cashout_send",
+        "update_cashout_send",
+        "remove_cashout_send",
+        "update_expense",
+        "delete_expense",
+        # payments / sends / balances / alerts
+        "unbind_payment",
+        "create_payment_quick_link",
+        "update_payment_quick_link",
+        "delete_payment_quick_link",
+        "record_outbound_send",
+        "update_outbound_send",
+        "delete_outbound_send",
+        "update_account_balance_settings",
+        "create_deposit_method_alert",
+        "update_deposit_method_alert",
+        "delete_deposit_method_alert",
+        # bonuses / pool pay / issue reports
+        "create_bonus_record",
+        "update_bonus_record",
+        "delete_bonus_record",
+        "create_bonus_type",
+        "update_bonus_type",
+        "delete_bonus_type",
+        "create_manual_deposit_request",
+        "delete_manual_deposit_request",
+        "create_issue_report",
     }
 )
 
@@ -53,5 +86,14 @@ def register_all(mcp: MCPServer) -> None:
         monday_review,
     ):
         module.register(mcp)
-    for module in (payments, pool_pay, cashouts, expenses, ops, monday_review):
+    for module in (
+        payments,
+        pool_pay,
+        cashouts,
+        bonuses,
+        expenses,
+        sends_balances,
+        ops,
+        monday_review,
+    ):
         module.register_writes(mcp)
