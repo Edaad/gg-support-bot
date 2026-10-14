@@ -193,7 +193,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     from bot.handlers.deposit import get_deposit_handler, get_deposit_union_ack_handler
     from bot.handlers.cashout import get_cashout_handler
     from bot.handlers.transfer import get_transfer_handler
-    from bot.handlers.earlyrb import get_earlyrb_handler
+    from bot.handlers.earlyrb import get_earlyrb_handler, get_earlyrb_orphan_handler
     from bot.handlers.flow_cancel import dm_flow_cancel_priority, flow_cancel_handler
     from bot.handlers.list_cmd import list_handler
     from bot.handlers.groups import (
@@ -280,6 +280,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         get_popup_keyboard_activity_handler=get_popup_keyboard_activity_handler,
         get_deposit_sent_claim_handler=get_deposit_sent_claim_handler,
         get_earlyrb_handler=get_earlyrb_handler,
+        get_earlyrb_orphan_handler=get_earlyrb_orphan_handler,
         flow_cancel_handler=flow_cancel_handler,
         dm_flow_cancel_priority=dm_flow_cancel_priority,
         list_handler=list_handler,
@@ -540,6 +541,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(h.get_cashout_handler())
     app.add_handler(h.get_transfer_handler())
     app.add_handler(h.get_earlyrb_handler())
+    app.add_handler(h.get_earlyrb_orphan_handler())
     app.add_handler(CommandHandler("cancel", h.flow_cancel_handler))
     app.add_handler(h.get_gc_handler())
 

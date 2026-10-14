@@ -99,6 +99,13 @@ def reset_flow_callback_messages(
     context.chat_data.pop(_flow_message_ids_key(flow), None)
 
 
+def flow_callback_message_ids(
+    context: ContextTypes.DEFAULT_TYPE, *, flow: FlowName
+) -> set[int]:
+    ids = context.chat_data.get(_flow_message_ids_key(flow))
+    return set(ids) if isinstance(ids, set) else set()
+
+
 def register_flow_callback_message(
     context: ContextTypes.DEFAULT_TYPE,
     message_id: int | None,

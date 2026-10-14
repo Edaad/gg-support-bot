@@ -502,5 +502,162 @@ class HandlerRegistrationTests(unittest.TestCase):
         self.assertIn(ConversationHandler.WAITING, handler.states)
 
 
+def _button_update(data: str, message_id: int = 50):
+    update = MagicMock()
+    update.callback_query = MagicMock()
+    update.callback_query.data = data
+    update.callback_query.message = MagicMock()
+    update.callback_query.message.message_id = message_id
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_reply_markup = AsyncMock()
+    update.effective_chat = MagicMock()
+    update.effective_chat.id = -100
+    return update
+
+
+class OrphanButtonTests(unittest.IsolatedAsyncioTestCase):
+    """A Claim tap the conversation skipped (e.g. after a restart) must answer."""
+
+    async def test_claim_after_restart_says_expired_and_drops_buttons(self) -> None:
+        from bot.handlers.earlyrb import earlyrb_orphan_button
+
+        update = _button_update("ebclaim")
+        context = MagicMock()
+        context.chat_data = {}
+
+        await earlyrb_orphan_button(update, context)
+
+        update.callback_query.answer.assert_awaited_once()
+        kwargs = update.callback_query.answer.await_args.kwargs
+        self.assertTrue(kwargs.get("show_alert"))
+        self.assertIn("/earlyrb", update.callback_query.answer.await_args.args[0])
+        update.callback_query.edit_message_reply_markup.assert_awaited_once_with(
+            reply_markup=None
+        )
+
+    async def test_live_prompt_tapped_while_busy_is_left_alone(self) -> None:
+        from bot.handlers.earlyrb import earlyrb_orphan_button
+        from bot.handlers.flow_staleness import register_flow_callback_message
+
+        update = _button_update("ebunion:RT", message_id=50)
+        context = MagicMock()
+        context.chat_data = {"earlyrb_club_id": 1}
+        register_flow_callback_message(context, 50, flow="earlyrb")
+
+        await earlyrb_orphan_button(update, context)
+
+        update.callback_query.answer.assert_awaited_once_with()
+        update.callback_query.edit_message_reply_markup.assert_not_awaited()
+
+    async def test_old_prompt_during_a_new_session_says_expired(self) -> None:
+        from bot.handlers.earlyrb import earlyrb_orphan_button
+        from bot.handlers.flow_staleness import register_flow_callback_message
+
+        update = _button_update("ebclaim", message_id=40)
+        context = MagicMock()
+        context.chat_data = {"earlyrb_club_id": 1}
+        register_flow_callback_message(context, 50, flow="earlyrb")
+
+        await earlyrb_orphan_button(update, context)
+
+        self.assertTrue(update.callback_query.answer.await_args.kwargs["show_alert"])
+        update.callback_query.edit_message_reply_markup.assert_awaited_once()
+
+    def test_pattern_covers_every_earlyrb_button(self) -> None:
+        from bot.handlers.earlyrb import get_earlyrb_orphan_handler
+
+        handler = get_earlyrb_orphan_handler()
+        for data in ("ebclaim", "ebcancel", "ebunion:RT", "ebunion:AT"):
+            self.assertTrue(handler.pattern.match(data), data)
+        self.assertIsNone(handler.pattern.match("dpclaim"))
+
+
+class ButtonsRemovedOnEndTests(unittest.IsolatedAsyncioTestCase):
+    def _context(self):
+        from bot.handlers.flow_staleness import register_flow_callback_message
+
+        context = MagicMock()
+        context.bot.edit_message_reply_markup = AsyncMock()
+        context.chat_data = {"earlyrb_club_id": 1, "earlyrb_chat_id": -100}
+        register_flow_callback_message(context, 77, flow="earlyrb")
+        return context
+
+    async def test_timeout_removes_the_claim_buttons(self) -> None:
+        from bot.handlers.earlyrb import TIMEOUT_COPY, earlyrb_timeout
+
+        context = self._context()
+        update = MagicMock()
+        update.effective_chat.send_message = AsyncMock()
+
+        await earlyrb_timeout(update, context)
+
+        context.bot.edit_message_reply_markup.assert_awaited_once_with(
+            chat_id=-100, message_id=77, reply_markup=None
+        )
+        update.effective_chat.send_message.assert_awaited_once_with(TIMEOUT_COPY)
+        self.assertNotIn("earlyrb_club_id", context.chat_data)
+
+    async def test_cancel_removes_the_claim_buttons(self) -> None:
+        context = self._context()
+        update = MagicMock()
+        update.message.reply_text = AsyncMock()
+
+        state = await earlyrb_cancel(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        context.bot.edit_message_reply_markup.assert_awaited_once_with(
+            chat_id=-100, message_id=77, reply_markup=None
+        )
+
+    def test_timeout_fires_after_a_button_tap_too(self) -> None:
+        from bot.handlers.earlyrb import get_earlyrb_handler
+        from telegram.ext import TypeHandler
+
+        handler = get_earlyrb_handler()
+        timeout = handler.states[ConversationHandler.TIMEOUT]
+        self.assertIsInstance(timeout[0], TypeHandler)
+
+
+class AmountChangedTests(unittest.IsolatedAsyncioTestCase):
+    """Staff recorded it by hand while the Claim prompt was up."""
+
+    async def test_nothing_left_after_requote_ends_without_a_new_claim(self) -> None:
+        from bot.services.early_rakeback_auto import QuoteStage
+
+        update, context, chat, status = ClaimStatusMessageTests._make(None)
+        fresh = MagicMock(remaining=0)
+        changed = SimpleNamespace(kind="amount_changed", quote=fresh)
+        with (
+            patch(
+                "bot.handlers.earlyrb.handle_stale_flow_callback",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "bot.services.early_rakeback_auto.claim_feeback",
+                AsyncMock(return_value=changed),
+            ),
+            patch(
+                "bot.services.early_rakeback_auto.classify_quote",
+                AsyncMock(
+                    return_value=QuoteStage(
+                        "nothing_remaining", fresh, player_message="all claimed"
+                    )
+                ),
+            ),
+            patch("bot.services.early_rakeback_auto.create_claim_row", return_value=7),
+            patch(
+                "bot.services.early_rakeback_auto.new_idempotency_key", return_value="k"
+            ),
+            patch("bot.handlers.earlyrb._prompt_claim", AsyncMock()) as prompt,
+        ):
+            state = await earlyrb_claim(update, context)
+
+        self.assertEqual(state, ConversationHandler.END)
+        prompt.assert_not_awaited()
+        sent = [c.args[0] for c in chat.send_message.await_args_list]
+        self.assertIn("all claimed", sent)
+        self.assertNotIn("earlyrb_club_id", context.chat_data)
+
+
 if __name__ == "__main__":
     unittest.main()
