@@ -39,6 +39,16 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "create_deposit_method_alert",
         "update_deposit_method_alert",
         "delete_deposit_method_alert",
+        # bonuses / pool pay / issue reports
+        "create_bonus_record",
+        "update_bonus_record",
+        "delete_bonus_record",
+        "create_bonus_type",
+        "update_bonus_type",
+        "delete_bonus_type",
+        "create_manual_deposit_request",
+        "delete_manual_deposit_request",
+        "create_issue_report",
     }
 )
 

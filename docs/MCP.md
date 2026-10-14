@@ -3,8 +3,8 @@
 The `mcp_server/` package exposes the data behind the GG Dashboard to AI clients
 over the [Model Context Protocol](https://modelcontextprotocol.io). It runs inside
 the existing `web` dyno at `POST /mcp` (Streamable HTTP, static bearer tokens) and
-locally over stdio via `run_mcp.py`. It is read-mostly: 40 read tools, 6
-confirm-gated write tools, 5 reference resources and 2 prompts.
+locally over stdio via `run_mcp.py`. It exposes 43 read tools, 39 confirm-gated write tools that mirror dashboard
+actions, 5 reference resources and 2 prompts.
 
 ## Security model
 
@@ -132,15 +132,15 @@ UTC); day-based tools take `activity_date` / `audit_date`.
 | Audit | `list_reconcile_runs`, `get_reconcile_report`, `list_trade_record_uploads`, `list_early_rakeback_snapshots` |
 | Ops | `list_deposit_method_alerts`, `list_gto_zelle_cards`, `list_plaid_zelle`, `list_issue_reports`, `list_mcp_tool_calls` |
 | Monday Review | `get_monday_review_board` (one week: tasks, links, assignees, notes, done state), `list_monday_review_tasks`, `list_monday_review_history` (past weeks, done vs missed) |
-| **Writes** (confirm) | `bind_payment_to_group`, `update_cashout_record` (note / audited / sending / do_not_send), `update_manual_deposit_request` (trade_record_checked / amount), `create_expense`, `pause_variant`, `resume_variant`, `complete_monday_review_task` (check off / update who + notes), `add_monday_review_note` (persistent or temporary for a Monday), `create_monday_review_task` |
+| **Writes** (confirm) | payments: `bind_payment_to_group`, `unbind_payment`, quick links CRUD; cashouts: create/update/delete record, destinations and money-sent entries; Pool Pay requests create/update/delete; bonus records and types CRUD; expenses CRUD; outbound sends CRUD and `update_account_balance_settings`; `pause_variant`, `resume_variant`, deposit alerts CRUD, `create_issue_report`; Monday Review complete/note/create |
 
 Resources: `gg://reference/clubs`, `vocabulary`, `enums`, `conventions`,
 `caveats`. Prompts: `investigate_player(query)`, `daily_ops_check(date)`,
 `monday_review(week_of)`.
 
-Not exposed in v1: weekly player stats (external gg-computer service),
-broadcasts, GC/MTProto login, response audit, quick links, flow simulator,
-CSV/XLSX exports.
+Not exposed: weekly player stats (external gg-computer service), broadcasts,
+club/payment-method configuration, GC/MTProto login, response audit, flow
+simulator, Plaid linking, proof-image uploads, CSV/XLSX exports.
 
 ## Conventions the AI is told
 
