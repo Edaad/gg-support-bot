@@ -185,9 +185,18 @@ class ActorResolutionTests(unittest.TestCase):
 
         text = describe_headers([(b"authorization", b"Bearer secret"), (b"host", b"h")])
         self.assertIn("credential_headers=['authorization']", text)
+        self.assertIn("scheme=bearer", text)
+        self.assertIn("presented=len=6 sha256=", text)
         self.assertIn("'host'", text)
         self.assertNotIn("secret", text)
         self.assertIn("credential_headers=none", describe_headers({"host": "h"}))
+        self.assertIn("scheme=none presented=len=0", describe_headers({"host": "h"}))
+
+    def test_pasted_quotes_and_whitespace_are_stripped(self) -> None:
+        self.assertEqual(
+            extract_bearer({"authorization": f'Bearer "{GOOD_TOKEN}" '}), GOOD_TOKEN
+        )
+        self.assertEqual(extract_bearer({"x-api-key": f"'{GOOD_TOKEN}'"}), GOOD_TOKEN)
 
     def test_extract_bearer_from_raw_asgi_headers(self) -> None:
         raw = [(b"authorization", f"Bearer {GOOD_TOKEN}".encode("latin-1"))]

@@ -7,6 +7,7 @@ from ``MCP_API_TOKENS`` and are compared with ``hmac.compare_digest``. The SDK's
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -46,22 +47,45 @@ def extract_bearer(headers: Any) -> str | None:
     if raw:
         scheme, sep, token = raw.partition(" ")
         if scheme.lower() == "bearer":
-            return token.strip() or None
+            return _clean(token)
         if sep or scheme.lower() == "basic":
             return None  # Basic/other schemes are not accepted
-        return raw  # bare token without a scheme
+        return _clean(raw)  # bare token without a scheme
     for name in CREDENTIAL_HEADERS[1:]:
-        value = (mapping.get(name) or "").strip()
+        value = _clean(mapping.get(name))
         if value:
             return value
     return None
 
 
+def _clean(value: str | None) -> str | None:
+    """Strip whitespace and surrounding quotes that get pasted along with tokens."""
+    text = (value or "").strip().strip("\"'").strip()
+    return text or None
+
+
+def fingerprint(token: str | None) -> str:
+    """Length and short SHA-256 prefix of a credential, for log comparison only."""
+    if not token:
+        return "len=0"
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
+    return f"len={len(token)} sha256={digest}"
+
+
 def describe_headers(headers: Any) -> str:
-    """Header names only (never values), for diagnosing rejected requests."""
-    names = sorted(_headers_to_mapping(headers))
+    """Header names and a credential fingerprint (never values), for diagnostics."""
+    mapping = _headers_to_mapping(headers)
+    names = sorted(mapping)
     present = [n for n in CREDENTIAL_HEADERS if n in names]
-    return f"credential_headers={present or 'none'} all={names}"
+    raw = (mapping.get("authorization") or "").strip()
+    scheme = (
+        raw.partition(" ")[0].lower() if " " in raw else ("bare" if raw else "none")
+    )
+    token = extract_bearer(headers)
+    return (
+        f"credential_headers={present or 'none'} scheme={scheme} "
+        f"presented={fingerprint(token)} all={names}"
+    )
 
 
 def actor_for_token(token: str | None, tokens: Mapping[str, str]) -> str | None:
