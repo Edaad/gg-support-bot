@@ -79,6 +79,40 @@ def _filtered_query(
     return query.order_by(Expense.expense_date.desc(), Expense.id.desc())
 
 
+EXPENSES_XLSX_HEADER = [
+    "Amount",
+    "Expense type",
+    "Description",
+    "Club",
+    "Date",
+    "Pending",
+    "Created at",
+]
+
+
+def build_expenses_xlsx(rows: List[Expense]) -> bytes:
+    """Workbook for the Expenses export (dashboard download and MCP Drive export)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Expenses"
+    ws.append(EXPENSES_XLSX_HEADER)
+    for r in rows:
+        ws.append(
+            [
+                float(r.amount) if r.amount is not None else None,
+                r.expense_type,
+                r.description or "",
+                r.club.name if r.club else "",
+                r.expense_date.isoformat() if r.expense_date else "",
+                "yes" if r.pending else "no",
+                r.created_at.isoformat() if r.created_at else "",
+            ]
+        )
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 @router.get("", response_model=List[ExpenseRead])
 def list_expenses(
     club_id: Optional[int] = Query(None),
@@ -143,36 +177,7 @@ def export_expenses(
         date_to=date_to,
     ).all()
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Expenses"
-    ws.append(
-        [
-            "Amount",
-            "Expense type",
-            "Description",
-            "Club",
-            "Date",
-            "Pending",
-            "Created at",
-        ]
-    )
-    for r in rows:
-        ws.append(
-            [
-                float(r.amount) if r.amount is not None else None,
-                r.expense_type,
-                r.description or "",
-                r.club.name if r.club else "",
-                r.expense_date.isoformat() if r.expense_date else "",
-                "yes" if r.pending else "no",
-                r.created_at.isoformat() if r.created_at else "",
-            ]
-        )
-
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    buf = BytesIO(build_expenses_xlsx(rows))
     from_label = date_from.isoformat() if date_from else "all"
     to_label = date_to.isoformat() if date_to else "all"
     filename = f"expenses-{from_label}-to-{to_label}.xlsx"

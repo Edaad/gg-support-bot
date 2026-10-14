@@ -22,7 +22,7 @@ os.environ.setdefault("MCP_API_TOKENS", "docs:" + "x" * 32)
 
 from mcp_server import resources  # noqa: E402
 from mcp_server.server import build_server  # noqa: E402
-from mcp_server.tools import WRITE_TOOL_NAMES  # noqa: E402
+from mcp_server.tools import EXPORT_TOOL_NAMES, WRITE_TOOL_NAMES  # noqa: E402
 
 REFS = _REPO_ROOT / "skills" / "gg-dashboard" / "references"
 
@@ -138,6 +138,7 @@ def write_tools_md(tools) -> int:
     groups = list(GROUPS)
     writes = sorted(n for n in by_name if n in WRITE_TOOL_NAMES)
     groups.append(("Write tools (confirm required)", writes))
+    groups.append(("Exports (Google Sheets)", sorted(EXPORT_TOOL_NAMES & set(by_name))))
     covered = {n for _g, names in groups for n in names}
     other = sorted(n for n in by_name if n not in covered)
     if other:

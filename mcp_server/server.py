@@ -21,6 +21,9 @@ must be done this Monday (links, notes, assignees, done state);
 complete_monday_review_task checks a task off and add_monday_review_note queues a
 reminder for a later Monday.
 
+export_bonus_records / export_expenses upload a Google Sheet anyone with the link
+can view and return its url; call them only when asked to export or share.
+
 PII is masked unless include_pii=true. Write tools require confirm=true, return a
 dry run otherwise, and every call is logged with your token name to
 mcp_tool_calls (see list_mcp_tool_calls)."""

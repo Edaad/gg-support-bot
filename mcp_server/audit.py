@@ -115,9 +115,9 @@ class AuditMiddleware:
 
     def __init__(self, write_tool_names: frozenset[str] | None = None):
         if write_tool_names is None:
-            from mcp_server.tools import WRITE_TOOL_NAMES
+            from mcp_server.tools import EXPORT_TOOL_NAMES, WRITE_TOOL_NAMES
 
-            write_tool_names = WRITE_TOOL_NAMES
+            write_tool_names = WRITE_TOOL_NAMES | EXPORT_TOOL_NAMES
         self.write_tool_names = write_tool_names
 
     async def __call__(self, ctx: Any, call_next: Any) -> Any:
