@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.method_owner import normalize_method_owner
 from bot.services.cashapp_variant_fields import normalize_cashapp_tag
+from bot.services.payment_chip_match import parse_payment_reference_at
 from bot.services.venmo_payments import parse_amount_cents
 from bot.services.venmo_variant_fields import normalize_venmo_tag
 from db.models import ClubPaymentMethod, ClubPaymentTierVariant, OutboundSend
@@ -254,6 +256,43 @@ def ingest_outbound_send(
     return _result(row, created=True)
 
 
+def send_occurred_at(paid_at: str | None, created_at: datetime | None) -> datetime:
+    """Payment time for list order and date filters. Falls back to created_at."""
+    raw = (paid_at or "").strip()
+    if raw:
+        parsed = parse_payment_reference_at(paid_at=raw, created_at=None)
+        if parsed is None:
+            try:
+                parsed = parsedate_to_datetime(raw)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                parsed = None
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+    if created_at is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if created_at.tzinfo is None:
+        return created_at.replace(tzinfo=timezone.utc)
+    return created_at.astimezone(timezone.utc)
+
+
+def _in_occurred_range(
+    occurred_at: datetime, from_dt: datetime | None, to_dt: datetime | None
+) -> bool:
+    if from_dt is not None and occurred_at < _as_utc(from_dt):
+        return False
+    if to_dt is not None and occurred_at > _as_utc(to_dt):
+        return False
+    return True
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def list_outbound_sends(
     db: Session,
     *,
@@ -273,18 +312,21 @@ def list_outbound_sends(
         stored_tag = _filter_tag(method_slug, tag)
         if stored_tag is not None:
             query = query.filter(OutboundSend.tag == stored_tag)
-    if from_dt is not None:
-        query = query.filter(OutboundSend.created_at >= from_dt)
-    if to_dt is not None:
-        query = query.filter(OutboundSend.created_at <= to_dt)
-    total = query.count()
-    items = (
-        query.order_by(OutboundSend.created_at.desc(), OutboundSend.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+    rows = query.all()
+    rows.sort(
+        key=lambda row: (send_occurred_at(row.paid_at, row.created_at), int(row.id)),
+        reverse=True,
     )
-    return items, total
+    if from_dt is not None or to_dt is not None:
+        rows = [
+            row
+            for row in rows
+            if _in_occurred_range(
+                send_occurred_at(row.paid_at, row.created_at), from_dt, to_dt
+            )
+        ]
+    total = len(rows)
+    return rows[offset : offset + limit], total
 
 
 def _filter_tag(method: str | None, raw: str) -> str | None:

@@ -226,7 +226,8 @@ Parameters: `club` (string|null, default null); `pending` (boolean|null, default
 
 Amounts that left a sending account (Zapier-ingested or admin-entered),
 newest first. `method` is venmo|cashapp|crypto; `tag` is the sending handle
-(@venmo, $cashapp). `from_`/`to` filter created_at (UTC datetimes; YYYY-MM-DD
+(@venmo, $cashapp). `from_`/`to` filter paid_at, or created_at when paid_at
+is missing (UTC datetimes; YYYY-MM-DD
 means that whole America/New_York day). Amounts are amount_cents (+ amount_usd).
 `recipient` is masked unless include_pii. See get_account_balances for totals.
 

@@ -87,7 +87,7 @@ _HEADLINES = {
         "no payment received or chips added. Please follow up."
     ),
     REASON_DEPOSIT_SENT_CLAIMED: (
-        "Claims to have sent the payment already please check."
+        "The player claims to have sent the payment already please check."
     ),
     REASON_DEPOSIT_SENT_FOLLOWUP: (
         "Player sent a message after confirming they sent the payment."

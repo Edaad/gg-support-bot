@@ -31,6 +31,7 @@ from db.models import (
     ClubPaymentMethod,
     ClubPaymentTier,
     ClubPaymentTierVariant,
+    OutboundSend,
 )
 
 WEBHOOK_SECRET = "test-outbound-secret"
@@ -204,6 +205,48 @@ class OutboundSendServiceTestCase(unittest.TestCase):
         prefix, prefix_total = list_outbound_sends(self.session, tag="$")
         self.assertEqual(prefix_total, total)
         self.assertEqual(len(prefix), len(items))
+
+    def test_list_orders_and_filters_by_paid_at(self):
+        later = ingest_outbound_send(
+            self.session,
+            method="venmo",
+            tag="@jagger4444",
+            method_owner="round-table",
+            recipient="Later paid",
+            amount=5,
+            source_external_id="paid-later",
+            paid_at="2026-10-15T02:00:00Z",
+        )
+        earlier = ingest_outbound_send(
+            self.session,
+            method="venmo",
+            tag="@jagger4444",
+            method_owner="round-table",
+            recipient="Earlier paid",
+            amount=5,
+            source_external_id="paid-earlier",
+            paid_at="Wed, 14 Oct 2026 20:33:19 +0000",
+        )
+        self.session.commit()
+        later_row = self.session.get(OutboundSend, later.id)
+        earlier_row = self.session.get(OutboundSend, earlier.id)
+        assert later_row is not None and earlier_row is not None
+        later_row.created_at = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        earlier_row.created_at = datetime(2026, 10, 16, tzinfo=timezone.utc)
+        self.session.commit()
+
+        items, total = list_outbound_sends(self.session)
+        self.assertEqual(total, 2)
+        self.assertEqual(
+            [row.recipient for row in items], ["Later paid", "Earlier paid"]
+        )
+        window, window_total = list_outbound_sends(
+            self.session,
+            from_dt=datetime(2026, 10, 15, 0, 0, tzinfo=timezone.utc),
+            to_dt=datetime(2026, 10, 15, 23, 59, tzinfo=timezone.utc),
+        )
+        self.assertEqual(window_total, 1)
+        self.assertEqual(window[0].recipient, "Later paid")
 
     def test_admin_create_update_delete(self):
         row = create_outbound_send(

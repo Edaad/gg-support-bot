@@ -12,7 +12,11 @@ import Modal from '../components/Modal'
 import { MethodName } from '../components/PaymentMethodIcon'
 import { useConfirm } from '../components/ConfirmProvider'
 import EasternInstant from '../components/EasternInstant'
-import { easternDayEndIso, easternDayStartIso } from '../lib/easternTime'
+import {
+  easternDayEndIso,
+  easternDayStartIso,
+  parseApiUtcDate,
+} from '../lib/easternTime'
 
 const PAGE_SIZE = 50
 const METHODS = ['venmo', 'cashapp', 'crypto'] as const
@@ -43,6 +47,12 @@ function listTag(raw: string): string | undefined {
 
 function dollars(cents: number): string {
   return (cents / 100).toFixed(2)
+}
+
+function sendInstant(row: OutboundSendT): string {
+  const paid = row.paid_at?.trim()
+  if (paid && !Number.isNaN(parseApiUtcDate(paid).getTime())) return paid
+  return row.created_at
 }
 
 export default function Sends({ token }: { token: string }) {
@@ -262,6 +272,9 @@ export default function Sends({ token }: { token: string }) {
                       <MethodName name={methodLabel(r.method)} slug={r.method} className="shrink-0" />
                       <span className="truncate">· {r.tag}</span>
                     </p>
+                    <p className="mt-0.5 text-sm text-ink-muted">
+                      <EasternInstant value={sendInstant(r)} />
+                    </p>
                   </div>
                   <p className="shrink-0 text-base font-semibold tabular-nums">{fmtMoney(r.amount_cents / 100)}</p>
                 </div>
@@ -285,7 +298,7 @@ export default function Sends({ token }: { token: string }) {
             <table className="min-w-[56rem] text-left text-sm">
               <thead className="border-b border-border bg-surface-raised text-ink-muted">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Created</th>
+                  <th className="px-4 py-3 font-medium">Paid</th>
                   <th className="px-4 py-3 font-medium">Method</th>
                   <th className="px-4 py-3 font-medium">Tag</th>
                   <th className="px-4 py-3 font-medium">Amount</th>
@@ -298,7 +311,7 @@ export default function Sends({ token }: { token: string }) {
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0">
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <EasternInstant value={r.created_at} />
+                      <EasternInstant value={sendInstant(r)} />
                     </td>
                     <td className="px-4 py-3">
                       <MethodName name={methodLabel(r.method)} slug={r.method} />

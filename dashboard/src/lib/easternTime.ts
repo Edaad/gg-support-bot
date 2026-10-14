@@ -4,7 +4,7 @@ const EASTERN = 'America/New_York'
 export function parseApiUtcDate(raw: string): Date {
   const s = raw.trim()
   if (!s) return new Date(NaN)
-  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) {
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{4}$/.test(s)) {
     return new Date(s)
   }
   return new Date(s.includes('T') ? `${s}Z` : `${s}T00:00:00Z`)

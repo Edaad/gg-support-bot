@@ -380,7 +380,7 @@ class EscalationCopyTests(unittest.TestCase):
                 title="RT / Zelle / Jordan",
             )
         self.assertIn(
-            "*Claims to have sent the payment already please check.*",
+            "*The player claims to have sent the payment already please check.*",
             text,
         )
         self.assertIn("Club: Round Table", text)
