@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from openpyxl.styles import Font
 from sqlalchemy.orm import Session, joinedload
 
 from api.auth import require_admin
@@ -108,6 +109,11 @@ def build_expenses_xlsx(rows: List[Expense]) -> bytes:
                 r.created_at.isoformat() if r.created_at else "",
             ]
         )
+    if rows:
+        total = sum((Decimal(str(r.amount or 0)) for r in rows), Decimal("0"))
+        ws.append([float(total), "Total"])
+        for cell in ws[ws.max_row]:
+            cell.font = Font(bold=True)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
