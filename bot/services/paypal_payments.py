@@ -153,7 +153,9 @@ def format_notification_text(
     memo = (getattr(payment, "memo", None) or "").strip()
     if memo:
         lines.append(f"Memo: {escape_notification_html(memo)}")
+    echeck = "True" if getattr(payment, "echeck", False) else "False"
     lines.append(f"Method: PayPal ({escape_notification_html(payment.paypal_email)})")
+    lines.append(f"eCheck: {echeck}")
 
     body = "\n".join(lines)
     if getattr(payment, "is_test", False):
@@ -209,6 +211,7 @@ async def ingest_paypal_payment(
     paid_at: Optional[str] = None,
     source_external_id: Optional[str] = None,
     memo: Optional[str] = None,
+    echeck: bool = False,
     test: bool = False,
 ) -> IngestResult:
     """Create payment row, auto-bind if known payer, send Telegram notification."""
@@ -230,10 +233,11 @@ async def ingest_paypal_payment(
 
     logger.info(
         "paypal ingest: processing payer=%r amount_cents=%s email=%r "
-        "memo_raw=%r memo_normalized=%r test=%s source_external_id=%r",
+        "echeck=%s memo_raw=%r memo_normalized=%r test=%s source_external_id=%r",
         payer,
         amount_cents,
         email,
+        bool(echeck),
         memo,
         memo_normalized,
         test,
@@ -278,6 +282,7 @@ async def ingest_paypal_payment(
             payer_name=payer,
             amount_cents=amount_cents,
             paypal_email=email,
+            echeck=bool(echeck),
             paid_at=(paid_at or "").strip() or None,
             source_external_id=source_id,
             memo=memo_normalized,
@@ -414,6 +419,14 @@ async def ingest_paypal_payment(
         setup_blocked_markup,
     )
     from notification.payment_bind_helpers import format_payment_notification
+    from bot.services.payment_refund_gate import evaluate_refund_gate
+
+    refund_gate = evaluate_refund_gate(
+        amount_cents=amount_cents,
+        memo=memo,
+        echeck=bool(echeck),
+        method_slug="paypal",
+    )
 
     group_chat_url = await resolve_group_chat_url_for_payment(
         payment,
@@ -426,6 +439,7 @@ async def ingest_paypal_payment(
         group_chat_url=group_chat_url,
         ambiguous_candidates=ambiguous_candidates if not auto_bound else None,
         auto_bound=auto_bound,
+        refund_gate=refund_gate,
     )
 
     notif_markup: dict | None = None
@@ -467,6 +481,7 @@ async def ingest_paypal_payment(
             club_id=setup_club_id,
             telegram_chat_id=setup_target_chat_id,
             auto_bound=False,
+            requires_refund=refund_gate.requires_refund,
         )
         await deliver_payment_notification(
             setup_warning_text,
@@ -538,6 +553,8 @@ async def ingest_paypal_payment(
         amount_cents=amount_cents,
         auto_bound=auto_bound,
         is_test=bool(test),
+        refund_gate=refund_gate,
+        payment_method_slug="paypal",
     )
 
     if bound_chat_id is not None:
@@ -574,8 +591,23 @@ async def ingest_paypal_payment(
         payment_method_slug="paypal",
         payment_id=payment_id,
         group_title=bound_title or group_title,
+        requires_refund=refund_gate.requires_refund,
         bind_attempt_id=setup_attempt_id,
     )
+
+    if refund_gate.requires_refund:
+        from bot.services.payment_refund_gate import (
+            maybe_create_payment_refund_issue_report,
+        )
+
+        await maybe_create_payment_refund_issue_report(
+            "paypal",
+            payment_id,
+            refund_gate,
+            group_title=bound_title or group_title,
+            notification_chat_id=notif_chat_id,
+            notification_message_id=notif_message_id,
+        )
 
     status = "bound" if auto_bound else "unbound"
     from bot.services.deposit_method_alerts import maybe_evaluate_after_ingest

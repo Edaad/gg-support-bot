@@ -457,18 +457,32 @@ export default function PaymentsExportModal({
                 'auto_bound',
                 'goods_or_services',
               ]
-            : [
-                'created_at',
-                'payer_name',
-                accountKey,
-                'group_title',
-                'gg_nickname',
-                'gg_player_id',
-                'club',
-                'amount_usd',
-                'status',
-                'auto_bound',
-              ]
+            : effectiveMethod === 'paypal'
+              ? [
+                  'created_at',
+                  'payer_name',
+                  accountKey,
+                  'group_title',
+                  'gg_nickname',
+                  'gg_player_id',
+                  'club',
+                  'amount_usd',
+                  'status',
+                  'auto_bound',
+                  'echeck',
+                ]
+              : [
+                  'created_at',
+                  'payer_name',
+                  accountKey,
+                  'group_title',
+                  'gg_nickname',
+                  'gg_player_id',
+                  'club',
+                  'amount_usd',
+                  'status',
+                  'auto_bound',
+                ]
         downloadCsv(
           `${parts.join('-')}.csv`,
           headers,
@@ -494,6 +508,8 @@ export default function PaymentsExportModal({
             ]
             if (effectiveMethod === 'venmo') {
               base.push(String((row as VenmoPaymentRow).goods_or_services))
+            } else if (effectiveMethod === 'paypal') {
+              base.push(String((row as PayPalPaymentRow).echeck))
             }
             return base
           }),

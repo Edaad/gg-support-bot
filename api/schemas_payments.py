@@ -261,6 +261,7 @@ class PayPalPaymentRead(BaseModel):
     id: int
     payer_name: str
     paypal_email: str
+    echeck: bool = False
     amount_cents: int
     amount_usd: Decimal
     paid_at: Optional[str] = None

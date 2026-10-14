@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from bot.services.payment_refund_gate import (
     REASON_BANNED_MEMO,
+    REASON_ECHECK,
     REASON_GOODS_SERVICES,
     append_whole_dollar_nudge,
     evaluate_refund_gate,
@@ -77,6 +78,20 @@ class EvaluateRefundGateTests(unittest.TestCase):
             method_slug="cashapp",
         )
         self.assertFalse(gate.requires_refund)
+
+    def test_echeck_refunds_paypal_only(self):
+        paypal = evaluate_refund_gate(
+            amount_cents=8000, echeck=True, method_slug="paypal"
+        )
+        self.assertEqual(paypal.reasons, (REASON_ECHECK,))
+        instant = evaluate_refund_gate(
+            amount_cents=8000, memo="poker", method_slug="paypal"
+        )
+        self.assertFalse(instant.requires_refund)
+        venmo = evaluate_refund_gate(
+            amount_cents=8000, echeck=True, method_slug="venmo"
+        )
+        self.assertFalse(venmo.requires_refund)
 
 
 class RefundIssueReportDescriptionTests(unittest.TestCase):
@@ -148,6 +163,43 @@ class RefundCopyTests(unittest.TestCase):
         )
         self.assertNotIn("DO NOT ADD", text)
         self.assertTrue(gate.warn_whole_dollar)
+
+    def test_player_echeck_copy(self):
+        gate = evaluate_refund_gate(
+            amount_cents=8000, echeck=True, method_slug="paypal"
+        )
+        self.assertEqual(
+            format_player_refund_message(8000, gate, method_slug="paypal"),
+            "We have received your payment for $80. "
+            "Since it was sent as an eCheck, we will refund it — "
+            "please resend as an instant payment.",
+        )
+
+    def test_staff_banner_names_echeck(self):
+        gate = evaluate_refund_gate(
+            amount_cents=8000, echeck=True, method_slug="paypal"
+        )
+        text = inject_refund_banner(
+            "🔔 PayPal Payment Notification\nGroup Chat: Unbound", gate
+        )
+        self.assertIn("DO NOT ADD", text)
+        self.assertIn("eCheck", text)
+        self.assertNotIn("Goods & Services", text)
+
+    def test_echeck_issue_description(self):
+        payment = SimpleNamespace(
+            payer_name="Jane",
+            amount_cents=8000,
+            paypal_email="jane@example.com",
+            memo=None,
+        )
+        gate = evaluate_refund_gate(
+            amount_cents=8000, echeck=True, method_slug="paypal"
+        )
+        text = format_refund_issue_report_description(
+            payment, gate, method_slug="paypal"
+        )
+        self.assertEqual(text, "*eCheck*\n*PayPal:* `jane@example.com`")
 
     def test_player_gs_copy_unchanged(self):
         gate = evaluate_refund_gate(amount_cents=8000, goods_or_services=True)

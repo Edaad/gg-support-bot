@@ -184,6 +184,22 @@ class MaybeAutoDepositGatingTestCase(unittest.IsolatedAsyncioTestCase):
             "no_recent_deposit_command",
         )
 
+    async def test_skips_refund_required(self) -> None:
+        with (
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "run_auto_chip_add", new_callable=AsyncMock) as mock_run,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=8000,
+                auto_bound=True,
+                payment_method_slug="paypal",
+                payment_id=2,
+                requires_refund=True,
+            )
+        mock_run.assert_not_awaited()
+
     async def test_skips_goods_and_services(self) -> None:
         with (
             patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),

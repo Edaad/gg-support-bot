@@ -1888,6 +1888,9 @@ class PayPalPayment(Base):
     payer_name = Column(String(255), nullable=False)
     amount_cents = Column(Integer, nullable=False)
     paypal_email = Column(String(255), nullable=False)
+    echeck = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     paid_at = Column(String(255), nullable=True)
     source_external_id = Column(String(255), unique=True, nullable=True)
     telegram_chat_id = Column(BigInteger, nullable=True)

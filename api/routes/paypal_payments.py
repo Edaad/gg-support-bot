@@ -49,6 +49,7 @@ class PayPalPaymentIngestBody(BaseModel):
     payer_name: str = Field(..., min_length=1)
     amount: str | float | int
     paypal_email: str = Field(..., min_length=1)
+    echeck: bool = False
     paid_at: str | None = None
     source_external_id: str | None = None
     memo: str | None = None
@@ -85,11 +86,12 @@ async def ingest_payment(
         raise HTTPException(422, detail=exc.errors()) from exc
 
     logger.info(
-        "paypal ingest: parsed body payer=%r amount=%r email=%r paid_at=%r "
+        "paypal ingest: parsed body payer=%r amount=%r email=%r echeck=%s paid_at=%r "
         "memo=%r test=%s source_external_id=%r",
         body.payer_name,
         body.amount,
         body.paypal_email,
+        body.echeck,
         body.paid_at,
         body.memo,
         body.test,
@@ -103,6 +105,7 @@ async def ingest_payment(
             payer_name=body.payer_name,
             amount=body.amount,
             paypal_email=body.paypal_email,
+            echeck=body.echeck,
             paid_at=body.paid_at,
             source_external_id=body.source_external_id,
             memo=body.memo,

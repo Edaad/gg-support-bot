@@ -101,3 +101,27 @@ class PayPalPaymentsApiTestCase(unittest.TestCase):
             headers={"X-Paypal-Webhook-Secret": WEBHOOK_SECRET},
         )
         self.assertEqual(response.status_code, 422)
+
+    def test_ingest_forwards_echeck(self):
+        ingest = AsyncMock(
+            return_value=IngestResult(
+                payment_id=9,
+                status="unbound",
+                auto_bound=False,
+                created=True,
+            )
+        )
+        with patch("api.routes.paypal_payments.ingest_paypal_payment", new=ingest):
+            response = self.client.post(
+                "/api/paypal/payments",
+                json={
+                    "payer_name": "Marcus Ahlbäck",
+                    "amount": "80.00",
+                    "paypal_email": "payments@clubgto.com",
+                    "method_owner": "round-table",
+                    "echeck": True,
+                },
+                headers={"X-Paypal-Webhook-Secret": WEBHOOK_SECRET},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(ingest.await_args.kwargs["echeck"])

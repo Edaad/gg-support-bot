@@ -859,6 +859,7 @@ def build_paypal_payment_read(session: Session, payment: PayPalPayment) -> dict:
         "id": payment.id,
         "payer_name": payment.payer_name,
         "paypal_email": payment.paypal_email,
+        "echeck": bool(payment.echeck),
         "amount_cents": payment.amount_cents,
         "amount_usd": cents_to_usd(payment.amount_cents),
         "paid_at": payment.paid_at,

@@ -1,4 +1,4 @@
-"""Refund-required gates for Venmo and Zelle ingest (G&S, cents, banned memos)."""
+"""Refund-required gates for Venmo, Zelle, and PayPal eCheck ingest."""
 
 from __future__ import annotations
 
@@ -9,11 +9,17 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from db.connection import get_db
-from db.models import PaymentMethodBindAttempt, VenmoPayment, ZellePayment
+from db.models import (
+    PayPalPayment,
+    PaymentMethodBindAttempt,
+    VenmoPayment,
+    ZellePayment,
+)
 
 logger = logging.getLogger(__name__)
 
 REASON_GOODS_SERVICES = "goods_and_services"
+REASON_ECHECK = "echeck"
 REASON_FRACTIONAL_AMOUNT = "fractional_amount"
 REASON_BANNED_MEMO = "banned_memo"
 
@@ -76,6 +82,7 @@ def evaluate_refund_gate(
     amount_cents: int,
     memo: str | None = None,
     goods_or_services: bool = False,
+    echeck: bool = False,
     is_first_time_setup_bind: bool = False,
     method_slug: str = "venmo",
 ) -> RefundGate:
@@ -83,20 +90,29 @@ def evaluate_refund_gate(
 
     Cents never block chip-add. Repeat fractional deposits get a polite
     player reminder; first-time special-amount setup does not.
-    Banned memos (and Venmo G&S) still require a refund.
+    Banned memos, Venmo G&S, and PayPal eCheck still require a refund.
+    PayPal stays out of the memo and cents checks; only eCheck refunds.
     """
     slug = (method_slug or "").strip().lower()
-    if slug not in _GATED_METHODS:
+    echeck_refund = bool(echeck) and slug == "paypal"
+    if slug not in _GATED_METHODS and not echeck_refund:
         return RefundGate()
 
     reasons: list[str] = []
-    banned_hits = find_banned_memo_hits(memo)
-    if goods_or_services and slug == "venmo":
-        reasons.append(REASON_GOODS_SERVICES)
-    if banned_hits:
-        reasons.append(REASON_BANNED_MEMO)
+    banned_hits: tuple[str, ...] = ()
+    if slug in _GATED_METHODS:
+        banned_hits = find_banned_memo_hits(memo)
+        if goods_or_services and slug == "venmo":
+            reasons.append(REASON_GOODS_SERVICES)
+        if banned_hits:
+            reasons.append(REASON_BANNED_MEMO)
+    if echeck_refund:
+        reasons.append(REASON_ECHECK)
     warn_whole_dollar = (
-        int(amount_cents) % 100 != 0 and not is_first_time_setup_bind and not reasons
+        slug in _GATED_METHODS
+        and int(amount_cents) % 100 != 0
+        and not is_first_time_setup_bind
+        and not reasons
     )
     return RefundGate(
         reasons=tuple(reasons),
@@ -212,6 +228,7 @@ def refund_gate_for_payment(
         amount_cents=amount_cents,
         memo=getattr(payment, "memo", None),
         goods_or_services=bool(getattr(payment, "goods_or_services", False)),
+        echeck=bool(getattr(payment, "echeck", False)),
         is_first_time_setup_bind=bool(first_time),
         method_slug=slug,
     )
@@ -227,6 +244,7 @@ def inject_refund_banner(text: str, gate: RefundGate) -> str:
         for line in lines
         if "DO NOT ADD" not in line
         and not line.startswith("• Goods")
+        and not line.startswith("• eCheck")
         and not line.startswith("• Banned memo")
         and line != "⚠️ <b>DO NOT ADD</b> — refund required"
     ]
@@ -246,6 +264,8 @@ def staff_refund_banner_lines(gate: RefundGate) -> list[str]:
     for reason in gate.reasons:
         if reason == REASON_GOODS_SERVICES:
             lines.append("• Goods & Services")
+        elif reason == REASON_ECHECK:
+            lines.append("• eCheck")
         elif reason == REASON_BANNED_MEMO:
             hits = ", ".join(gate.banned_hits)
             lines.append(f"• Banned memo ({hits})" if hits else "• Banned memo")
@@ -275,6 +295,12 @@ def format_player_refund_message(
             f"We have received your payment for {amount}. "
             "Since it was sent as Goods & Services, we will refund it — "
             "please resend as Friends & Family."
+        )
+    if gate.reasons == (REASON_ECHECK,):
+        return (
+            f"We have received your payment for {amount}. "
+            "Since it was sent as an eCheck, we will refund it — "
+            "please resend as an instant payment."
         )
 
     parts = [
@@ -312,13 +338,17 @@ def append_whole_dollar_nudge(text: str, gate: RefundGate | None) -> str:
 
 def _method_label(method_slug: str) -> str:
     slug = (method_slug or "").strip().lower()
-    return {"venmo": "Venmo", "zelle": "Zelle"}.get(slug, slug.title() or "Payment")
+    return {"venmo": "Venmo", "zelle": "Zelle", "paypal": "PayPal"}.get(
+        slug, slug.title() or "Payment"
+    )
 
 
 def _method_handle(payment: object, method_slug: str) -> str:
     slug = (method_slug or "").strip().lower()
     if slug == "zelle":
         return str(getattr(payment, "zelle_recipient", "") or "")
+    if slug == "paypal":
+        return str(getattr(payment, "paypal_email", "") or "")
     handle = str(getattr(payment, "venmo_handle", "") or "")
     if handle and not handle.startswith("@"):
         return f"@{handle.lstrip('@')}"
@@ -336,6 +366,8 @@ def format_refund_issue_report_title(
     bits: list[str] = []
     if REASON_GOODS_SERVICES in gate.reasons:
         bits.append("G&S")
+    if REASON_ECHECK in gate.reasons:
+        bits.append("eCheck")
     if REASON_BANNED_MEMO in gate.reasons:
         bits.append("banned memo")
     reason_label = ", ".join(bits) if bits else "refund"
@@ -360,6 +392,8 @@ def format_refund_issue_report_description(
     reason_bits: list[str] = []
     if REASON_GOODS_SERVICES in gate.reasons:
         reason_bits.append("*Goods & Services*")
+    if REASON_ECHECK in gate.reasons:
+        reason_bits.append("*eCheck*")
     if REASON_BANNED_MEMO in gate.reasons:
         hits = gate.banned_hits or ("banned keyword",)
         hit_bits = ", ".join(f"`{h}`" for h in hits)
@@ -369,7 +403,9 @@ def format_refund_issue_report_description(
     if reason_bits:
         lines.append(" · ".join(reason_bits))
     if handle:
-        label = "Venmo" if slug == "venmo" else "Zelle"
+        label = {"venmo": "Venmo", "zelle": "Zelle", "paypal": "PayPal"}.get(
+            slug, slug.title() or "Payment"
+        )
         lines.append(f"*{label}:* `{handle}`")
     if memo:
         lines.append(f"*Memo:* `{memo}`")
@@ -387,11 +423,18 @@ async def maybe_create_payment_refund_issue_report(
     is_first_time_setup_bind: bool | None = None,
 ) -> None:
     slug = (method_slug or "").strip().lower()
-    if slug not in _GATED_METHODS:
+    if slug == "venmo":
+        model = VenmoPayment
+        reporter_source = "venmo_ingest"
+    elif slug == "zelle":
+        model = ZellePayment
+        reporter_source = "zelle_ingest"
+    elif slug == "paypal":
+        model = PayPalPayment
+        reporter_source = "paypal_ingest"
+    else:
         return
-    model = VenmoPayment if slug == "venmo" else ZellePayment
     payment_id = int(payment if isinstance(payment, int) else payment.id)
-    reporter_source = "venmo_ingest" if slug == "venmo" else "zelle_ingest"
     try:
         from bot.services.issue_reports import create_issue_report
 

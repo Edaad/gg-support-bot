@@ -166,6 +166,9 @@ export default function PaymentDetailModal({ open, row, onClose, onBind }: Props
         {row.source === 'venmo' && d.goods_or_services != null ? (
           <DetailField label="Goods or services" value={String(d.goods_or_services)} />
         ) : null}
+        {row.source === 'paypal' && d.echeck != null ? (
+          <DetailField label="eCheck" value={String(d.echeck)} />
+        ) : null}
       </dl>
     )
   }

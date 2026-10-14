@@ -546,6 +546,7 @@ export type PayPalPaymentRow = {
   id: number
   payer_name: string
   paypal_email: string
+  echeck: boolean
   amount_cents: number
   amount_usd: number
   paid_at: string | null

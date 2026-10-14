@@ -157,6 +157,8 @@ def _manual_ingest_detail_rows(
     ]
     if method_slug == "venmo":
         headers.append("goods_or_services")
+    elif method_slug == "paypal":
+        headers.append("echeck")
     data = []
     for row in rows:
         d = row.detail
@@ -175,6 +177,8 @@ def _manual_ingest_detail_rows(
         ]
         if method_slug == "venmo":
             base.append(str(d.get("goods_or_services", "")))
+        elif method_slug == "paypal":
+            base.append(str(d.get("echeck", "")))
         data.append(base)
     return headers, data
 
