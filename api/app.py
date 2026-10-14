@@ -222,6 +222,15 @@ def create_app() -> FastAPI:
         app.router.routes.append(mcp_mount[1])
         logging.getLogger(__name__).info("MCP server mounted at /mcp")
 
+    # OAuth discovery probes (Claude connectors check these before connecting).
+    # The MCP server uses bearer tokens, not OAuth, so answer with a JSON 404
+    # instead of letting the SPA fallback return index.html with status 200.
+    @app.get("/.well-known/{rest_of_path:path}")
+    def well_known_not_found(rest_of_path: str):
+        from fastapi import HTTPException
+
+        raise HTTPException(404, "Not Found")
+
     @app.api_route(
         "/api/{rest_of_path:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
@@ -251,7 +260,11 @@ def create_app() -> FastAPI:
         def serve_spa(full_path: str):
             # Do not treat /api/* as SPA routes — otherwise POSTs to unknown API paths
             # return 405 (GET exists) instead of 404/ hitting the real handler.
-            if full_path == "api" or full_path.startswith("api/"):
+            if (
+                full_path == "api"
+                or full_path.startswith("api/")
+                or full_path.startswith(".well-known/")
+            ):
                 from fastapi import HTTPException
 
                 raise HTTPException(404, "Not Found")
