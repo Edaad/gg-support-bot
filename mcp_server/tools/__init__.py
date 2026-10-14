@@ -27,6 +27,18 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "remove_cashout_send",
         "update_expense",
         "delete_expense",
+        # payments / sends / balances / alerts
+        "unbind_payment",
+        "create_payment_quick_link",
+        "update_payment_quick_link",
+        "delete_payment_quick_link",
+        "record_outbound_send",
+        "update_outbound_send",
+        "delete_outbound_send",
+        "update_account_balance_settings",
+        "create_deposit_method_alert",
+        "update_deposit_method_alert",
+        "delete_deposit_method_alert",
     }
 )
 
@@ -64,5 +76,14 @@ def register_all(mcp: MCPServer) -> None:
         monday_review,
     ):
         module.register(mcp)
-    for module in (payments, pool_pay, cashouts, expenses, ops, monday_review):
+    for module in (
+        payments,
+        pool_pay,
+        cashouts,
+        bonuses,
+        expenses,
+        sends_balances,
+        ops,
+        monday_review,
+    ):
         module.register_writes(mcp)
