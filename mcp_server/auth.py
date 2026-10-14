@@ -33,13 +33,35 @@ def _headers_to_mapping(headers: Any) -> Mapping[str, str]:
     return out
 
 
+# Header names Claude's connector dialog offers for a fixed credential. The
+# token may arrive as ``Authorization: Bearer <t>``, a bare ``Authorization: <t>``
+# (prefix omitted in the dialog), ``X-API-Key: <t>`` or ``X-Auth-Token: <t>``.
+CREDENTIAL_HEADERS: tuple[str, ...] = ("authorization", "x-api-key", "x-auth-token")
+
+
 def extract_bearer(headers: Any) -> str | None:
+    """Return the credential carried by the request, whichever header holds it."""
     mapping = _headers_to_mapping(headers)
     raw = (mapping.get("authorization") or "").strip()
-    scheme, _, token = raw.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        return None
-    return token.strip()
+    if raw:
+        scheme, sep, token = raw.partition(" ")
+        if scheme.lower() == "bearer":
+            return token.strip() or None
+        if sep or scheme.lower() == "basic":
+            return None  # Basic/other schemes are not accepted
+        return raw  # bare token without a scheme
+    for name in CREDENTIAL_HEADERS[1:]:
+        value = (mapping.get(name) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def describe_headers(headers: Any) -> str:
+    """Header names only (never values), for diagnosing rejected requests."""
+    names = sorted(_headers_to_mapping(headers))
+    present = [n for n in CREDENTIAL_HEADERS if n in names]
+    return f"credential_headers={present or 'none'} all={names}"
 
 
 def actor_for_token(token: str | None, tokens: Mapping[str, str]) -> str | None:
@@ -84,8 +106,16 @@ class BearerAuthASGIMiddleware:
                 send, 503, {"error": "MCP_API_TOKENS is not configured on the server"}
             )
             return
-        actor = actor_for_token(extract_bearer(scope.get("headers")), self.tokens)
+        headers = scope.get("headers")
+        actor = actor_for_token(extract_bearer(headers), self.tokens)
         if actor is None:
+            logger.warning(
+                "mcp auth: rejected %s %s from %s; %s",
+                scope.get("method"),
+                scope.get("path"),
+                (scope.get("client") or ("?",))[0],
+                describe_headers(headers),
+            )
             await _send_json(
                 send,
                 401,

@@ -85,7 +85,9 @@ Claude Desktop or claude.ai (custom connector, no local install):
    determine how the server signs in. Both are expected (no OAuth here); click
    Continue anyway.
 4. Authentication: No sign-in. Request headers: `Authorization` with the value
-   `Bearer <token>` (type the word Bearer, a space, then the token).
+   `Bearer <token>` (type the word Bearer, a space, then the token). The server
+   also accepts the bare token in `Authorization`, `X-API-Key` or
+   `X-Auth-Token`, so any of the dialog's standard header names works.
 5. Save, then confirm with `heroku logs -a <app> --tail | grep mcp`: a
    `POST /mcp ... status=200` line with `fwd=160.79.x.x` (Anthropic's egress
    range) means the connector is talking to the server.
@@ -142,6 +144,22 @@ CSV/XLSX exports.
 - `list_payment_methods` reads pause state without releasing expired pauses
   (unlike the dashboard GET), so a lapsed pause may still read as paused until
   the dashboard or bot touches it.
+
+## Troubleshooting
+
+- **404 from the connector check:** wrong hostname (Heroku's "no such app"
+  page) or `MCP_ENABLED` / `MCP_API_TOKENS` unset. Use the exact Web URL from
+  `heroku info` and confirm `curl -X POST https://<host>/mcp` returns 401.
+- **401 with `fwd=160.79.x.x` in `heroku logs`:** Claude reached the server
+  without a valid credential. The web dyno logs
+  `mcp auth: rejected ... credential_headers=[...]` naming the credential
+  headers present (never their values). `none` means the connector sent no
+  header: re-add it with the header, or the Request headers beta is not active
+  for the organization, in which case use the stdio config or an `mcp-remote`
+  bridge. A listed header means the token does not match the current
+  `MCP_API_TOKENS` (tokens rotated after the connector was saved; re-add it).
+- **Slow or timed-out tools:** narrow with `club`, a date range or `q`; each
+  call has a 15 s statement timeout (`MCP_STATEMENT_TIMEOUT_MS`).
 
 ## Development
 
