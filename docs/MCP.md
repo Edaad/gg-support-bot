@@ -98,6 +98,18 @@ organizations do not see; without it, use the stdio config above or a local
 `mcp-remote` bridge. The Anthropic Messages API MCP connector expects OAuth
 access tokens; a static bearer may work but is not documented.
 
+## Claude Desktop skill
+
+`skills/gg-dashboard/` packages the domain context for Claude Desktop, which does
+not reliably read MCP resources on its own: `SKILL.md` (orientation, conventions,
+write protocol, tool picker) plus `references/tools.md` (generated catalogue),
+`references/domain.md` (generated from the `gg://reference/*` resources) and
+`references/playbooks.md` (daily ops, player investigation, unbound triage,
+cashout review, audit status, Monday Review). Zip the folder (or run the
+skill-creator `package_skill` script) and upload it in Desktop under Settings,
+Capabilities, Skills on each machine. Regenerate the two generated references
+after adding tools so the skill matches the server.
+
 ## Tool catalogue
 
 All list tools take `limit` (default 50, max 200) and `offset`, return
