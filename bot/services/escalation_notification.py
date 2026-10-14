@@ -31,6 +31,7 @@ REASON_PLAYER_IDLE_STAFF_UNANSWERED = "player_idle_staff_unanswered"
 REASON_CASHOUT_STARTED = "cashout_started"
 REASON_DEPOSIT_SENT_TIMEOUT = "deposit_sent_timeout"
 REASON_DEPOSIT_INCOMPLETE = "deposit_incomplete"
+REASON_DEPOSIT_SENT_CLAIMED = "deposit_sent_claimed"
 REASON_DEPOSIT_SENT_FOLLOWUP = "deposit_sent_followup"
 REASON_DEPOSIT_SENT_UNBOUND = "deposit_sent_unbound"
 REASON_DEPOSIT_PLAYER_MESSAGE = "deposit_player_message"
@@ -84,6 +85,9 @@ _HEADLINES = {
     REASON_DEPOSIT_INCOMPLETE: (
         "10 minutes have passed since deposit instructions were sent — "
         "no payment received or chips added. Please follow up."
+    ),
+    REASON_DEPOSIT_SENT_CLAIMED: (
+        "Claims to have sent the payment already please check."
     ),
     REASON_DEPOSIT_SENT_FOLLOWUP: (
         "Player sent a message after confirming they sent the payment."
@@ -2011,6 +2015,15 @@ async def handle_deposit_sent_claim(
     ):
         # Stale button after cancel; still acked above.
         return
+
+    await notify_escalation_slack(
+        REASON_DEPOSIT_SENT_CLAIMED,
+        club_id=club_id,
+        chat_id=chat_id,
+        title=title,
+        method_slug=slug,
+    )
+
     bound = False
     if slug:
         try:

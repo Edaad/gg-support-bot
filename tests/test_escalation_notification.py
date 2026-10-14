@@ -371,6 +371,22 @@ class EscalationCopyTests(unittest.TestCase):
             text,
         )
 
+    def test_deposit_sent_claimed_headline(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_CLAIMED,
+                club_id=1,
+                chat_id=-100,
+                title="RT / Zelle / Jordan",
+            )
+        self.assertIn(
+            "*Claims to have sent the payment already please check.*",
+            text,
+        )
+        self.assertIn("Club: Round Table", text)
+        self.assertIn("`RT / Zelle / Jordan`", text)
+        self.assertEqual(len(text.split("\n")), 3)
+
     def test_deposit_sent_timeout_headline(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
             text = esc.format_escalation_slack_text(
@@ -1240,9 +1256,12 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             ) as notify:
                                 await esc.handle_deposit_sent_claim(update, context)
 
-                notify.assert_awaited_once()
+                self.assertEqual(notify.await_count, 2)
                 self.assertEqual(
-                    notify.await_args.args[0], esc.REASON_DEPOSIT_SENT_UNBOUND
+                    notify.await_args_list[0].args[0], esc.REASON_DEPOSIT_SENT_CLAIMED
+                )
+                self.assertEqual(
+                    notify.await_args_list[1].args[0], esc.REASON_DEPOSIT_SENT_UNBOUND
                 )
                 context.bot.send_message.assert_awaited()
                 self.assertEqual(
@@ -1290,10 +1309,20 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             return_value=True,
                         ):
                             with patch.object(
-                                esc, "schedule_deposit_sent_watch"
-                            ) as sched:
-                                await esc.handle_deposit_sent_claim(update, context)
-                                sched.assert_called_once()
+                                esc,
+                                "notify_escalation_slack",
+                                new_callable=AsyncMock,
+                            ) as notify:
+                                with patch.object(
+                                    esc, "schedule_deposit_sent_watch"
+                                ) as sched:
+                                    await esc.handle_deposit_sent_claim(update, context)
+                                    sched.assert_called_once()
+                                    notify.assert_awaited_once()
+                                    self.assertEqual(
+                                        notify.await_args.args[0],
+                                        esc.REASON_DEPOSIT_SENT_CLAIMED,
+                                    )
                 self.assertEqual(
                     context.bot.send_message.await_args.kwargs["text"],
                     esc.DEPOSIT_SENT_ACK_COPY,
@@ -1342,7 +1371,10 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                                         await esc.handle_deposit_sent_claim(
                                             update, context
                                         )
-                notify.assert_not_awaited()
+                notify.assert_awaited_once()
+                self.assertEqual(
+                    notify.await_args.args[0], esc.REASON_DEPOSIT_SENT_CLAIMED
+                )
                 sched.assert_called_once()
                 self.assertEqual(
                     context.bot.send_message.await_args.kwargs["text"],

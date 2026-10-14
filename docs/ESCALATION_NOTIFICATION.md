@@ -71,8 +71,9 @@ On tap:
 
 1. Remove the button and reply:
    > Thank you! Chips will be added as soon as we receive the payment.
-2. If the group has **no** binding for the **selected** method → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/Zelle/…) check `group_payment_method_bindings`; **crypto** checks any `crypto_wallet_bindings` row for this chat (so auto-add wallets are not false-alarmed as unbound).
-3. If **bound** → arm a durable 5-minute wait:
+2. Slack `deposit_sent_claimed` immediately (*Claims to have sent the payment already please check.*).
+3. If the group has **no** binding for the **selected** method → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/Zelle/…) check `group_payment_method_bindings`; **crypto** checks any `crypto_wallet_bindings` row for this chat (so auto-add wallets are not false-alarmed as unbound).
+4. If **bound** → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (*5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat.*) (**re-checks DB** so API payment notify cancels correctly across dynos).
    - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** open/feed an idle episode.
    - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body**, cancel the wait, and open/feed the idle episode (no second Slack).
@@ -210,6 +211,7 @@ Copy (no user id, no chat id):
 | `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to the **escalation** channel, then deleted after 10 minutes |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
+| `deposit_sent_claimed` | Claims to have sent the payment already please check. | No |
 | `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
 | `deposit_sent_followup` | Player sent a message after confirming they sent the payment. | Yes |
 | `deposit_sent_unbound` | Manual deposit request — no {method} binding for this group. | No |
