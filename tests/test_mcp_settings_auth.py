@@ -192,6 +192,15 @@ class ActorResolutionTests(unittest.TestCase):
         self.assertIn("credential_headers=none", describe_headers({"host": "h"}))
         self.assertIn("scheme=none presented=len=0", describe_headers({"host": "h"}))
 
+    def test_bearer_without_space_is_accepted(self) -> None:
+        self.assertEqual(
+            extract_bearer({"authorization": f"Bearer{GOOD_TOKEN}"}), GOOD_TOKEN
+        )
+        self.assertEqual(
+            extract_bearer({"authorization": f"bearer{GOOD_TOKEN}"}), GOOD_TOKEN
+        )
+        self.assertIsNone(extract_bearer({"authorization": "Bearer"}))
+
     def test_pasted_quotes_and_whitespace_are_stripped(self) -> None:
         self.assertEqual(
             extract_bearer({"authorization": f'Bearer "{GOOD_TOKEN}" '}), GOOD_TOKEN
