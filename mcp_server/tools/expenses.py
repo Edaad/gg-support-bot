@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -15,9 +15,11 @@ from mcp_server.dates import parse_et_day, today_et
 from mcp_server.db import read_session, write_session
 from mcp_server.auth import actor_from_context
 from mcp_server.envelope import dry_run, page, write_result
-from mcp_server.errors import bad_input, translate_errors
+from mcp_server.errors import bad_input, not_found, translate_errors
 from mcp_server.tools._common import (
+    DESTRUCTIVE,
     READ_ONLY,
+    WRITE,
     WRITE_NON_IDEMPOTENT,
     clamp_limit,
     clamp_offset,
@@ -153,7 +155,16 @@ def _expense_dict(row: Expense, club_name: str | None) -> dict[str, Any]:
         "expense_date": row.expense_date,
         "pending": bool(row.pending),
         "created_at": getattr(row, "created_at", None),
+        "updated_at": getattr(row, "updated_at", None),
     }
+
+
+def _load_expense(expense_id: int) -> dict[str, Any]:
+    with read_session() as session:
+        row = session.get(Expense, int(expense_id))
+        if row is None:
+            raise not_found(f"expense {expense_id}")
+        return _expense_dict(row, club_name_map(session).get(int(row.club_id)))
 
 
 @translate_errors
@@ -221,5 +232,133 @@ def create_expense(
     )
 
 
+@translate_errors
+def update_expense(
+    expense_id: int,
+    amount: float | None = None,
+    expense_type: str | None = None,
+    description: str | None = None,
+    club: str | None = None,
+    expense_date: str | None = None,
+    pending: bool | None = None,
+    confirm: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Edit an expense on the Expenses ledger, as the dashboard edit form does.
+    Only the fields you pass change: `amount` (dollars, non-zero), `expense_type`,
+    `description` (pass "" to clear it), `club` (id, key or slug), `expense_date`
+    (YYYY-MM-DD calendar date) or `pending` (false once settled). No notification
+    is sent. Without confirm=true returns a dry run with the current row."""
+    if (
+        amount is None
+        and expense_type is None
+        and description is None
+        and club is None
+        and expense_date is None
+        and pending is None
+    ):
+        raise bad_input(
+            "provide at least one of amount, expense_type, description, club,"
+            " expense_date, pending"
+        )
+    changes: dict[str, Any] = {}
+    if amount is not None:
+        if amount == 0:
+            raise bad_input("amount must not be zero")
+        changes["amount"] = Decimal(str(amount))
+    if expense_type is not None:
+        kind = expense_type.strip()
+        if not kind:
+            raise bad_input("expense_type is required")
+        changes["expense_type"] = kind
+    if description is not None:
+        changes["description"] = description.strip() or None
+    if expense_date is not None:
+        day = parse_et_day(expense_date)
+        if day is None:
+            raise bad_input(f"expected a YYYY-MM-DD date, got {expense_date!r}")
+        changes["expense_date"] = day
+    if pending is not None:
+        changes["pending"] = bool(pending)
+    actor = actor_from_context(ctx)
+    before = _load_expense(expense_id)
+    club_name = before["club_name"]
+    if club is not None:
+        with read_session() as session:
+            club_row = resolve_club(session, club)
+            if club_row is None:
+                raise bad_input("club must not be blank")
+            changes["club_id"] = int(club_row.id)
+            club_name = str(club_row.name)
+    proposed = dict(changes)
+    if "club_id" in proposed:
+        proposed["club_name"] = club_name
+    if not confirm:
+        return dry_run(
+            actor=actor,
+            current=before,
+            proposed=proposed,
+            message=f"dry run: would update expense {expense_id}: {', '.join(changes)}",
+            notes=["amounts are dollars"],
+        )
+    with write_session() as session:
+        row = session.get(Expense, int(expense_id))
+        if row is None:
+            raise not_found(f"expense {expense_id}")
+        for field, value in changes.items():
+            setattr(row, field, value)
+        row.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        after = _expense_dict(row, club_name)
+    return write_result(
+        actor=actor,
+        before=before,
+        after=after,
+        message=f"updated expense {expense_id}: {', '.join(changes)}",
+        notes=["amounts are dollars"],
+    )
+
+
+@translate_errors
+def delete_expense(
+    expense_id: int,
+    confirm: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Permanently delete an expense from the Expenses ledger, like the dashboard
+    Delete button. The row is gone from list_expenses totals and exports; no
+    notification is sent. To mark an expense settled instead, use
+    update_expense(pending=false). Without confirm=true returns a dry run with
+    the full row that would be removed."""
+    actor = actor_from_context(ctx)
+    before = _load_expense(expense_id)
+    if not confirm:
+        return dry_run(
+            actor=actor,
+            current=before,
+            proposed={"delete": True},
+            message=f"dry run: would permanently delete expense {expense_id}",
+            notes=["amounts are dollars"],
+        )
+    with write_session() as session:
+        row = session.get(Expense, int(expense_id))
+        if row is None:
+            raise not_found(f"expense {expense_id}")
+        session.delete(row)
+        session.flush()
+    return write_result(
+        actor=actor,
+        before=before,
+        after=None,
+        message=(
+            f"deleted expense {expense_id} ({before['expense_type']},"
+            f" {before['amount']} for {before['club_name']})"
+        ),
+        notes=["amounts are dollars"],
+    )
+
+
 def register_writes(mcp: MCPServer) -> None:
     mcp.tool(name="create_expense", annotations=WRITE_NON_IDEMPOTENT)(create_expense)
+    mcp.tool(name="update_expense", annotations=WRITE)(update_expense)
+    mcp.tool(name="delete_expense", annotations=DESTRUCTIVE)(delete_expense)

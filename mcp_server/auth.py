@@ -7,6 +7,7 @@ from ``MCP_API_TOKENS`` and are compared with ``hmac.compare_digest``. The SDK's
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -33,13 +34,61 @@ def _headers_to_mapping(headers: Any) -> Mapping[str, str]:
     return out
 
 
+# Header names Claude's connector dialog offers for a fixed credential. The
+# token may arrive as ``Authorization: Bearer <t>``, a bare ``Authorization: <t>``
+# (prefix omitted in the dialog), ``X-API-Key: <t>`` or ``X-Auth-Token: <t>``.
+CREDENTIAL_HEADERS: tuple[str, ...] = ("authorization", "x-api-key", "x-auth-token")
+
+
 def extract_bearer(headers: Any) -> str | None:
+    """Return the credential carried by the request, whichever header holds it."""
     mapping = _headers_to_mapping(headers)
     raw = (mapping.get("authorization") or "").strip()
-    scheme, _, token = raw.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        return None
-    return token.strip()
+    if raw:
+        scheme, sep, token = raw.partition(" ")
+        if scheme.lower() == "bearer":
+            return _clean(token)
+        if sep or scheme.lower() == "basic":
+            return None  # Basic/other schemes are not accepted
+        if raw.lower().startswith("bearer"):
+            # "Bearer<token>": the space was dropped when the value was entered.
+            return _clean(raw[len("bearer") :])
+        return _clean(raw)  # bare token without a scheme
+    for name in CREDENTIAL_HEADERS[1:]:
+        value = _clean(mapping.get(name))
+        if value:
+            return value
+    return None
+
+
+def _clean(value: str | None) -> str | None:
+    """Strip whitespace and surrounding quotes that get pasted along with tokens."""
+    text = (value or "").strip().strip("\"'").strip()
+    return text or None
+
+
+def fingerprint(token: str | None) -> str:
+    """Length and short SHA-256 prefix of a credential, for log comparison only."""
+    if not token:
+        return "len=0"
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
+    return f"len={len(token)} sha256={digest}"
+
+
+def describe_headers(headers: Any) -> str:
+    """Header names and a credential fingerprint (never values), for diagnostics."""
+    mapping = _headers_to_mapping(headers)
+    names = sorted(mapping)
+    present = [n for n in CREDENTIAL_HEADERS if n in names]
+    raw = (mapping.get("authorization") or "").strip()
+    scheme = (
+        raw.partition(" ")[0].lower() if " " in raw else ("bare" if raw else "none")
+    )
+    token = extract_bearer(headers)
+    return (
+        f"credential_headers={present or 'none'} scheme={scheme} "
+        f"presented={fingerprint(token)} all={names}"
+    )
 
 
 def actor_for_token(token: str | None, tokens: Mapping[str, str]) -> str | None:
@@ -84,8 +133,16 @@ class BearerAuthASGIMiddleware:
                 send, 503, {"error": "MCP_API_TOKENS is not configured on the server"}
             )
             return
-        actor = actor_for_token(extract_bearer(scope.get("headers")), self.tokens)
+        headers = scope.get("headers")
+        actor = actor_for_token(extract_bearer(headers), self.tokens)
         if actor is None:
+            logger.warning(
+                "mcp auth: rejected %s %s from %s; %s",
+                scope.get("method"),
+                scope.get("path"),
+                (scope.get("client") or ("?",))[0],
+                describe_headers(headers),
+            )
             await _send_json(
                 send,
                 401,

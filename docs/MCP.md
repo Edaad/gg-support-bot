@@ -3,8 +3,8 @@
 The `mcp_server/` package exposes the data behind the GG Dashboard to AI clients
 over the [Model Context Protocol](https://modelcontextprotocol.io). It runs inside
 the existing `web` dyno at `POST /mcp` (Streamable HTTP, static bearer tokens) and
-locally over stdio via `run_mcp.py`. It is read-mostly: 40 read tools, 6
-confirm-gated write tools, 5 reference resources and 2 prompts.
+locally over stdio via `run_mcp.py`. It exposes 43 read tools, 39 confirm-gated write tools that mirror dashboard
+actions, 5 reference resources and 2 prompts.
 
 ## Security model
 
@@ -73,10 +73,42 @@ Local stdio (Claude Code or Claude Desktop on a machine with `DATABASE_URL`):
 `run_mcp.py` loads `.env`, logs to stderr and warns (does not refuse) if the
 database is behind the Alembic head.
 
-Client notes: claude.ai / Claude Desktop "custom connectors" with a static
-request header are a limited-access beta, so Desktop users should prefer the
-stdio config above. The Anthropic Messages API MCP connector expects OAuth
+Claude Desktop or claude.ai (custom connector, no local install):
+
+1. Customize, Connectors, Add custom connector.
+2. Name it and enter the MCP URL with the **full** Heroku host, exactly what
+   `heroku info -a <app> | grep "Web URL"` prints, plus `/mcp`
+   (for example `https://gg-support-bot-2025-6f96168018cf.herokuapp.com/mcp`).
+   A shortened host returns Heroku's "no such app" 404 and the connector reports
+   "Couldn't reach".
+3. "Checking the server" reports 401 on the connect step and that it could not
+   determine how the server signs in. Both are expected (no OAuth here); click
+   Continue anyway.
+4. Authentication: No sign-in. Request headers: `Authorization` with the value
+   `Bearer <token>` (type the word Bearer, a space, then the token). The server
+   also accepts the bare token in `Authorization`, `X-API-Key` or
+   `X-Auth-Token`, so any of the dialog's standard header names works.
+5. Save, then confirm with `heroku logs -a <app> --tail | grep mcp`: a
+   `POST /mcp ... status=200` line with `fwd=160.79.x.x` (Anthropic's egress
+   range) means the connector is talking to the server.
+
+Authentication settings cannot be edited later; remove and re-add the connector
+to rotate a token. The Request headers section is a beta that some
+organizations do not see; without it, use the stdio config above or a local
+`mcp-remote` bridge. The Anthropic Messages API MCP connector expects OAuth
 access tokens; a static bearer may work but is not documented.
+
+## Claude Desktop skill
+
+`skills/gg-dashboard/` packages the domain context for Claude Desktop, which does
+not reliably read MCP resources on its own: `SKILL.md` (orientation, conventions,
+write protocol, tool picker) plus `references/tools.md` (generated catalogue),
+`references/domain.md` (generated from the `gg://reference/*` resources) and
+`references/playbooks.md` (daily ops, player investigation, unbound triage,
+cashout review, audit status, Monday Review). Zip the folder (or run the
+skill-creator `package_skill` script) and upload it in Desktop under Settings,
+Capabilities, Skills on each machine. Regenerate the two generated references
+after adding tools so the skill matches the server.
 
 ## Tool catalogue
 
@@ -100,15 +132,15 @@ UTC); day-based tools take `activity_date` / `audit_date`.
 | Audit | `list_reconcile_runs`, `get_reconcile_report`, `list_trade_record_uploads`, `list_early_rakeback_snapshots` |
 | Ops | `list_deposit_method_alerts`, `list_gto_zelle_cards`, `list_plaid_zelle`, `list_issue_reports`, `list_mcp_tool_calls` |
 | Monday Review | `get_monday_review_board` (one week: tasks, links, assignees, notes, done state), `list_monday_review_tasks`, `list_monday_review_history` (past weeks, done vs missed) |
-| **Writes** (confirm) | `bind_payment_to_group`, `update_cashout_record` (note / audited / sending / do_not_send), `update_manual_deposit_request` (trade_record_checked / amount), `create_expense`, `pause_variant`, `resume_variant`, `complete_monday_review_task` (check off / update who + notes), `add_monday_review_note` (persistent or temporary for a Monday), `create_monday_review_task` |
+| **Writes** (confirm) | payments: `bind_payment_to_group`, `unbind_payment`, quick links CRUD; cashouts: create/update/delete record, destinations and money-sent entries; Pool Pay requests create/update/delete; bonus records and types CRUD; expenses CRUD; outbound sends CRUD and `update_account_balance_settings`; `pause_variant`, `resume_variant`, deposit alerts CRUD, `create_issue_report`; Monday Review complete/note/create |
 
 Resources: `gg://reference/clubs`, `vocabulary`, `enums`, `conventions`,
 `caveats`. Prompts: `investigate_player(query)`, `daily_ops_check(date)`,
 `monday_review(week_of)`.
 
-Not exposed in v1: weekly player stats (external gg-computer service),
-broadcasts, GC/MTProto login, response audit, quick links, flow simulator,
-CSV/XLSX exports.
+Not exposed: weekly player stats (external gg-computer service), broadcasts,
+club/payment-method configuration, GC/MTProto login, response audit, flow
+simulator, Plaid linking, proof-image uploads, CSV/XLSX exports.
 
 ## Conventions the AI is told
 
@@ -124,6 +156,22 @@ CSV/XLSX exports.
 - `list_payment_methods` reads pause state without releasing expired pauses
   (unlike the dashboard GET), so a lapsed pause may still read as paused until
   the dashboard or bot touches it.
+
+## Troubleshooting
+
+- **404 from the connector check:** wrong hostname (Heroku's "no such app"
+  page) or `MCP_ENABLED` / `MCP_API_TOKENS` unset. Use the exact Web URL from
+  `heroku info` and confirm `curl -X POST https://<host>/mcp` returns 401.
+- **401 with `fwd=160.79.x.x` in `heroku logs`:** Claude reached the server
+  without a valid credential. The web dyno logs
+  `mcp auth: rejected ... credential_headers=[...]` naming the credential
+  headers present (never their values). `none` means the connector sent no
+  header: re-add it with the header, or the Request headers beta is not active
+  for the organization, in which case use the stdio config or an `mcp-remote`
+  bridge. A listed header means the token does not match the current
+  `MCP_API_TOKENS` (tokens rotated after the connector was saved; re-add it).
+- **Slow or timed-out tools:** narrow with `club`, a date range or `q`; each
+  call has a 15 s statement timeout (`MCP_STATEMENT_TIMEOUT_MS`).
 
 ## Development
 

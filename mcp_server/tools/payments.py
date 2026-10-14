@@ -39,6 +39,16 @@ from api.payments_helpers import (
     stripe_dashboard_session_url,
     stripe_fee_usd,
 )
+from api.payment_quick_links import (
+    ALLOWED_METHODS as QUICK_LINK_METHODS,
+)
+from api.payment_quick_links import (
+    create_quick_link,
+    delete_quick_link,
+    normalize_title as _quick_link_title,
+    normalize_url as _quick_link_url,
+    update_quick_link,
+)
 from api.routes.payments import (
     _FIRST_TIME_BOUND_VIA,
     _apply_bound_via_filter,
@@ -50,10 +60,12 @@ from api.routes.payments import (
 from api.unified_payments import UnifiedPaymentFilters, fetch_unified_page
 from db.models import (
     CashAppPayment,
+    ClubPaymentTierVariant,
     CryptoPayment,
     GroupPaymentMethodBinding,
     PaymentAutoDepositEvent,
     PaymentMethodBindAttempt,
+    PaymentQuickLink,
     PayPalPayment,
     StripeCheckoutSession,
     StripeCustomer,
@@ -61,13 +73,15 @@ from db.models import (
     ZellePayment,
 )
 from mcp_server.dates import parse_range
-from mcp_server.db import read_session
+from mcp_server.db import read_session, write_session
 from mcp_server.auth import actor_from_context
 from mcp_server.envelope import dry_run, page, single, write_result
 from mcp_server.errors import bad_input, not_found, translate_errors
 from mcp_server.tools._common import (
+    DESTRUCTIVE,
     READ_ONLY,
     WRITE,
+    WRITE_NON_IDEMPOTENT,
     clamp_limit,
     clamp_offset,
     club_name_map,
@@ -1000,5 +1014,290 @@ async def bind_payment_to_group(
     )
 
 
+# ── Group payment-method bindings ────────────────────────────────────────────
+
+
+def _binding_dict(session: Session, row: GroupPaymentMethodBinding) -> dict[str, Any]:
+    """Same fields as the dashboard bindings list (api/routes/payments.py)."""
+    title, gg_id = resolve_group_title(session, int(row.telegram_chat_id))
+    variant = (
+        session.get(ClubPaymentTierVariant, int(row.variant_id))
+        if row.variant_id is not None
+        else None
+    )
+    cid = int(row.club_id)
+    return {
+        "id": int(row.id),
+        "telegram_chat_id": int(row.telegram_chat_id),
+        "group_title": title,
+        "gg_player_id": gg_id,
+        "club_id": cid,
+        "club_name": club_name_map(session).get(cid),
+        "payment_method_slug": str(row.payment_method_slug),
+        "variant_id": int(row.variant_id) if row.variant_id is not None else None,
+        "variant_label": variant.label if variant is not None else None,
+        "venmo_handle": row.venmo_handle,
+        "bound_via": str(row.bound_via),
+        "bound_at": row.bound_at,
+        "bound_by_telegram_user_id": row.bound_by_telegram_user_id,
+        "first_bind_attempt_id": row.first_bind_attempt_id,
+    }
+
+
+@translate_errors
+def unbind_payment(
+    binding_id: int, confirm: bool = False, ctx: Context | None = None
+) -> dict[str, Any]:
+    """Remove one group payment-method binding (the dashboard Bindings "unbind"
+    action). Destructive: the player's support group loses its link to that rail,
+    so future deposits from the same payer arrive unbound and must be bound again
+    (bind_payment_to_group) or rebound by a first-time setup; pending first-time
+    bind attempts for that chat + method are cancelled and the chat's remembered
+    deposit destination for the method is cleared. Nothing is posted to Telegram
+    or Slack. Without confirm=true returns a dry run showing the full binding
+    (chat, club, method slug, variant, bound_via)."""
+    from bot.services.payment_method_binding import unbind_by_id
+
+    actor = actor_from_context(ctx)
+    with read_session() as session:
+        row = session.get(GroupPaymentMethodBinding, int(binding_id))
+        if row is None:
+            raise not_found(f"binding {binding_id}")
+        before = _binding_dict(session, row)
+    notes = [
+        "future deposits from this payer will arrive unbound until the group is "
+        "bound again",
+        "pending first-time bind attempts for this chat + method are cancelled",
+    ]
+    if not confirm:
+        return dry_run(
+            actor=actor,
+            current=before,
+            proposed={"action": "delete", "binding_id": int(binding_id)},
+            message=(
+                f"dry run: would unbind {before['payment_method_slug']} from "
+                f"chat {before['telegram_chat_id']} ({before['group_title']})"
+            ),
+            notes=notes,
+        )
+    if not unbind_by_id(int(binding_id)):
+        raise not_found(f"binding {binding_id}")
+    return write_result(
+        actor=actor,
+        before=before,
+        after=None,
+        message=(
+            f"unbound {before['payment_method_slug']} from chat "
+            f"{before['telegram_chat_id']} ({before['group_title']})"
+        ),
+        notes=notes,
+    )
+
+
+# ── Payment quick links ──────────────────────────────────────────────────────
+
+_QUICK_LINK_METHOD_DOC = ", ".join(sorted(QUICK_LINK_METHODS))
+
+
+def _quick_link_dict(session: Session, row: PaymentQuickLink) -> dict[str, Any]:
+    cid = int(row.club_id) if row.club_id is not None else None
+    return {
+        "id": int(row.id),
+        "title": row.title,
+        "url": row.url,
+        "method": row.method,
+        "club_id": cid,
+        "club_name": club_name_map(session).get(cid) if cid is not None else None,
+        "sort_order": int(row.sort_order or 0),
+        "created_at": getattr(row, "created_at", None),
+        "updated_at": getattr(row, "updated_at", None),
+    }
+
+
+def _quick_link_method(method: str | None) -> str | None:
+    """None/"all" = every method; otherwise one of the dashboard's allowed slugs."""
+    slug = (method or "").strip().lower()
+    if slug in ("", "all"):
+        return None
+    if slug not in QUICK_LINK_METHODS:
+        raise bad_input(f"method must be all or one of {_QUICK_LINK_METHOD_DOC}")
+    return slug
+
+
+def _quick_link_club_id(session: Session, club: str | None) -> int | None:
+    """None/"all" = every club; otherwise a club id, key or slug."""
+    if club is None or str(club).strip().lower() in ("", "all"):
+        return None
+    return resolve_club_id(session, club)
+
+
+def _validate_quick_link_fields(title: str | None, url: str | None) -> None:
+    try:
+        if title is not None:
+            _quick_link_title(title)
+        if url is not None:
+            _quick_link_url(url)
+    except ValueError as exc:
+        raise bad_input(str(exc)) from exc
+
+
+def _load_quick_link(session: Session, link_id: int) -> PaymentQuickLink:
+    row = session.get(PaymentQuickLink, int(link_id))
+    if row is None:
+        raise not_found(f"quick link {link_id}")
+    return row
+
+
+@translate_errors
+def create_payment_quick_link(
+    title: str,
+    url: str,
+    method: str | None = None,
+    club: str | None = None,
+    confirm: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Add a quick-access link to the dashboard Payments page (the page's
+    "Add link" form). `title` is at most 120 characters and `url` must be
+    http(s). `method` limits the link to one rail filter (stripe|venmo|zelle|
+    cashapp|paypal|crypto|applepay; omit or "all" for every method); `club` (id,
+    key or slug) limits it to one club's view (omit or "all" for every club).
+    The link is appended at the end of the list. No notifications. Without
+    confirm=true returns a dry run of the row that would be created."""
+    _validate_quick_link_fields(title, url)
+    method_slug = _quick_link_method(method)
+    actor = actor_from_context(ctx)
+    with read_session() as session:
+        club_id = _quick_link_club_id(session, club)
+        club_name = club_name_map(session).get(club_id) if club_id else None
+    proposed = {
+        "title": title.strip(),
+        "url": url.strip(),
+        "method": method_slug,
+        "club_id": club_id,
+        "club_name": club_name,
+    }
+    if not confirm:
+        return dry_run(
+            actor=actor,
+            current=None,
+            proposed=proposed,
+            message="dry run: would create this Payments quick link",
+        )
+    with write_session() as session:
+        data = create_quick_link(
+            session, title=title, url=url, method=method_slug, club_id=club_id
+        )
+        after = _quick_link_dict(session, _load_quick_link(session, data["id"]))
+    return write_result(
+        actor=actor,
+        before=None,
+        after=after,
+        message=f"created quick link {after['id']} ({after['title']})",
+    )
+
+
+@translate_errors
+def update_payment_quick_link(
+    link_id: int,
+    title: str | None = None,
+    url: str | None = None,
+    method: str | None = None,
+    club: str | None = None,
+    confirm: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Edit a Payments-page quick link (the dashboard's edit form). Only the
+    fields you pass change: `title` (max 120 chars), `url` (http/https),
+    `method` (stripe|venmo|zelle|cashapp|paypal|crypto|applepay, or "all" to show
+    it for every method), `club` (id, key or slug, or "all" to show it for every
+    club). Without confirm=true returns a dry run with the current row."""
+    if title is None and url is None and method is None and club is None:
+        raise bad_input("provide at least one of title, url, method, club")
+    _validate_quick_link_fields(title, url)
+    actor = actor_from_context(ctx)
+    proposed: dict[str, Any] = {}
+    if title is not None:
+        proposed["title"] = title.strip()
+    if url is not None:
+        proposed["url"] = url.strip()
+    if method is not None:
+        proposed["method"] = _quick_link_method(method)
+    with read_session() as session:
+        before = _quick_link_dict(session, _load_quick_link(session, link_id))
+        if club is not None:
+            club_id = _quick_link_club_id(session, club)
+            proposed["club_id"] = club_id
+            proposed["club_name"] = (
+                club_name_map(session).get(club_id) if club_id else None
+            )
+    if not confirm:
+        return dry_run(
+            actor=actor,
+            current=before,
+            proposed=proposed,
+            message="dry run: would update this Payments quick link",
+        )
+    kwargs: dict[str, Any] = {}
+    if title is not None:
+        kwargs["title"] = title
+    if url is not None:
+        kwargs["url"] = url
+    if method is not None:
+        kwargs["method"] = proposed["method"]
+    if club is not None:
+        kwargs["club_id"] = proposed["club_id"]
+    with write_session() as session:
+        if update_quick_link(session, int(link_id), **kwargs) is None:
+            raise not_found(f"quick link {link_id}")
+        after = _quick_link_dict(session, _load_quick_link(session, link_id))
+    changed = [k for k in ("title", "url", "method", "club_id") if k in proposed]
+    return write_result(
+        actor=actor,
+        before=before,
+        after=after,
+        message=f"updated quick link {link_id}: {', '.join(changed)}",
+    )
+
+
+@translate_errors
+def delete_payment_quick_link(
+    link_id: int, confirm: bool = False, ctx: Context | None = None
+) -> dict[str, Any]:
+    """Delete a Payments-page quick link (the dashboard's remove action).
+    Destructive and permanent; only the link row disappears, no payments or
+    bindings are touched. Without confirm=true returns a dry run showing the
+    full row that would be deleted."""
+    actor = actor_from_context(ctx)
+    with read_session() as session:
+        before = _quick_link_dict(session, _load_quick_link(session, link_id))
+    if not confirm:
+        return dry_run(
+            actor=actor,
+            current=before,
+            proposed={"action": "delete", "link_id": int(link_id)},
+            message=f"dry run: would delete quick link {link_id} ({before['title']})",
+        )
+    with write_session() as session:
+        if not delete_quick_link(session, int(link_id)):
+            raise not_found(f"quick link {link_id}")
+    return write_result(
+        actor=actor,
+        before=before,
+        after=None,
+        message=f"deleted quick link {link_id} ({before['title']})",
+    )
+
+
 def register_writes(mcp: MCPServer) -> None:
     mcp.tool(name="bind_payment_to_group", annotations=WRITE)(bind_payment_to_group)
+    mcp.tool(name="unbind_payment", annotations=DESTRUCTIVE)(unbind_payment)
+    mcp.tool(name="create_payment_quick_link", annotations=WRITE_NON_IDEMPOTENT)(
+        create_payment_quick_link
+    )
+    mcp.tool(name="update_payment_quick_link", annotations=WRITE)(
+        update_payment_quick_link
+    )
+    mcp.tool(name="delete_payment_quick_link", annotations=DESTRUCTIVE)(
+        delete_payment_quick_link
+    )
