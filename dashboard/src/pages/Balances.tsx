@@ -39,7 +39,7 @@ function fmtRatio(currentCents: number, capCents: number): string {
   return `${fmtPlain(currentCents)}/${fmtPlain(capCents)}`
 }
 
-function buyingPowerCents(card: AccountBalanceCardT): number {
+function sellingPowerCents(card: AccountBalanceCardT): number {
   return Math.min(card.balance_cents, card.sending_remaining_cents)
 }
 
@@ -131,14 +131,14 @@ function BalanceCard({
 
       <dl className="mt-2 space-y-1 text-xs">
         <div className="flex items-baseline justify-between gap-2">
-          <dt className="min-w-0 text-ink-muted">Remaining buying power</dt>
+          <dt className="min-w-0 text-ink-muted">Selling power</dt>
           <dd
             className={[
               'shrink-0 font-semibold tabular-nums',
-              buyingPowerCents(card) < 0 ? 'text-danger-ink' : 'text-ink',
+              sellingPowerCents(card) < 0 ? 'text-danger-ink' : 'text-ink',
             ].join(' ')}
           >
-            {fmtPlain(buyingPowerCents(card))}
+            {fmtPlain(sellingPowerCents(card))}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-2">
@@ -171,7 +171,7 @@ export default function Balances({ token }: { token: string }) {
   const [formError, setFormError] = useState<string | null>(null)
 
   const [settingsCard, setSettingsCard] = useState<AccountBalanceCardT | null>(null)
-  const [offset, setOffset] = useState('')
+  const [balance, setBalance] = useState('')
   const [ceiling, setCeiling] = useState('')
   const [inflowMax, setInflowMax] = useState('')
 
@@ -180,7 +180,7 @@ export default function Balances({ token }: { token: string }) {
   const [sendsLoading, setSendsLoading] = useState(false)
   const [sendsError, setSendsError] = useState<string | null>(null)
 
-  const offsetId = useId()
+  const balanceId = useId()
   const ceilingId = useId()
   const inflowId = useId()
 
@@ -199,7 +199,7 @@ export default function Balances({ token }: { token: string }) {
 
   const openSettings = (card: AccountBalanceCardT) => {
     setSettingsCard(card)
-    setOffset(centsToInput(card.offset_cents))
+    setBalance(centsToInput(card.balance_cents))
     setCeiling(centsToInput(card.sending_ceiling_cents))
     setInflowMax(centsToInput(card.inflow_max_cents))
     setFormError(null)
@@ -218,10 +218,10 @@ export default function Balances({ token }: { token: string }) {
 
   const onSave = async () => {
     if (!settingsCard) return
-    const offsetCents = inputToCents(offset)
+    const balanceCents = inputToCents(balance)
     const ceilingCents = inputToCents(ceiling)
     const inflowCents = inputToCents(inflowMax)
-    if (offsetCents == null || ceilingCents == null || inflowCents == null) {
+    if (balanceCents == null || ceilingCents == null || inflowCents == null) {
       setFormError('Enter a valid amount')
       return
     }
@@ -233,7 +233,7 @@ export default function Balances({ token }: { token: string }) {
     setFormError(null)
     try {
       await updateAccountBalanceSettings(token, settingsCard.method, settingsCard.tag, {
-        offset_cents: offsetCents,
+        balance_cents: balanceCents,
         sending_ceiling_cents: ceilingCents,
         inflow_max_cents: inflowCents,
       })
@@ -302,15 +302,15 @@ export default function Balances({ token }: { token: string }) {
             </p>
           )}
           <div>
-            <label className="label-field-xs" htmlFor={offsetId}>
-              Offset
+            <label className="label-field-xs" htmlFor={balanceId}>
+              Current balance
             </label>
             <input
-              id={offsetId}
+              id={balanceId}
               type="number"
               step="0.01"
-              value={offset}
-              onChange={(e) => setOffset(e.target.value)}
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
               className="input-field-sm w-full"
             />
           </div>
@@ -366,14 +366,14 @@ export default function Balances({ token }: { token: string }) {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg bg-control/60 px-3 py-2">
-                <p className="text-xs text-ink-muted">Remaining buying power</p>
+                <p className="text-xs text-ink-muted">Selling power</p>
                 <p
                   className={[
                     'text-lg font-semibold tabular-nums',
-                    buyingPowerCents(detailCard) < 0 ? 'text-danger-ink' : 'text-ink',
+                    sellingPowerCents(detailCard) < 0 ? 'text-danger-ink' : 'text-ink',
                   ].join(' ')}
                 >
-                  {fmtPlain(buyingPowerCents(detailCard))}
+                  {fmtPlain(sellingPowerCents(detailCard))}
                 </p>
               </div>
               <div className="rounded-lg bg-control/60 px-3 py-2">

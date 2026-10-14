@@ -324,6 +324,21 @@ def list_blocking_sends(
     ]
 
 
+def offset_cents_for_balance(
+    db: Session, method: str, tag: str, balance_cents: int
+) -> int:
+    """Offset that makes the live balance equal the reported account balance."""
+    method_slug = normalize_method(method)
+    stored = normalize_tag(method_slug, tag)
+    received = sum(
+        row.amount_cents for row in _load_payments(db).get((method_slug, stored), [])
+    )
+    sent = sum(
+        row.amount_cents for row in _load_sends(db).get((method_slug, stored), [])
+    )
+    return int(balance_cents) - (received - sent)
+
+
 def update_account_balance_settings(
     db: Session,
     method: str,

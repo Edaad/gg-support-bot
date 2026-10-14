@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from api.account_balances import (
     list_account_balances,
     list_blocking_sends,
+    offset_cents_for_balance,
     update_account_balance_settings,
 )
 from api.auth import create_token
@@ -266,6 +267,26 @@ class AccountBalanceServiceTestCase(unittest.TestCase):
         ]
         self.assertEqual(tags, ["@spender", "@godfather4444", "@rich"])
 
+    def test_reported_balance_sets_offset_from_ledger(self):
+        self._venmo("@godfather4444", 300_000)
+        self._send("venmo", "@godfather4444", 40_000, source_external_id="out")
+        self.session.commit()
+        offset = offset_cents_for_balance(
+            self.session, "venmo", "@godfather4444", 100_000
+        )
+        self.assertEqual(offset, 100_000 - (300_000 - 40_000))
+        card = update_account_balance_settings(
+            self.session,
+            "venmo",
+            "@godfather4444",
+            offset_cents=offset,
+            sending_ceiling_cents=1_000_000,
+            inflow_max_cents=500_000,
+            now=NOW,
+        )
+        self.assertEqual(card.balance_cents, 100_000)
+        self.assertEqual(card.offset_cents, -160_000)
+
 
 class AccountBalanceApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -334,10 +355,21 @@ class AccountBalanceApiTestCase(unittest.TestCase):
         self.session.close()
 
     def test_patch_requires_admin_and_saves(self):
+        self.session.add(
+            VenmoPayment(
+                method_owner="round-table",
+                payer_name="Payer",
+                amount_cents=10_000,
+                venmo_handle="@godfather4444",
+                created_at=datetime(2026, 10, 11, 16, 0, tzinfo=timezone.utc),
+            )
+        )
+        self.session.commit()
+
         denied = self.client.patch(
             "/api/account-balances/venmo/@godfather4444",
             json={
-                "offset_cents": 100,
+                "balance_cents": 100,
                 "sending_ceiling_cents": 50_000,
                 "inflow_max_cents": 50_000,
             },
@@ -348,7 +380,7 @@ class AccountBalanceApiTestCase(unittest.TestCase):
         saved = self.client.patch(
             "/api/account-balances/venmo/@godfather4444",
             json={
-                "offset_cents": 2500,
+                "balance_cents": 2500,
                 "sending_ceiling_cents": 50_000,
                 "inflow_max_cents": 40_000,
             },
@@ -356,8 +388,8 @@ class AccountBalanceApiTestCase(unittest.TestCase):
         )
         self.assertEqual(saved.status_code, 200, saved.text)
         body = saved.json()
-        self.assertEqual(body["offset_cents"], 2500)
         self.assertEqual(body["balance_cents"], 2500)
+        self.assertEqual(body["offset_cents"], 2500 - 10_000)
         self.assertEqual(body["sending_ceiling_cents"], 50_000)
 
         listed = self.client.get(
@@ -365,4 +397,5 @@ class AccountBalanceApiTestCase(unittest.TestCase):
             headers={"Authorization": f"Bearer {create_token()}"},
         )
         self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json()["venmo"][0]["offset_cents"], 2500)
+        self.assertEqual(listed.json()["venmo"][0]["balance_cents"], 2500)
+        self.assertEqual(listed.json()["venmo"][0]["offset_cents"], 2500 - 10_000)

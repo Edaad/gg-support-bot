@@ -11,6 +11,7 @@ from api.account_balances import (
     AccountBalanceCard,
     list_account_balances,
     list_blocking_sends,
+    offset_cents_for_balance,
     update_account_balance_settings,
 )
 from api.auth import require_admin
@@ -46,7 +47,7 @@ class BlockingSendRead(BaseModel):
 
 
 class AccountBalanceSettingsIn(BaseModel):
-    offset_cents: int
+    balance_cents: int
     sending_ceiling_cents: int = Field(gt=0)
     inflow_max_cents: int = Field(gt=0)
 
@@ -114,7 +115,9 @@ def patch_account_balance_settings(
                 db,
                 method,
                 tag,
-                offset_cents=body.offset_cents,
+                offset_cents=offset_cents_for_balance(
+                    db, method, tag, body.balance_cents
+                ),
                 sending_ceiling_cents=body.sending_ceiling_cents,
                 inflow_max_cents=body.inflow_max_cents,
             )

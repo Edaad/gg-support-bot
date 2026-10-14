@@ -476,7 +476,7 @@ export type BlockingSendT = {
 }
 
 export type AccountBalanceSettingsIn = {
-  offset_cents: number
+  balance_cents: number
   sending_ceiling_cents: number
   inflow_max_cents: number
 }
