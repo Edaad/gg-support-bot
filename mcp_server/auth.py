@@ -50,6 +50,9 @@ def extract_bearer(headers: Any) -> str | None:
             return _clean(token)
         if sep or scheme.lower() == "basic":
             return None  # Basic/other schemes are not accepted
+        if raw.lower().startswith("bearer"):
+            # "Bearer<token>": the space was dropped when the value was entered.
+            return _clean(raw[len("bearer") :])
         return _clean(raw)  # bare token without a scheme
     for name in CREDENTIAL_HEADERS[1:]:
         value = _clean(mapping.get(name))
