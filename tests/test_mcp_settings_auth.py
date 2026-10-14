@@ -169,6 +169,26 @@ class ActorResolutionTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_extract_credential_from_alternative_headers(self) -> None:
+        self.assertEqual(extract_bearer({"authorization": GOOD_TOKEN}), GOOD_TOKEN)
+        self.assertEqual(extract_bearer({"x-api-key": GOOD_TOKEN}), GOOD_TOKEN)
+        self.assertEqual(extract_bearer({"X-Auth-Token": GOOD_TOKEN}), GOOD_TOKEN)
+        self.assertIsNone(extract_bearer({"authorization": "Basic abc"}))
+        self.assertIsNone(extract_bearer({"authorization": "Bearer "}))
+        self.assertEqual(
+            extract_bearer({"authorization": "Bearer x", "x-api-key": GOOD_TOKEN}),
+            "x",
+        )
+
+    def test_describe_headers_names_only(self) -> None:
+        from mcp_server.auth import describe_headers
+
+        text = describe_headers([(b"authorization", b"Bearer secret"), (b"host", b"h")])
+        self.assertIn("credential_headers=['authorization']", text)
+        self.assertIn("'host'", text)
+        self.assertNotIn("secret", text)
+        self.assertIn("credential_headers=none", describe_headers({"host": "h"}))
+
     def test_extract_bearer_from_raw_asgi_headers(self) -> None:
         raw = [(b"authorization", f"Bearer {GOOD_TOKEN}".encode("latin-1"))]
         self.assertEqual(extract_bearer(raw), GOOD_TOKEN)
