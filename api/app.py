@@ -218,9 +218,21 @@ def create_app() -> FastAPI:
 
     # ── MCP server (AI clients; bearer token; see docs/MCP.md) ───────────
     # Registered before the SPA catch-all so GET /mcp is not served index.html.
+    # When MCP is off, an all-methods 404 must exist too: the SPA is GET-only,
+    # and a POST to that path would otherwise be 405.
     if mcp_mount is not None:
         app.router.routes.append(mcp_mount[1])
         logging.getLogger(__name__).info("MCP server mounted at /mcp")
+    else:
+
+        @app.api_route(
+            "/mcp",
+            methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        )
+        def mcp_not_mounted():
+            from fastapi import HTTPException
+
+            raise HTTPException(404, "Not Found")
 
     # OAuth discovery probes (Claude connectors check these before connecting).
     # The MCP server uses bearer tokens, not OAuth, so answer with a JSON 404
@@ -263,6 +275,8 @@ def create_app() -> FastAPI:
             if (
                 full_path == "api"
                 or full_path.startswith("api/")
+                or full_path == "mcp"
+                or full_path.startswith("mcp/")
                 or full_path.startswith(".well-known/")
             ):
                 from fastapi import HTTPException
