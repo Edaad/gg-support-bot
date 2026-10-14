@@ -39,10 +39,6 @@ function fmtRatio(currentCents: number, capCents: number): string {
   return `${fmtPlain(currentCents)}/${fmtPlain(capCents)}`
 }
 
-function sellingPowerCents(card: AccountBalanceCardT): number {
-  return Math.min(card.balance_cents, card.sending_remaining_cents)
-}
-
 function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2)
 }
@@ -131,24 +127,7 @@ function BalanceCard({
 
       <dl className="mt-2 space-y-1 text-xs">
         <div className="flex items-baseline justify-between gap-2">
-          <dt className="min-w-0 text-ink-muted">Selling power</dt>
-          <dd
-            className={[
-              'shrink-0 font-semibold tabular-nums',
-              sellingPowerCents(card) < 0 ? 'text-danger-ink' : 'text-ink',
-            ].join(' ')}
-          >
-            {fmtPlain(sellingPowerCents(card))}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-2">
-          <dt className="min-w-0 text-ink-muted">Received this week</dt>
-          <dd className="shrink-0 font-semibold tabular-nums text-ink">
-            {fmtRatio(card.received_week_cents, card.inflow_max_cents)}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-2">
-          <dt className="min-w-0 text-ink-muted">Rolling sending power</dt>
+          <dt className="min-w-0 text-ink-muted">Remaining sending power</dt>
           <dd
             className={[
               'shrink-0 font-semibold tabular-nums',
@@ -156,6 +135,12 @@ function BalanceCard({
             ].join(' ')}
           >
             {fmtRatio(card.sending_remaining_cents, card.sending_ceiling_cents)}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-2">
+          <dt className="min-w-0 text-ink-muted">Received this week</dt>
+          <dd className="shrink-0 font-semibold tabular-nums text-ink">
+            {fmtRatio(card.received_week_cents, card.inflow_max_cents)}
           </dd>
         </div>
       </dl>
@@ -366,24 +351,7 @@ export default function Balances({ token }: { token: string }) {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg bg-control/60 px-3 py-2">
-                <p className="text-xs text-ink-muted">Selling power</p>
-                <p
-                  className={[
-                    'text-lg font-semibold tabular-nums',
-                    sellingPowerCents(detailCard) < 0 ? 'text-danger-ink' : 'text-ink',
-                  ].join(' ')}
-                >
-                  {fmtPlain(sellingPowerCents(detailCard))}
-                </p>
-              </div>
-              <div className="rounded-lg bg-control/60 px-3 py-2">
-                <p className="text-xs text-ink-muted">Received this week</p>
-                <p className="text-lg font-semibold tabular-nums text-ink">
-                  {fmtRatio(detailCard.received_week_cents, detailCard.inflow_max_cents)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-control/60 px-3 py-2">
-                <p className="text-xs text-ink-muted">Rolling sending power</p>
+                <p className="text-xs text-ink-muted">Remaining sending power</p>
                 <p
                   className={[
                     'text-lg font-semibold tabular-nums',
@@ -394,6 +362,12 @@ export default function Balances({ token }: { token: string }) {
                     detailCard.sending_remaining_cents,
                     detailCard.sending_ceiling_cents,
                   )}
+                </p>
+              </div>
+              <div className="rounded-lg bg-control/60 px-3 py-2">
+                <p className="text-xs text-ink-muted">Received this week</p>
+                <p className="text-lg font-semibold tabular-nums text-ink">
+                  {fmtRatio(detailCard.received_week_cents, detailCard.inflow_max_cents)}
                 </p>
               </div>
             </div>
