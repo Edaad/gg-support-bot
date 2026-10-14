@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import csv
-import io
 from decimal import Decimal
 from typing import Any
 
@@ -56,7 +54,11 @@ def export_bonus_records(
     `other=true` for bonuses with no type. Only call this when the operator asks
     to export or share bonuses: it creates a file in the configured Drive folder
     that anyone with the link can view, and the call is logged."""
-    from api.record_csv_export import BONUS_CSV_HEADER, build_bonus_records_csv
+    from api.record_csv_export import (
+        bonus_records_csv_from_rows,
+        bonus_records_csv_rows,
+        bonus_records_total,
+    )
 
     start = parse_et_day(from_)
     end = parse_et_day(to)
@@ -68,7 +70,7 @@ def export_bonus_records(
         raise bad_input("use either bonus_type_id or other=true, not both")
     with read_session() as session:
         club_row = resolve_club(session, club)
-        content = build_bonus_records_csv(
+        data_rows = bonus_records_csv_rows(
             session,
             from_day=start,
             to_day=end,
@@ -77,14 +79,14 @@ def export_bonus_records(
             other=other,
         )
         label = _club_label(club_row)
-    parsed = list(csv.reader(io.StringIO(content.decode("utf-8-sig"))))
-    rows = max(0, len(parsed) - 1)
+    rows = len(data_rows)
     if rows > MAX_EXPORT_ROWS:
         raise bad_input(
             f"{rows} rows exceeds the {MAX_EXPORT_ROWS}-row export limit; narrow "
             "the date range or filter by club"
         )
-    total = _bonus_total(parsed, BONUS_CSV_HEADER)
+    content = bonus_records_csv_from_rows(data_rows)
+    total = float(round(bonus_records_total(data_rows), 2))
     name = f"GG bonuses - {label} - {start.isoformat()} to {end.isoformat()}"
     from mcp_server.google_drive import CSV_MIME
 
@@ -108,17 +110,6 @@ def export_bonus_records(
         include_pii=True,
         notes=notes,
     )
-
-
-def _bonus_total(parsed: list[list[str]], header: list[str]) -> float:
-    idx = header.index("amount")
-    total = Decimal("0")
-    for row in parsed[1:]:
-        try:
-            total += Decimal(str(row[idx]))
-        except (ArithmeticError, IndexError, ValueError):
-            continue  # blank or malformed cell
-    return float(round(total, 2))
 
 
 @translate_errors

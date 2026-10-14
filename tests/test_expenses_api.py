@@ -236,9 +236,11 @@ class ExpensesApiTestCase(unittest.TestCase):
         )
         wb = load_workbook(BytesIO(r.content))
         ws = wb.active
-        # header + 1 data row
-        self.assertEqual(ws.max_row, 2)
+        # header + 1 data row + total row
+        self.assertEqual(ws.max_row, 3)
         self.assertEqual(ws.cell(2, 2).value, "Keep")
+        self.assertEqual(ws.cell(3, 1).value, 10.0)
+        self.assertEqual(ws.cell(3, 2).value, "Total")
 
     def test_require_admin_dependency(self) -> None:
         # Direct dependency behavior via JWT roles already covered; sanity-check helpers

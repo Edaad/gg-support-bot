@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 import os
@@ -188,6 +189,9 @@ class BonusExportTests(ExportTestBase):
         self.assertIn("GTO / 8190-5287 / Pirate", csv_text)
         self.assertNotIn("RT / 3333-4444", csv_text)
         self.assertNotIn("Late", csv_text)
+        last = list(csv.reader(io.StringIO(csv_text)))[-1]
+        self.assertEqual(last[0], "Total")
+        self.assertEqual(Decimal(last[8]), Decimal("35.5"))
 
         permission = [r for r in self.drive.requests if "/permissions" in str(r.url)]
         self.assertEqual(len(permission), 1)
@@ -242,7 +246,8 @@ class ExpenseExportTests(ExportTestBase):
         rows = list(sheet.iter_rows(values_only=True))
         self.assertEqual(rows[0][0], "Amount")
         self.assertEqual(rows[1][1], "Software")
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[2][:2], (120.0, "Total"))
 
     def test_date_and_search_filters(self) -> None:
         result = exports.export_expenses(from_="2026-10-02", to="2026-10-03")

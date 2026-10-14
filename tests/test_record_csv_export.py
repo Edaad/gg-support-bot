@@ -122,12 +122,18 @@ class RecordCsvExportBuildTestCase(unittest.TestCase):
             to_day=date(2026, 7, 17),
         )
         rows = list(csv.reader(io.StringIO(content.decode("utf-8"))))
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
         self.assertEqual(rows[0][1], "issued_at")
         self.assertEqual(rows[0][2], "created_at")
         self.assertEqual(rows[1][0], "1")
         self.assertEqual(rows[1][8], "25.00")
         self.assertEqual(rows[1][9], "Referral")
+        # Trailing total row: label in the first column, sum under amount only.
+        self.assertEqual(rows[2][0], "Total")
+        self.assertEqual(rows[2][8], "25.00")
+        self.assertEqual(
+            [c for i, c in enumerate(rows[2]) if i not in (0, 8)], [""] * 12
+        )
 
 
 if __name__ == "__main__":

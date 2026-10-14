@@ -464,7 +464,7 @@ def build_cashout_money_sends_csv(
     return rows_to_csv_bytes(MONEY_SEND_CSV_HEADER, rows)
 
 
-def build_bonus_records_csv(
+def bonus_records_csv_rows(
     session: Session,
     *,
     from_day: date,
@@ -472,7 +472,9 @@ def build_bonus_records_csv(
     club_id: int | None = None,
     bonus_type_id: int | None = None,
     other: bool = False,
-) -> bytes:
+) -> list[list[Any]]:
+    """Data rows (no header, no total) for the bonus records export."""
+
     start, end = et_range_to_utc_naive(from_day, to_day)
     club_names = {
         int(row.id): str(row.name) for row in session.query(Club.id, Club.name).all()
@@ -516,8 +518,46 @@ def build_bonus_records_csv(
                 record.player_details_id or "",
             ]
         )
+    return rows
 
-    return rows_to_csv_bytes(BONUS_CSV_HEADER, rows)
+
+_BONUS_AMOUNT_IDX = BONUS_CSV_HEADER.index("amount")
+
+
+def bonus_records_total(rows: list[list[Any]]) -> Decimal:
+    return sum((Decimal(str(r[_BONUS_AMOUNT_IDX] or 0)) for r in rows), Decimal("0"))
+
+
+def bonus_records_csv_from_rows(rows: list[list[Any]]) -> bytes:
+    """CSV with a trailing Total row summing the amount column (when non-empty)."""
+
+    if not rows:
+        return rows_to_csv_bytes(BONUS_CSV_HEADER, [])
+    total_row: list[Any] = [""] * len(BONUS_CSV_HEADER)
+    total_row[0] = "Total"
+    total_row[_BONUS_AMOUNT_IDX] = bonus_records_total(rows)
+    return rows_to_csv_bytes(BONUS_CSV_HEADER, [*rows, total_row])
+
+
+def build_bonus_records_csv(
+    session: Session,
+    *,
+    from_day: date,
+    to_day: date,
+    club_id: int | None = None,
+    bonus_type_id: int | None = None,
+    other: bool = False,
+) -> bytes:
+    return bonus_records_csv_from_rows(
+        bonus_records_csv_rows(
+            session,
+            from_day=from_day,
+            to_day=to_day,
+            club_id=club_id,
+            bonus_type_id=bonus_type_id,
+            other=other,
+        )
+    )
 
 
 def build_group_chat_tickets_csv(
