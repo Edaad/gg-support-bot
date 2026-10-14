@@ -73,9 +73,27 @@ Local stdio (Claude Code or Claude Desktop on a machine with `DATABASE_URL`):
 `run_mcp.py` loads `.env`, logs to stderr and warns (does not refuse) if the
 database is behind the Alembic head.
 
-Client notes: claude.ai / Claude Desktop "custom connectors" with a static
-request header are a limited-access beta, so Desktop users should prefer the
-stdio config above. The Anthropic Messages API MCP connector expects OAuth
+Claude Desktop or claude.ai (custom connector, no local install):
+
+1. Customize, Connectors, Add custom connector.
+2. Name it and enter the MCP URL with the **full** Heroku host, exactly what
+   `heroku info -a <app> | grep "Web URL"` prints, plus `/mcp`
+   (for example `https://gg-support-bot-2025-6f96168018cf.herokuapp.com/mcp`).
+   A shortened host returns Heroku's "no such app" 404 and the connector reports
+   "Couldn't reach".
+3. "Checking the server" reports 401 on the connect step and that it could not
+   determine how the server signs in. Both are expected (no OAuth here); click
+   Continue anyway.
+4. Authentication: No sign-in. Request headers: `Authorization` with the value
+   `Bearer <token>` (type the word Bearer, a space, then the token).
+5. Save, then confirm with `heroku logs -a <app> --tail | grep mcp`: a
+   `POST /mcp ... status=200` line with `fwd=160.79.x.x` (Anthropic's egress
+   range) means the connector is talking to the server.
+
+Authentication settings cannot be edited later; remove and re-add the connector
+to rotate a token. The Request headers section is a beta that some
+organizations do not see; without it, use the stdio config above or a local
+`mcp-remote` bridge. The Anthropic Messages API MCP connector expects OAuth
 access tokens; a static bearer may work but is not documented.
 
 ## Tool catalogue
