@@ -10,7 +10,7 @@ from unittest.mock import patch
 from mcp.client import Client
 
 from mcp_server.server import build_server
-from mcp_server.tools import WRITE_TOOL_NAMES
+from mcp_server.tools import EXPORT_TOOL_NAMES, WRITE_TOOL_NAMES
 
 EXPECTED_RESOURCES = {
     "gg://reference/clubs",
@@ -66,7 +66,11 @@ class ToolCatalogueTests(unittest.TestCase):
                 self.assertNotIn("confirm", tool.input_schema.get("required", []))
 
     def test_read_tools_are_read_only(self) -> None:
-        read_tools = [t for t in self.tools if t.name not in WRITE_TOOL_NAMES]
+        read_tools = [
+            t
+            for t in self.tools
+            if t.name not in WRITE_TOOL_NAMES and t.name not in EXPORT_TOOL_NAMES
+        ]
         self.assertGreater(len(read_tools), 30)
         for tool in read_tools:
             with self.subTest(tool=tool.name):
@@ -75,6 +79,18 @@ class ToolCatalogueTests(unittest.TestCase):
                 self.assertFalse(tool.annotations.destructive_hint)
                 self.assertNotIn("confirm", tool.input_schema.get("properties", {}))
                 self.assertNotIn("ctx", tool.input_schema.get("properties", {}))
+
+    def test_export_tools_are_open_world_without_confirm(self) -> None:
+        by_name = {t.name: t for t in self.tools}
+        for name in EXPORT_TOOL_NAMES:
+            with self.subTest(tool=name):
+                tool = by_name[name]
+                self.assertFalse(tool.annotations.read_only_hint)
+                self.assertTrue(tool.annotations.open_world_hint)
+                self.assertFalse(tool.annotations.destructive_hint)
+                props = tool.input_schema.get("properties", {})
+                self.assertNotIn("confirm", props)
+                self.assertNotIn("ctx", props)
 
     def test_core_tools_present(self) -> None:
         for name in (

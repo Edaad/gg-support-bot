@@ -1,6 +1,6 @@
 ---
 name: gg-dashboard
-description: How to answer questions and do basic operations on the GG Support dashboard (poker club operations) through the GG Dashboard MCP connector. Use this whenever someone asks about clubs (Round Table, Creator Club, ClubGTO, Aces Table), players or support groups, deposits or payments (Venmo, Zelle, Cash App, PayPal, crypto, Stripe), unbound payments, Pool Pay or trade-record checks, cashouts and money sent, bonuses, expenses, balances, tickets or chat transcripts, escalations, audits or reconciles, GTO Zelle variants, the Monday Review checklist, or "what needs attention today", even if they do not name the dashboard or MCP. Also use it before any write, such as recording a bonus, creating a cashout or money-sent entry, logging an expense, creating or checking a Pool Pay request, binding or unbinding a payment, recording an outbound send, managing deposit alerts, filing an issue report, pausing a variant, or checking off a Monday Review task.
+description: How to answer questions and do basic operations on the GG Support dashboard (poker club operations) through the GG Dashboard MCP connector. Use this whenever someone asks about clubs (Round Table, Creator Club, ClubGTO, Aces Table), players or support groups, deposits or payments (Venmo, Zelle, Cash App, PayPal, crypto, Stripe), unbound payments, Pool Pay or trade-record checks, cashouts and money sent, bonuses, expenses, balances, tickets or chat transcripts, escalations, audits or reconciles, GTO Zelle variants, the Monday Review checklist, or "what needs attention today", even if they do not name the dashboard or MCP. Also use it before any write, such as recording a bonus, creating a cashout or money-sent entry, logging an expense, creating or checking a Pool Pay request, binding or unbinding a payment, recording an outbound send, managing deposit alerts, filing an issue report, pausing a variant, or checking off a Monday Review task, or exporting bonuses or expenses to Google Sheets.
 ---
 
 # GG Dashboard
@@ -98,6 +98,14 @@ immediately and may disable a destination. Deletes are marked destructive and
 their dry run shows the full row. Every call, read or write, is logged under
 the caller's token name; `list_mcp_tool_calls` shows the trail.
 
+## Exports
+
+`export_bonus_records` and `export_expenses` create a Google Sheet in the
+team's Drive folder and return its `url`. Anyone with the link can view it and
+it contains player names, so call them only when the operator asks to export
+or share, then give back the link, the row count and the total. They need no
+`confirm`, and each call is logged.
+
 ## Picking the tool
 
 | Question | Start with |
@@ -119,6 +127,7 @@ the caller's token name; `list_mcp_tool_calls` shows the trail.
 | Monday checklist | `get_monday_review_board`, `list_monday_review_history` |
 | What did the AI change? | `list_mcp_tool_calls` |
 | Record a bonus, expense, cashout, send, or Pool Pay request | the matching `create_*` / `add_*` write, dry run first |
+| Export or share bonuses or expenses as a spreadsheet | `export_bonus_records`, `export_expenses` (returns a Google Sheets link) |
 
 Full parameters for every tool are in `references/tools.md`. Step-by-step
 sequences for the recurring jobs (daily ops check, investigate a player,

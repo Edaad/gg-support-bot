@@ -32,6 +32,8 @@ Heroku-style split: `web` runs Uvicorn, `worker` runs the support bot, `cashier`
 | `MCP_ENABLED` | No | **Default off.** Serve the MCP server for AI clients at `POST /mcp` on the web dyno. See [`docs/MCP.md`](docs/MCP.md). |
 | `MCP_API_TOKENS` | Yes for MCP | `name:token,name:token` bearer tokens; the name is logged as the actor of every tool call. |
 | `MCP_STATEMENT_TIMEOUT_MS` | No | Postgres statement timeout per MCP tool call (default `15000`). |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` / `GOOGLE_OAUTH_REFRESH_TOKEN` | For MCP exports | Google OAuth (Desktop app client) used by the MCP export tools to upload Sheets to the operator's Drive. Get the refresh token with `scripts/google_drive_auth.py`. |
+| `GDRIVE_EXPORT_FOLDER_ID` | No | Drive folder for MCP exports (created by `scripts/google_drive_auth.py`); Drive root if unset. |
 | `TG_API_ID` | Yes for `/gc` | Integer app id from [my.telegram.org](https://my.telegram.org/apps) — used only for MTProto (Telethon) sessions that create megagroups. |
 | `TG_API_HASH` | Yes for `/gc` | Api hash paired with `TG_API_ID`. Do not expose publicly. |
 | `GC_DM_GC_LISTENER_ENABLED` | No | **Default on.** Telethon runs `/gc` when a player **DMs the club MTProto account** (any incoming private message) and when staff send **`/gc` in a private DM with a player** (outgoing). Set to `false` / `0` / `no` / `off` to disable. Use **one** bot worker only (same MTProto session must not connect twice). |

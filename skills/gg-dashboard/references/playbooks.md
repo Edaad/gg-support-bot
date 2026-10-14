@@ -5,8 +5,8 @@ the arguments that matter; everything else keeps its default.
 
 Contents: Daily ops check, Investigate a player, Unbound payment triage, Pool Pay
 check, Recording a cashout, Cashout review, Recording a bonus, Expenses, Outbound
-sends and balances, Deposit alerts, Filing an issue report, Support quality
-review, Audit status, Monday Review, Binding a payment safely, Undoing a
+sends and balances, Deposit alerts, Filing an issue report, Exporting bonuses or
+expenses, Support quality review, Audit status, Monday Review, Binding a payment safely, Undoing a
 mistake.
 
 ## Daily ops check
@@ -146,6 +146,20 @@ mistake.
    club=..., telegram_chat_id=...)`. Attachments stay on the dashboard.
 2. Confirm. It posts to the issue-report Slack channel unless
    `notify_slack=false`.
+
+## Exporting bonuses or expenses
+
+1. Pin down the filters with the operator: date range (America/New_York days,
+   inclusive), club, and for bonuses a type (`list_bonus_types`) or
+   `other=true`; for expenses `pending` and a search term if needed.
+2. Optionally preview with `list_bonus_records` / `list_expenses` so the totals
+   are known before creating a file.
+3. `export_bonus_records(from_, to, club=..., bonus_type_id=...)` or
+   `export_expenses(club=..., pending=..., from_=..., to=...)`.
+4. Reply with the `url`, `rows`, `total_amount` (dollars) and the filters used.
+   Remind the operator the link is viewable by anyone who has it.
+5. If the tool says Drive is not configured or the token was rejected, point to
+   docs/MCP.md, Google Drive exports; nothing was uploaded.
 
 ## Support quality review
 

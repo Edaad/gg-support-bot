@@ -53,6 +53,13 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
 )
 
 
+# Tools that create a file outside the database (Google Drive). Not confirm-gated,
+# but open-world and logged as writes.
+EXPORT_TOOL_NAMES: frozenset[str] = frozenset(
+    {"export_bonus_records", "export_expenses"}
+)
+
+
 def register_all(mcp: MCPServer) -> None:
     from mcp_server.tools import (
         analytics,
@@ -61,6 +68,7 @@ def register_all(mcp: MCPServer) -> None:
         cashouts,
         escalations,
         expenses,
+        exports,
         monday_review,
         ops,
         overview,
@@ -84,6 +92,7 @@ def register_all(mcp: MCPServer) -> None:
         ops,
         overview,
         monday_review,
+        exports,
     ):
         module.register(mcp)
     for module in (
