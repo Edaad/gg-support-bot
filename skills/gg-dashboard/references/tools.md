@@ -1,0 +1,550 @@
+# GG Dashboard MCP tool catalogue
+
+Generated from the server's tool list. Every parameter is optional unless listed under *required*.
+
+Contents: Discovery, Payments, Pool Pay, Cashouts, Bonuses and expenses, Sends and balances, Analytics, Escalations, Audit, Monday Review, Ops, Write tools (confirm required)
+
+## Discovery
+
+### `list_clubs`
+
+List every club with its id, key, slug, title shorthands, feature flags and
+counts of payment methods, linked groups and backup staff accounts.
+Call this first to resolve club references used by other tools.
+
+### `get_club`
+
+Full settings for one club (deposit/cashout flags, cooldowns, limits,
+welcome/list text) plus its backup staff accounts and custom command names.
+`club` accepts id, key (round_table|creator_club|clubgto) or slug.
+
+Parameters: `club` (string). Required: club.
+
+### `list_club_groups`
+
+Linked Telegram support groups (one per player), newest first. `q` matches
+the group title (shorthand / gg_player_id / name). `club` accepts an id, key
+(round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|
+aces-table); omit for all clubs.
+
+Parameters: `club` (string|null, default null); `q` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `find_group`
+
+Resolve a player: `query` may be a group title fragment ("GTO / 8190-5287",
+"ThePirate"), a gg_player_id ("8190-5287") or a numeric Telegram chat_id.
+Returns matching support groups with club, gg_player_id, nickname and the
+player's other chat ids. Use the returned chat_id / group title in other tools.
+
+Parameters: `query` (string); `club` (string|null, default null); `limit` (integer, default 20); `include_pii` (boolean, default false). Required: query.
+
+### `list_payment_methods`
+
+Payment-method configuration for a club: methods -> tiers (amount bands) ->
+variants (receiving handles with weight and pause state) and crypto sub-options.
+`direction` is deposit or cashout. Does not alter pause timers (unlike the
+dashboard's GET). Receiving tags/links are masked unless include_pii.
+
+Parameters: `club` (string); `direction` (string|null, default null); `include_inactive` (boolean, default false); `include_pii` (boolean, default false). Required: club.
+
+### `get_dashboard_overview`
+
+Headline counts an operator checks first: unbound ingested payments per
+rail (last `days` days, test rows excluded), active cashouts, Pool Pay
+requests awaiting trade-record checks, pending expenses, active deposit
+alerts, paused variants, yesterday's tickets by category and escalations in
+the last 24 h. Each section degrades to a note if it fails; drill down with
+the domain tools.
+
+Parameters: `club` (string|null, default null); `days` (integer, default 7); `include_pii` (boolean, default false).
+
+## Payments
+
+### `search_payments`
+
+Ingested payments across rails, newest first (the dashboard's All tab).
+`method`: all|venmo|zelle|cashapp|paypal|crypto|stripe|union (union = TR-checked
+pool-pay requests). `status` bound|unbound needs a single rail AND a club (per-rail
+listing; include_test only applies there). `variant` = receiving handle/address
+(not with method=all). from/to are UTC datetimes (YYYY-MM-DD = that ET day).
+Amounts in amount_cents + amount_usd; the `detail` dict holds the rail-specific
+row. Payer names/handles are masked unless include_pii. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `method` (string, default "all"); `status` (string, default "all"); `club` (string|null, default null); `q` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `variant` (string|null, default null); `include_test` (boolean, default false); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `get_payment`
+
+One ingested payment by rail (venmo|zelle|cashapp|paypal|crypto) and id, with
+its group binding (if bound), the first-time bind attempts that reference it and
+its auto-deposit outcome events. Amounts in amount_cents + amount_usd. Payer
+name/handle/address masked unless include_pii.
+
+Parameters: `method` (string); `payment_id` (integer); `include_pii` (boolean, default false). Required: method, payment_id.
+
+### `list_payers`
+
+Bound payers for one rail (venmo|zelle|cashapp|paypal; crypto has no payer
+aggregate) in a club, grouped by payer name + handle: total deposited
+(cents + usd), payment count, last payment and the latest group. `q` matches
+payer name or handle. Test payments excluded. Payer identity masked unless
+include_pii. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `method` (string); `club` (string); `q` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false). Required: club, method.
+
+### `payment_bindings_summary`
+
+Group-binding analytics for one rail: total bound groups by bound_via, bind
+attempts by bind_kind, and the first-time setup funnel (initiated / succeeded /
+expired / cancelled / pending, success_rate). `bound_via` filters bindings
+(alias `manual` = manual_notification + manual_dashboard). from/to are UTC
+datetimes on bound_at / attempt created_at. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `method` (string, default "venmo"); `club` (string|null, default null); `bound_via` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `exclude_test_chats` (boolean, default true).
+
+### `list_bind_attempts`
+
+First-time payment-method setup attempts (special amount or memo emoji),
+newest first, with the payment that completed them. `method` = rail slug
+(omit for all). `status` pending|succeeded|expired|cancelled. `bound_via`
+special_amount|memo_emoji narrows by bind_kind. from/to are UTC datetimes on
+created_at. Amounts in amount_cents + amount_usd. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `method` (string|null, default null); `club` (string|null, default null); `status` (string|null, default null); `bound_via` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `exclude_test_chats` (boolean, default true); `limit` (integer, default 50); `offset` (integer, default 0).
+
+### `list_auto_deposits`
+
+Auto-deposit outcomes for ingested payments (clubs with auto-deposit on),
+newest payment first. `method` = rail slug or all. `status`
+succeeded|failed|skipped|eligible (= succeeded+failed). `skip_reason` exact
+match. from/to are UTC datetimes on payment_at. summary_only returns just the
+funnel, skip reasons and per-club breakdown (also given in notes otherwise).
+Amounts in amount_cents + amount_usd. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `method` (string, default "all"); `club` (string|null, default null); `status` (string|null, default null); `skip_reason` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `summary_only` (boolean, default false); `exclude_test_chats` (boolean, default true); `limit` (integer, default 50); `offset` (integer, default 0).
+
+### `list_stripe_sessions`
+
+Stripe Checkout sessions for a club, newest first. Only completed payments
+are stored, so `status` is complete or all. `q` matches group title, player or
+Stripe customer. from/to are UTC datetimes on created_at. Amounts in
+amount_cents + amount_usd plus an estimated stripe_fee_usd. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `club` (string); `status` (string, default "complete"); `q` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false). Required: club.
+
+## Pool Pay
+
+### `list_manual_deposit_requests`
+
+Pool Pay manual deposit requests (player said they paid a shared union
+method; staff tick trade_record_checked once the trade record confirms it),
+newest first. Filters: method_id / method_slug (pool-pay slug), method_type
+zelle|cashapp|applepay|venmo, deposit_union tmt|massiv, pool_pay_type
+union_method|large_cashout, trade_record_checked true/false (omit for both),
+variant name, `q` on group title / club / slug / amount. from/to are UTC
+datetimes on created_at. Amounts are dollars. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `method_id` (integer|null, default null); `method_slug` (string|null, default null); `method_type` (string|null, default null); `deposit_union` (string|null, default null); `pool_pay_type` (string|null, default null); `trade_record_checked` (boolean|null, default null); `variant` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `q` (string|null, default null); `include_inactive_methods` (boolean, default true); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `list_union_methods`
+
+Shared Pool Pay methods (tracks_manual_requests): type zelle|cashapp|applepay|
+venmo, deposit_union tmt|massiv, pool_pay_type union_method|large_cashout,
+deposit_limit vs used_sum, unchecked_count / deposit_request_count, the member
+clubs that may offer it and the clubs that actually used it (row_clubs).
+`club` keeps methods owned by or shared with that club. Amounts are dollars.
+The receiving tag and account name are masked unless include_pii. Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `is_active` (boolean|null, default null); `deposit_union` (string|null, default null); `pool_pay_type` (string|null, default null); `include_pii` (boolean, default false).
+
+## Cashouts
+
+### `list_cashout_records`
+
+Staff cashout records newest first, each with its payout destinations
+(payments) and money-sent rows (sends) plus sent/remaining/status ledger.
+`status` is active|cleared|oversent|do_not_send; `q` matches group title,
+gg_player_id, club name or payout details; `audited` filters the audit flag.
+Amounts are dollars. Club: id, key (round_table|creator_club|clubgto) or
+slug (round-table|creator-club|clubgto|aces-table); omit for all clubs.
+
+Parameters: `club` (string|null, default null); `status` (string|null, default null); `q` (string|null, default null); `audited` (boolean|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `get_cashout_record`
+
+One staff cashout record by id with its payout destinations, money-sent
+rows, ledger (sent/remaining/status), audit flag and note. Amounts are dollars;
+payout_details and sender names are masked unless include_pii.
+
+Parameters: `record_id` (integer); `include_pii` (boolean, default false). Required: record_id.
+
+### `list_cashout_money_sends`
+
+Flat ledger of money actually sent to players across cashouts, newest first
+(who sent, how much, by which method, for which record/player). `from_`/`to`
+filter created_at (UTC datetimes; YYYY-MM-DD means that whole America/New_York
+day, inclusive). `method` is an exact method_display_name; `q` matches sender,
+group title or gg_player_id. Amounts are dollars. Club: id, key
+(round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|
+aces-table); omit for all clubs.
+
+Parameters: `club` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `method` (string|null, default null); `q` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+## Bonuses and expenses
+
+### `list_bonus_records`
+
+Bonuses recorded for players (via /bonus or the dashboard), newest issued
+first. `bonus_type_id` keeps one type; `other=true` keeps free-text bonuses
+with no type; `q` matches group title, player name, gg_player_id or the custom
+description. Amounts are dollars. No offset paging: narrow with filters.
+Use list_bonus_types for type ids. Club: id, key (round_table|creator_club|
+clubgto) or slug (round-table|creator-club|clubgto|aces-table); omit for all.
+
+Parameters: `club` (string|null, default null); `bonus_type_id` (integer|null, default null); `other` (boolean, default false); `q` (string|null, default null); `limit` (integer, default 50); `include_pii` (boolean, default false).
+
+### `list_bonus_types`
+
+Bonus categories offered in the /bonus flow (id, name, is_active,
+sort_order), in display order. Pass an id as bonus_type_id to
+list_bonus_records.
+
+### `list_expenses`
+
+Expense ledger rows newest first (amount, expense_type, description, club,
+expense_date, pending). `from_`/`to` are YYYY-MM-DD calendar dates applied to
+expense_date (inclusive, no timezone). `pending` filters unpaid vs settled;
+`q` matches expense_type, description or club name. Amounts are dollars; notes
+carry the total_amount of every matching row. Club: id, key (round_table|
+creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table);
+omit for all clubs.
+
+Parameters: `club` (string|null, default null); `pending` (boolean|null, default null); `q` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0).
+
+## Sends and balances
+
+### `list_outbound_sends`
+
+Amounts that left a sending account (Zapier-ingested or admin-entered),
+newest first. `method` is venmo|cashapp|crypto; `tag` is the sending handle
+(@venmo, $cashapp). `from_`/`to` filter created_at (UTC datetimes; YYYY-MM-DD
+means that whole America/New_York day). Amounts are amount_cents (+ amount_usd).
+`recipient` is masked unless include_pii. See get_account_balances for totals.
+
+Parameters: `method` (string|null, default null); `tag` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `get_account_balances`
+
+Round Table Venmo and Cash App balance cards: running balance (offset +
+received - sent), this ET week's inflow vs its cap, and remaining sending
+power inside the rolling 168-hour window. All amounts are cents (``*_cents``)
+with ``*_usd`` twins. Use list_blocking_sends for the sends eating the window.
+
+### `list_blocking_sends`
+
+Outbound sends still inside the rolling 168-hour sending window for one
+Round Table account (they reduce sending_remaining_cents on its balance card),
+newest first with the time each one expires. `method` is venmo|cashapp; `tag`
+is the account handle. Amounts are cents. `recipient` masked unless include_pii.
+
+Parameters: `method` (string); `tag` (string); `include_pii` (boolean, default false). Required: method, tag.
+
+## Analytics
+
+### `deposit_funnel_summary`
+
+Deposit funnel (/deposit started -> chips confirmed): per-step session counts,
+conversion vs started and average seconds between steps, like the dashboard
+Deposit Funnel card. `method` is a payment-method slug; from/to are UTC
+datetimes (YYYY-MM-DD = that America/New_York day). `include_latency` adds the
+full-auto e2e latency funnel (sessions with no bind setup). Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `method` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `is_first_deposit` (boolean|null, default null); `requires_method_setup` (boolean|null, default null); `exclude_test_chats` (boolean, default true); `include_latency` (boolean, default false).
+
+### `list_group_chat_activity`
+
+Daily rollup of non-bot messages per support group (which player chats were
+active, how many messages, first/last message time). Rows carry chat_id and
+group_title for use with list_tickets / get_chat_transcript. activity_date is a YYYY-MM-DD America/New_York day (default: yesterday ET). Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `activity_date` (string|null, default null); `club` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0).
+
+### `list_tickets`
+
+Classified support tickets segmented from one day's group-chat transcripts,
+with category, brief/full summary, first-response time (frt_seconds) and
+duration. `category` is one of auto_deposit|manual_deposit|unfinished_deposit|
+cashout|unfinished_cashout|early_rakeback|rakeback|bonus|other. Use
+get_ticket_messages for the underlying messages. activity_date is a YYYY-MM-DD America/New_York day (default: yesterday ET). Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `activity_date` (string|null, default null); `club` (string|null, default null); `category` (string|null, default null); `chat_id` (integer|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `get_ticket_messages`
+
+The chat messages that make up one ticket (from list_tickets), chronological,
+each tagged role=customer|admin|bot. Sender display names and usernames are
+masked unless include_pii. Message text is returned as stored.
+
+Parameters: `ticket_id` (integer); `include_pii` (boolean, default false). Required: ticket_id.
+
+### `get_chat_transcript`
+
+Full stored transcript of one support group for one day (nightly MTProto
+extract): chronological messages with id, date (UTC), sender_id, display_name,
+username, is_bot, text, reply_to_msg_id, media_type. Returns at most
+`max_messages` (cap 1000) and says so in notes when truncated. activity_date is a YYYY-MM-DD America/New_York day (default: yesterday ET).
+
+Parameters: `chat_id` (integer); `activity_date` (string|null, default null); `max_messages` (integer, default 300); `include_pii` (boolean, default false). Required: chat_id.
+
+## Escalations
+
+### `list_escalation_events`
+
+Slack escalation notifications sent for support groups, newest first: reason
+(player_idle, cashout_started, deposit_sent_timeout, earlyrb_*, rpa_*, ...),
+chat, slack_ok, head_admin_fanout and the trigger messages. from/to are UTC
+datetimes (YYYY-MM-DD = that America/New_York day). `episode_id` narrows to one
+idle-escalation episode (see get_escalation_episode). Club: Club id (int), key (round_table|creator_club|clubgto) or slug (round-table|creator-club|clubgto|aces-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `chat_id` (integer|null, default null); `reason` (string|null, default null); `episode_id` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false).
+
+### `get_escalation_episode`
+
+One idle-escalation episode (opened when a player reached out and staff were
+silent, closed when staff replied or it timed out) with its trigger messages and
+every escalation event it produced, oldest first.
+
+Parameters: `episode_id` (string); `include_pii` (boolean, default false). Required: episode_id.
+
+## Audit
+
+### `list_reconcile_runs`
+
+Stored audit reconcile runs (one per club slug + local audit day, newest first)
+with status and match/unmatched counts. The full report is large; fetch one
+with get_reconcile_report(club, audit_date). audit_date is YYYY-MM-DD.
+Club: Club slug (clubgto|round-table|aces-table|creator-club) or any club reference (id, key, shorthand); non-slug references map to the club's primary slug (Round Table -> round-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `audit_date` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0).
+
+### `get_reconcile_report`
+
+The stored reconcile report for one club and local audit day: per-player
+trade-record vs ledger nets with delta and status, unmatched trade rows,
+unmatched ledger events, matching lines and warnings. Read-only: never runs a
+new reconcile. Amounts are dollars. Club: Club slug (clubgto|round-table|aces-table|creator-club) or any club reference (id, key, shorthand); non-slug references map to the club's primary slug (Round Table -> round-table). Omit for all clubs.
+
+Parameters: `club` (string); `audit_date` (string). Required: audit_date, club.
+
+### `list_trade_record_uploads`
+
+Trade Record XLSX uploads (one per club slug + local audit day, newest first)
+with filename, timezone policy and parsed transaction line count.
+audit_date is YYYY-MM-DD. Club: Club slug (clubgto|round-table|aces-table|creator-club) or any club reference (id, key, shorthand); non-slug references map to the club's primary slug (Round Table -> round-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `audit_date` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0).
+
+### `list_early_rakeback_snapshots`
+
+Early-rakeback sync snapshots (one per club slug + local audit day, most
+recently synced first): lines fetched/stored/skipped and the unmapped
+nicknames that were skipped. from/to are inclusive YYYY-MM-DD audit days.
+Club: Club slug (clubgto|round-table|aces-table|creator-club) or any club reference (id, key, shorthand); non-slug references map to the club's primary slug (Round Table -> round-table). Omit for all clubs.
+
+Parameters: `club` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0).
+
+## Monday Review
+
+### `get_monday_review_board`
+
+The Monday Review checklist for one week: every task heads must do that
+Monday with its links, assignees (Aiden, Edaad or another name), persistent
+notes, this week's temporary notes, notes queued for later weeks, and whether
+it is done (completion has completed_by, completed_at and notes). `week_of` is
+the Monday as YYYY-MM-DD; omit for the current week. `done`/`pending`/`total`
+summarise progress; `all_done` is true when every task is checked off.
+
+Parameters: `week_of` (string|null, default null).
+
+### `list_monday_review_tasks`
+
+Configured Monday Review tasks in board order (title, description, links
+[{label, url}], assignees, archived). Archived tasks are hidden from the
+weekly board but keep their completion history; pass include_archived=true
+to see them.
+
+Parameters: `include_archived` (boolean, default false); `limit` (integer, default 50); `offset` (integer, default 0).
+
+### `list_monday_review_history`
+
+Past Monday Review weeks newest first, each listing every task that was on
+the checklist with status done (who, when, notes) or missed, plus that week's
+temporary notes. `limit` is a number of weeks (max 52); `before` is a Monday
+YYYY-MM-DD to page further back (default: the current week, which is excluded;
+use get_monday_review_board for it). `next_before` continues the paging.
+
+Parameters: `limit` (integer, default 12); `before` (string|null, default null).
+
+### `complete_monday_review_task`  (write)
+
+Check a Monday Review task off for a week, as the dashboard checkbox does.
+`task` is the task id or (part of) its title; `week_of` is the Monday
+YYYY-MM-DD (default: the current week; future weeks are refused);
+`completed_by` is who did it (Aiden, Edaad or another name); `notes` are
+completion notes kept in the history. Re-completing an already done task
+updates who/notes. Without confirm=true returns a dry run.
+
+Parameters: `task` (string); `week_of` (string|null, default null); `completed_by` (string|null, default null); `notes` (string|null, default null); `confirm` (boolean, default false). Required: task.
+
+### `add_monday_review_note`  (write)
+
+Attach a reminder to a Monday Review task. kind='persistent' shows every
+Monday; kind='temporary' (default) shows only for the Monday in `week_of`
+(YYYY-MM-DD, default: next Monday, i.e. the following week's review). `task`
+is the task id or (part of) its title. Without confirm=true returns a dry
+run.
+
+Parameters: `task` (string); `body` (string); `kind` (string, default "temporary"); `week_of` (string|null, default null); `confirm` (boolean, default false). Required: body, task.
+
+### `create_monday_review_task`  (write)
+
+Add a task to the Monday Review checklist, as the dashboard Manage tab
+does. `links` is a list of {label, url} (http/https) shown under the task;
+`assignees` is a list of names (Aiden, Edaad or any other name). The task is
+appended to the end of the board. Without confirm=true returns a dry run.
+
+Parameters: `title` (string); `description` (string|null, default null); `links` (array|null, default null); `assignees` (array|null, default null); `confirm` (boolean, default false). Required: title.
+
+## Ops
+
+### `list_deposit_method_alerts`
+
+Weekly deposit-volume alerts per method + receiving variant, each with this
+America/New_York week's ingested volume (cents + usd), transaction count, the
+clubs whose deposit variants match, and the auto-disable status
+(on|pending_slack|off, null when disable is not configured). `club` keeps
+alerts matching that club's variants (id, key or slug).
+
+Parameters: `club` (string|null, default null).
+
+### `list_gto_zelle_cards`
+
+ClubGTO Zelle deposit variants in rotation order with tier band, pause state
+(active|paused|disabled) and paused_until. Does not release expired pauses
+(the dashboard does), so a lapsed pause may still read disabled here. The
+receiving tag is masked unless include_pii.
+
+Parameters: `include_pii` (boolean, default false).
+
+### `list_plaid_zelle`
+
+Zelle transactions pulled from a club's linked bank accounts (Plaid), newest
+txn_date first, with the sync state and a per-institution summary in notes.
+Amounts are dollars (positive = money out of the bank account, Plaid sign
+convention). Payer/payee/memo/description are masked unless include_pii.
+`club` is required (id, key or slug).
+
+Parameters: `club` (string); `limit` (integer, default 50); `offset` (integer, default 0); `include_pii` (boolean, default false). Required: club.
+
+### `list_issue_reports`
+
+Issue-report tickets filed by account managers (/report or the API),
+newest first, with tags, category, notify tags, resolution notes and
+attachment metadata (id, filename, content_type, size_bytes; never the file
+bytes). `status` is open|resolved. Reporter names are masked unless
+include_pii. `club` is an id, key or slug; omit for all clubs.
+
+Parameters: `status` (string|null, default null); `club` (string|null, default null); `limit` (integer, default 50); `include_pii` (boolean, default false).
+
+### `list_mcp_tool_calls`
+
+Audit log of calls made through this MCP server: actor (token name), tool,
+outcome (ok|error|refused), duration and redacted arguments, newest first.
+Use it to review what an AI session changed (is_write=true rows).
+
+Parameters: `actor` (string|null, default null); `tool` (string|null, default null); `outcome` (string|null, default null); `from_` (string|null, default null); `to` (string|null, default null); `limit` (integer, default 50); `offset` (integer, default 0).
+
+## Write tools (confirm required)
+
+### `add_monday_review_note`  (write)
+
+Attach a reminder to a Monday Review task. kind='persistent' shows every
+Monday; kind='temporary' (default) shows only for the Monday in `week_of`
+(YYYY-MM-DD, default: next Monday, i.e. the following week's review). `task`
+is the task id or (part of) its title. Without confirm=true returns a dry
+run.
+
+Parameters: `task` (string); `body` (string); `kind` (string, default "temporary"); `week_of` (string|null, default null); `confirm` (boolean, default false). Required: body, task.
+
+### `bind_payment_to_group`  (write)
+
+Bind (or rebind) an ingested payment to a player's support group, exactly
+like the dashboard Payments bind action. `method` is venmo|zelle|cashapp|paypal|
+crypto; `group_title` must be the full linked title ("GTO / 8190-5287 / name").
+Without confirm=true returns a dry run showing the payment and the resolved
+group. With confirm=true it binds, which may post to the group and trigger
+auto-deposit, and is logged under your token name.
+
+Parameters: `method` (string); `payment_id` (integer); `group_title` (string); `confirm` (boolean, default false). Required: group_title, method, payment_id.
+
+### `complete_monday_review_task`  (write)
+
+Check a Monday Review task off for a week, as the dashboard checkbox does.
+`task` is the task id or (part of) its title; `week_of` is the Monday
+YYYY-MM-DD (default: the current week; future weeks are refused);
+`completed_by` is who did it (Aiden, Edaad or another name); `notes` are
+completion notes kept in the history. Re-completing an already done task
+updates who/notes. Without confirm=true returns a dry run.
+
+Parameters: `task` (string); `week_of` (string|null, default null); `completed_by` (string|null, default null); `notes` (string|null, default null); `confirm` (boolean, default false). Required: task.
+
+### `create_expense`  (write)
+
+Record an expense (dollars) for a club on the Expenses ledger, as the
+dashboard form does. `expense_date` is YYYY-MM-DD (default: today in
+America/New_York); `pending` marks it as not yet settled. Without
+confirm=true returns a dry run of the row that would be created.
+
+Parameters: `amount` (number); `expense_type` (string); `club` (string); `expense_date` (string|null, default null); `description` (string|null, default null); `pending` (boolean, default true); `confirm` (boolean, default false). Required: amount, club, expense_type.
+
+### `create_monday_review_task`  (write)
+
+Add a task to the Monday Review checklist, as the dashboard Manage tab
+does. `links` is a list of {label, url} (http/https) shown under the task;
+`assignees` is a list of names (Aiden, Edaad or any other name). The task is
+appended to the end of the board. Without confirm=true returns a dry run.
+
+Parameters: `title` (string); `description` (string|null, default null); `links` (array|null, default null); `assignees` (array|null, default null); `confirm` (boolean, default false). Required: title.
+
+### `pause_variant`  (write)
+
+Pause a payment tier variant (receiving handle) for 48 hours so it leaves
+the rotation, as the GTO Zelle dashboard cards do. Fails if the variant is
+already off. Without confirm=true returns a dry run with the current state.
+
+Parameters: `variant_id` (integer); `confirm` (boolean, default false). Required: variant_id.
+
+### `resume_variant`  (write)
+
+End a running pause on a payment tier variant and return it to rotation.
+Fails if the variant is not paused (a disabled variant must be re-enabled on
+the dashboard). Without confirm=true returns a dry run.
+
+Parameters: `variant_id` (integer); `confirm` (boolean, default false). Required: variant_id.
+
+### `update_cashout_record`  (write)
+
+Annotate a staff cashout record like the dashboard: set a staff `note`,
+the `audited` flag, `sending` (payout in progress) or `do_not_send` (hold).
+Only the fields you pass change; amount and group title are not editable
+here. Without confirm=true returns a dry run with the current record.
+
+Parameters: `record_id` (integer); `note` (string|null, default null); `audited` (boolean|null, default null); `sending` (boolean|null, default null); `do_not_send` (boolean|null, default null); `confirm` (boolean, default false). Required: record_id.
+
+### `update_manual_deposit_request`  (write)
+
+Edit a Pool Pay manual deposit request: mark it trade-record checked (or
+unchecked) and/or correct its dollar amount, as the dashboard PATCH does.
+At least one of trade_record_checked / amount is required. Without
+confirm=true returns a dry run with the current row and the proposed change.
+
+Parameters: `request_id` (integer); `trade_record_checked` (boolean|null, default null); `amount` (number|null, default null); `confirm` (boolean, default false). Required: request_id.
