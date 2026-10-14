@@ -16,6 +16,17 @@ WRITE_TOOL_NAMES: frozenset[str] = frozenset(
         "complete_monday_review_task",
         "add_monday_review_note",
         "create_monday_review_task",
+        # cashouts / expenses
+        "create_cashout_record",
+        "delete_cashout_record",
+        "add_cashout_destination",
+        "update_cashout_destination",
+        "remove_cashout_destination",
+        "add_cashout_send",
+        "update_cashout_send",
+        "remove_cashout_send",
+        "update_expense",
+        "delete_expense",
     }
 )
 
