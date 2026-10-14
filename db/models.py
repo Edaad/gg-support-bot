@@ -1484,6 +1484,78 @@ class MigrationRecoveryControl(Base):
     club_rate_limit_resume_at = Column(JSONB, nullable=True)
 
 
+class ContactRestoreRow(Base):
+    """One August contact to put back on a club admin account.
+
+    Phone numbers are never stored. ``username_miss`` means a username lookup
+    failed, so later ticks move on to group scans instead of retrying it.
+    ``last_error`` is set when AddContact fails for a reason other than
+    FloodWait, so the next tick tries a different row.
+    """
+
+    __tablename__ = "contact_restore_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_key",
+            "contact_user_id",
+            name="contact_restore_rows_club_key_contact_user_id_key",
+        ),
+        Index("ix_contact_restore_rows_club_status", "club_key", "status"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_key = Column(String(64), nullable=False)
+    contact_user_id = Column(BigInteger, nullable=False)
+    username = Column(String(64), nullable=True)
+    first_name = Column(String(64), nullable=False, server_default=text("''"))
+    last_name = Column(String(64), nullable=False, server_default=text("''"))
+    access_hash = Column(BigInteger, nullable=True)
+    status = Column(String(16), nullable=False, server_default=text("'pending'"))
+    resolve_via = Column(String(16), nullable=True)
+    username_miss = Column(Boolean, nullable=False, server_default=text("false"))
+    last_error = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ContactRestoreGroup(Base):
+    """Group peer saved during the one dialog walk, scanned at most once."""
+
+    __tablename__ = "contact_restore_groups"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_key",
+            "chat_id",
+            name="uq_contact_restore_groups_club_chat",
+        ),
+        Index("ix_contact_restore_groups_club_scanned", "club_key", "scanned_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_key = Column(String(64), nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    access_hash = Column(BigInteger, nullable=False, server_default=text("0"))
+    peer_type = Column(String(16), nullable=False)
+    scanned_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ContactRestoreControl(Base):
+    """Singleton: tick time, per-club FloodWait pauses, dialog-walk timestamps."""
+
+    __tablename__ = "contact_restore_control"
+
+    id = Column(Integer, primary_key=True, autoincrement=False)
+    last_tick_at = Column(DateTime(timezone=True), nullable=True)
+    flood_resume_at = Column(JSONB, nullable=True)
+    dialogs_filled_at = Column(JSONB, nullable=True)
+    auto_disabled_at = Column(DateTime(timezone=True), nullable=True)
+    auto_disabled_reason = Column(Text, nullable=True)
+
+
 class InactiveGroupOutreachControl(Base):
     """Singleton row: one-shot inactive group outreach scan state."""
 

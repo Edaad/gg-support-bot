@@ -95,6 +95,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         setup_migration_recovery_jobs(app)
 
+        from bot.services.contact_restore import setup_contact_restore_job
+
+        setup_contact_restore_job(app)
+
         if is_migration_recovery_slack_summary_enabled():
             from bot.services.migration_recovery import (
                 schedule_migration_recovery_slack_summary_job,

@@ -187,6 +187,26 @@ Filter recent one-off output: `heroku logs -a YOUR_APP --tail | rg 'run\\.|backf
 
 If the frontend build fails or `dist/` is missing, the API still starts; static files are only mounted when `dist` is complete (see `api/app.py`).
 
+## Contact restore (one add per club on the worker)
+
+Puts the August contact export back onto each club admin account. The job uses the **same** dm_gc Telethon sessions as `/gc` (no extra `heroku run`). One `AddContact` per club every 90 seconds. A FloodWait pauses only that club for Telegram's wait plus 60 seconds.
+
+Seed from a machine that has `data/mtproto_contacts_export.csv`. Phones in that file are not written.
+
+```bash
+python scripts/seed_contact_restore.py
+python scripts/seed_contact_restore.py --apply
+```
+
+Turn it on for one club first, confirm a single `contact_restore club=round_table action=add` log line, then add the other clubs:
+
+```bash
+heroku config:set GC_CONTACT_RESTORE_ENABLED=true -a YOUR_APP
+heroku config:set GC_CONTACT_RESTORE_CLUBS=round_table -a YOUR_APP
+```
+
+`GC_CONTACT_RESTORE_INTERVAL_SEC` defaults to `90` (minimum 60). The first tick waits at least 60 seconds after boot. When every enabled club is drained, the worker sets `contact_restore_control.auto_disabled_at` and stops the job.
+
 ## Migrated supergroup recovery (direct-add cron on worker)
 
 After a basic-group → supergroup upgrade drops members, the worker can drain a Postgres queue in batches (default 5 groups every 5 minutes) using the **same** dm_gc Telethon sessions (no extra `heroku run` needed).

@@ -577,6 +577,42 @@ def is_migration_recovery_slack_summary_enabled() -> bool:
     return bool((token and channel) or webhook)
 
 
+CONTACT_RESTORE_CLUB_KEYS: tuple[str, ...] = (
+    "round_table",
+    "creator_club",
+    "clubgto",
+)
+
+
+def contact_restore_active_club_keys() -> tuple[str, ...]:
+    """Clubs the contact-restore job processes. Default is all three."""
+
+    raw = os.getenv("GC_CONTACT_RESTORE_CLUBS")
+    if raw is None or not str(raw).strip():
+        selected = set(CONTACT_RESTORE_CLUB_KEYS)
+    else:
+        selected = {part.strip() for part in raw.split(",") if part.strip()}
+    return tuple(key for key in CONTACT_RESTORE_CLUB_KEYS if key in selected)
+
+
+def is_contact_restore_enabled() -> bool:
+    """Slow AddContact backfill on the worker. Default off."""
+
+    if not is_dm_gc_listener_enabled():
+        return False
+    if not _env_bool("GC_CONTACT_RESTORE_ENABLED", default=False):
+        return False
+    from bot.services.contact_restore import is_contact_restore_auto_disabled
+
+    if is_contact_restore_auto_disabled():
+        return False
+    return bool(contact_restore_active_club_keys())
+
+
+def get_contact_restore_interval_sec() -> int:
+    return max(60, _env_int("GC_CONTACT_RESTORE_INTERVAL_SEC", 90))
+
+
 INACTIVE_OUTREACH_CLUB_KEYS: tuple[str, ...] = MIGRATION_RECOVERY_CLUB_KEYS
 
 
