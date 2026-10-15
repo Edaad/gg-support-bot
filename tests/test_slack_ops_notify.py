@@ -19,8 +19,8 @@ from bot.services.slack_ops_notify import (
 class TestFormatSlackOpsMessage(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_source_prefix_only(self) -> None:
-        text = format_slack_ops_message("Something failed", source="migration_recovery")
-        self.assertIn("*Migration Recovery*", text)
+        text = format_slack_ops_message("Something failed", source="notification_report")
+        self.assertIn("*Notification Report*", text)
         self.assertIn("Something failed", text)
 
     @patch.dict(os.environ, {"SLACK_OPS_MENTION": "<@U123>"})
@@ -64,7 +64,7 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         mock_client.post = AsyncMock(return_value=mock_resp)
         mock_client_cls.return_value = mock_client
 
-        ok = await notify_slack_ops("failed row", source="migration_recovery")
+        ok = await notify_slack_ops("failed row", source="notification_report")
 
         self.assertTrue(ok)
         mock_client.post.assert_awaited_once()
@@ -75,7 +75,7 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         )
         payload = call_args.kwargs["json"]
         self.assertEqual(payload["channel"], "C123")
-        self.assertIn("Migration Recovery", payload["text"])
+        self.assertIn("Notification Report", payload["text"])
         self.assertIn("failed row", payload["text"])
 
     @patch.dict(
@@ -124,11 +124,11 @@ class TestNotifySlackOps(unittest.IsolatedAsyncioTestCase):
         mock_client.post = AsyncMock(return_value=mock_resp)
         mock_client_cls.return_value = mock_client
 
-        ok = await notify_slack_ops("failed row", source="migration_recovery")
+        ok = await notify_slack_ops("failed row", source="notification_report")
 
         self.assertTrue(ok)
         call_kwargs = mock_client.post.await_args.kwargs
-        self.assertIn("Migration Recovery", call_kwargs["json"]["text"])
+        self.assertIn("Notification Report", call_kwargs["json"]["text"])
         self.assertIn("failed row", call_kwargs["json"]["text"])
 
     @patch.dict(

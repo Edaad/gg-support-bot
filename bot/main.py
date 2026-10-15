@@ -90,33 +90,9 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
         start_listener_background(app.bot.token)
 
     if not test_mode:
-        from club_gc_settings import is_migration_recovery_slack_summary_enabled
-        from bot.services.migration_recovery import setup_migration_recovery_jobs
-
-        setup_migration_recovery_jobs(app)
-
         from bot.services.contact_restore import setup_contact_restore_job
 
         setup_contact_restore_job(app)
-
-        if is_migration_recovery_slack_summary_enabled():
-            from bot.services.migration_recovery import (
-                schedule_migration_recovery_slack_summary_job,
-            )
-
-            schedule_migration_recovery_slack_summary_job(app)
-
-        from bot.services.inactive_group_outreach import (
-            setup_inactive_group_outreach_job,
-        )
-
-        setup_inactive_group_outreach_job(app)
-
-        from bot.services.inactive_group_outreach_dm import (
-            setup_inactive_group_outreach_dm_job,
-        )
-
-        setup_inactive_group_outreach_dm_job(app)
 
         from bot.services.cashout_send_notify import setup_cashout_send_notify_job
 
@@ -227,18 +203,7 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
     )
     from bot.handlers.stripe import stripe_handler
     from bot.handlers.teststripe import teststripe_handler
-    from bot.handlers.inactive_outreach_send import (
-        sendinactive_callback_handler,
-        sendinactive_entry,
-        sendinactive_message_handler,
-    )
-    from bot.handlers.inactive_outreach_stage import (
-        stageinactive_handler,
-        stagedinactive_handler,
-        unstageinactive_handler,
-    )
     from bot.handlers.issue_reports import register_issue_report_handlers
-    from bot.handlers.whosnext import whosnext_handler
     from bot.handlers.unbind_method import unbindmethod_handler
     from bot.handlers.deposit_access import (
         cashoutaccess_entry,
@@ -310,7 +275,6 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         stripe_handler=stripe_handler,
         teststripe_handler=teststripe_handler,
         register_issue_report_handlers=register_issue_report_handlers,
-        whosnext_handler=whosnext_handler,
         unbindmethod_handler=unbindmethod_handler,
         depositaccess_entry=depositaccess_entry,
         cashoutaccess_entry=cashoutaccess_entry,
@@ -318,12 +282,6 @@ def import_worker_handlers(*, test_mode: bool = False) -> SimpleNamespace:
         depositaccess_callback_handler=depositaccess_callback_handler,
         listdepositaccess_handler=listdepositaccess_handler,
         listcashoutaccess_handler=listcashoutaccess_handler,
-        stageinactive_handler=stageinactive_handler,
-        unstageinactive_handler=unstageinactive_handler,
-        stagedinactive_handler=stagedinactive_handler,
-        sendinactive_entry=sendinactive_entry,
-        sendinactive_message_handler=sendinactive_message_handler,
-        sendinactive_callback_handler=sendinactive_callback_handler,
         deposit_amount_priority_handler=deposit_amount_priority_handler,
         cancel_deposit_reminder_on_customer_msg=cancel_deposit_reminder_on_customer_msg,
         cancel_deposit_reminder_on_group_activity=cancel_deposit_reminder_on_group_activity,
@@ -387,7 +345,7 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     # DM staff flows. PTB runs at most ONE handler per group, so private TEXT
     # handlers that share the same filter must live in separate groups (lower
     # group number = higher priority). /cancel stays first.
-    #   -5 cancel | -4 bonus | -3 sendinactive | -2 depositaccess/cashoutaccess | -1 issue triage
+    #   -5 cancel | -4 bonus | -2 depositaccess/cashoutaccess | -1 issue triage
     app.add_handler(CommandHandler("cancel", h.dm_flow_cancel_priority), group=-5)
 
     app.add_handler(CommandHandler("bonus", h.bonus_entry), group=-4)
@@ -413,22 +371,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
             h.bonus_draft_cancel_handler, pattern=r"^bonus_draft_cancel:\d+$"
         ),
         group=-4,
-    )
-
-    app.add_handler(CommandHandler("sendinactive", h.sendinactive_entry), group=-3)
-    app.add_handler(
-        MessageHandler(
-            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
-            h.sendinactive_message_handler,
-        ),
-        group=-3,
-    )
-    app.add_handler(
-        CallbackQueryHandler(
-            h.sendinactive_callback_handler,
-            pattern=r"^io_send_(confirm|cancel)$",
-        ),
-        group=-3,
     )
 
     app.add_handler(CommandHandler("depositaccess", h.depositaccess_entry), group=-2)
@@ -494,9 +436,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
         )
     )
 
-    app.add_handler(
-        CommandHandler("whosnext", h.whosnext_handler, filters=filters.ChatType.PRIVATE)
-    )
     app.add_handler(CommandHandler("mycmds", h.mycmds_handler))
     app.add_handler(CommandHandler("delete", h.delete_handler))
     app.add_handler(CommandHandler("bypass", h.bypass_handler))
@@ -515,15 +454,6 @@ def run_bot(token: str | None = None, *, test_mode: bool = False):
     app.add_handler(CommandHandler("teststripe", h.teststripe_handler))
 
     app.add_handler(CommandHandler("unbindmethod", h.unbindmethod_handler))
-    app.add_handler(CommandHandler("stageinactive", h.stageinactive_handler))
-    app.add_handler(CommandHandler("unstageinactive", h.unstageinactive_handler))
-    app.add_handler(
-        CommandHandler(
-            "stagedinactive",
-            h.stagedinactive_handler,
-            filters=filters.ChatType.PRIVATE,
-        )
-    )
     if test_mode and h.deposit_amount_priority_handler is not None:
         app.add_handler(
             MessageHandler(

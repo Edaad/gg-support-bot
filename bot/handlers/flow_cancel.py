@@ -14,7 +14,6 @@ FlowName = Literal[
     "earlyrb",
     "bonus",
     "issue_report",
-    "inactive_outreach_send",
     "support_note",
     "deposit_access",
     "cashout_access",
@@ -23,7 +22,6 @@ FlowName = Literal[
 DmFlowName = Literal[
     "bonus",
     "issue_report",
-    "inactive_outreach_send",
     "support_note",
     "deposit_access",
     "cashout_access",
@@ -34,7 +32,6 @@ ACTIVE_FLOW_KEY = "active_bot_flow"
 _DM_FLOW_COMMANDS: dict[DmFlowName, str] = {
     "bonus": "/bonus",
     "issue_report": "/report",
-    "inactive_outreach_send": "/sendinactive",
     "support_note": "/note",
     "deposit_access": "/depositaccess",
     "cashout_access": "/cashoutaccess",
@@ -84,11 +81,6 @@ _ISSUE_REPORT_WIZARD_KEYS = (
     "ir_evidence",
     "ir_admin_id",
 )
-_INACTIVE_OUTREACH_SEND_KEYS = (
-    "io_club_key",
-    "io_message",
-    "io_admin_id",
-)
 _SUPPORT_NOTE_ACTIVE_KEYS = (
     "support_note_admin_id",
     "support_note_club_id",
@@ -119,7 +111,6 @@ _CASHOUT_ACCESS_ACTIVE_KEYS = (
 _DM_FLOW_CHECKERS: tuple[tuple[DmFlowName, str], ...] = (
     ("bonus", "bonus_flow_active"),
     ("issue_report", "issue_report_flow_active"),
-    ("inactive_outreach_send", "inactive_outreach_send_flow_active"),
     ("support_note", "support_note_flow_active"),
     ("deposit_access", "deposit_access_flow_active"),
     ("cashout_access", "cashout_access_flow_active"),
@@ -259,14 +250,6 @@ def issue_report_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     return any(k in context.user_data for k in _ISSUE_REPORT_WIZARD_KEYS)
 
 
-def inactive_outreach_send_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    from bot.handlers.inactive_outreach_send import sendinactive_flow_active
-
-    if sendinactive_flow_active(context):
-        return True
-    return any(k in context.user_data for k in _INACTIVE_OUTREACH_SEND_KEYS)
-
-
 def support_note_flow_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
     if context.user_data.get(ACTIVE_FLOW_KEY) == "support_note":
         return True
@@ -294,8 +277,6 @@ def _dm_flow_is_active(context: ContextTypes.DEFAULT_TYPE, flow: DmFlowName) -> 
         return bonus_flow_active(context)
     if flow == "issue_report":
         return issue_report_flow_active(context)
-    if flow == "inactive_outreach_send":
-        return inactive_outreach_send_flow_active(context)
     if flow == "support_note":
         return support_note_flow_active(context)
     if flow == "deposit_access":
@@ -369,12 +350,6 @@ async def cancel_active_dm_flow(
     if not _dm_flow_is_active(context, flow):
         return False
 
-    if flow == "inactive_outreach_send":
-        from bot.handlers.inactive_outreach_send import sendinactive_cancel
-
-        await sendinactive_cancel(update, context)
-        return True
-
     if flow == "issue_report":
         from bot.handlers import issue_reports as ir_mod
         from bot.handlers.issue_reports import issue_report_cancel
@@ -425,7 +400,6 @@ def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
         "earlyrb",
         "bonus",
         "issue_report",
-        "inactive_outreach_send",
         "support_note",
         "deposit_access",
         "cashout_access",
@@ -434,7 +408,6 @@ def _cancel_order(context: ContextTypes.DEFAULT_TYPE) -> list[FlowName]:
     for name in (
         "bonus",
         "issue_report",
-        "inactive_outreach_send",
         "support_note",
         "deposit_access",
         "cashout_access",

@@ -207,157 +207,6 @@ heroku config:set GC_CONTACT_RESTORE_CLUBS=round_table -a YOUR_APP
 
 `GC_CONTACT_RESTORE_INTERVAL_SEC` defaults to `90` (minimum 60). The first tick waits at least 60 seconds after boot. When every enabled club is drained, the worker sets `contact_restore_control.auto_disabled_at` and stops the job.
 
-## Migrated supergroup recovery (direct-add cron on worker)
-
-After a basic-group → supergroup upgrade drops members, the worker can drain a Postgres queue in batches (default 5 groups every 5 minutes) using the **same** dm_gc Telethon sessions (no extra `heroku run` needed).
-
-**One-time setup** (run against production Postgres):
-
-```bash
-alembic upgrade head   # runs automatically in the Heroku release phase
-heroku run -a YOUR_APP -- python scripts/seed_migrated_group_recovery.py
-```
-
-Seed needs a pre-migration dump under `backups/upgrade_supergroup_*/` in the slug, or pass `--affected-csv` from a local export. Re-seed is safe (`ON CONFLICT DO NOTHING`).
-
-**Enable** on the worker dyno:
-
-```bash
-heroku config:set GC_MIGRATION_RECOVERY_ENABLED=true -a YOUR_APP
-heroku config:set GC_MIGRATION_RECOVERY_SKIP_WELCOME=true -a YOUR_APP
-heroku restart worker -a YOUR_APP
-```
-
-**Pause one club** while keeping recovery on for others (e.g. skip Round Table, run Creator Club + GTO):
-
-```bash
-heroku config:set GC_MIGRATION_RECOVERY_DISABLED_CLUBS=round_table -a YOUR_APP
-# or: heroku config:set GC_MIGRATION_RECOVERY_ROUND_TABLE=false -a YOUR_APP
-heroku restart worker -a YOUR_APP
-```
-
-Optional knobs: `GC_MIGRATION_RECOVERY_INTERVAL_SEC` (default `300`), `GC_MIGRATION_RECOVERY_BATCH_SIZE` (default `5`, **direct-add quota per active club per tick**), `GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC` (default `2`, between direct-add attempts only), `GC_MIGRATION_RECOVERY_SKIP_WELCOME` (default `false`).
-
-**Deploy / worker restart:** The worker stores `last_tick_at` in `migration_recovery_control` and schedules the next tick at `last_tick_at + GC_MIGRATION_RECOVERY_INTERVAL_SEC`. A deploy shortly after a tick does **not** trigger an immediate readd; if the interval has already elapsed, the first tick waits at least 60 seconds for the Telethon listener to connect.
-
-With `GC_MIGRATION_RECOVERY_BATCH_SIZE=1`, each tick processes up to **one direct-add attempt per active club** (already-in rows are skipped without counting toward quota).
-
-Requires `GC_DM_GC_LISTENER_ENABLED` (default on). Recovery direct-adds **only the mapped player** (not staff/bot accounts from `GC_USERS_*`); staff can join via invite link or manual add. Membership is checked with `GetParticipantRequest` before any invite. Each tick **drains already-in players without consuming batch quota** — it keeps claiming rows until `GC_MIGRATION_RECOVERY_BATCH_SIZE` groups that actually needed a direct add are processed per active club. Already-in-only rows finalize as `complete` without an admin DM. Each group is attempted **once**; no automatic retries. For one-off staff re-adds, use [`scripts/readd_migrated_group_members.py`](../scripts/readd_migrated_group_members.py) with `--invite-staff`.
-
-**Slack progress (tier 1+2, every 24h):** When `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set, the worker **MTProto-scans all tier 1+2 rows before each post**, finalizes pending/processing rows where a player is already in the group, then reports: **in group**, queue left/done, **in group pending queue**, direct added, joined via link, still missing. Tune with `GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC` (default `86400`), `GC_MIGRATION_RECOVERY_SLACK_SUMMARY_ENABLED=false` to disable.
-
-**Deploy / worker restart:** The worker stores `last_slack_summary_at` in `migration_recovery_control` and schedules the next post at `last_slack_summary_at + GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC`. A deploy shortly after a post does **not** trigger an immediate resend; if the interval has already elapsed, the first post waits at least 60 seconds.
-
-**Membership audit finalize (manual):** `python scripts/check_recovery_player_membership.py --apply` (or `--from-csv … --apply`) runs the same pending-row finalize plus optional player-ID binding when run locally.
-
-Set `GC_MIGRATION_RECOVERY_SKIP_WELCOME=true` to suppress member-join preamble/TOS for chats in `migrated_group_recovery` during mass re-adds (independent of the recovery cron switch). Unset or set `false` to restore normal welcomes.
-
-After each successful direct-add (not already-in-only skips), the **GG Support bot** DMs that club's GC admin with the player and GC name. **Rate limits (FloodWait)** pause only the affected club (or `elevate_catchup` for Elevate link-join); other clubs and Elevate keep running. Pauses post to **Slack ops** and auto-resume **1 hour after the FloodWait ends** per club (stored in `migration_recovery_control.club_rate_limit_resume_at`; survives worker restart/deploy). Tune extra cooldown with `GC_MIGRATION_RECOVERY_RATE_LIMIT_COOLDOWN_SEC` (default `3600`). Other failures (privacy blocked, entity resolution, tick errors, auto-disable) also post to **Slack** when `SLACK_OPS_BOT_TOKEN` + `SLACK_OPS_CHANNEL_ID` (or webhook) are set (see Slack ops below). Telegram DMs are success-only; admins must have `/start`ed the bot to receive those.
-
-**Queue visibility:** Send `/whosnext` in a private DM with the bot (admin accounts only) to see the global top-10 pending rows, plus auto-add / auto-disable status.
-
-**Auto-disable:** When **every active club's tier-scoped queue** (pending + processing) hits zero, the worker stops the cron job, persists a flag in `migration_recovery_control`, and posts to Slack ops. Tier scope: **Round Table = tier 1+2**; **Creator Club + ClubGTO = tier 3**. CC/GTO having no tier-3 pending while RT still has tier 1+2 work does **not** auto-disable (and vice versa). Disabled clubs (e.g. `GC_MIGRATION_RECOVERY_DISABLED_CLUBS`) are ignored. FloodWait pauses are per-club and do **not** auto-disable the cron (see above).
-
-**Monitor** (SQL or local):
-
-```bash
-python scripts/seed_migrated_group_recovery.py --status
-python scripts/seed_migrated_group_recovery.py --clear-auto-disable
-```
-
-**Round Table Elevate link-join recovery** (requires `GC_ELEVATE_CREATOR_ROUND_TABLE=true` and authorized `elevate_admin` session — see [`docs/GC.md`](GC.md)):
-
-- **RT session** (tier 1+2): direct-add player + always export invite link.
-- **Elevate session** (same tick): link-join oldest row that has a stored link but `readd_result.elevate_joined != true`.
-- Row stays `processing` until both player re-add and Elevate join succeed.
-
-One-group trial (dry-run first):
-
-```bash
-python scripts/run_migration_recovery_one.py --row-id ROW_ID --elevate-link-join --dry-run
-python scripts/run_migration_recovery_one.py --row-id ROW_ID --elevate-link-join
-```
-
-On Heroku (pause worker or set `GC_MTPROTO_ENABLED=false` on worker to avoid session conflict):
-
-```bash
-heroku run -a YOUR_APP -- python scripts/run_migration_recovery_one.py --row-id ROW_ID --elevate-link-join --dry-run
-```
-
-```sql
-SELECT club_key, group_title, priority_tier, readd_status, readd_attempted_at, last_error
-FROM migrated_group_recovery
-ORDER BY priority_tier, priority_rank;
-```
-
-Tail worker logs: `heroku logs -a YOUR_APP --dyno worker --tail | rg migration_recovery`
-
-When recovery finishes (or auto-disables), unset the env var:
-
-```bash
-heroku config:unset GC_MIGRATION_RECOVERY_ENABLED -a YOUR_APP
-```
-
-To resume after auto-disable: clear the DB flag (`--clear-auto-disable`), set the env var again, and restart the worker.
-
-## Inactive group outreach scan (one-shot, entity resolution only)
-
-Scans all three clubs' support megagroups for **last non-support player message** activity (Telethon history, not deposit/bind signals), flags **90d / 180d** inactivity, resolves player entities for future DMs, and writes audit rows. **Does not send DMs.** Reuses the worker's live MTProto listener — no `heroku run` and no `GC_MTPROTO_ENABLED=false`.
-
-**Migration:**
-
-```bash
-alembic upgrade head   # runs automatically in the Heroku release phase
-```
-
-**Enable** on the worker dyno:
-
-```bash
-heroku config:set GC_INACTIVE_OUTREACH_SCAN_ENABLED=true -a YOUR_APP
-heroku restart worker -a YOUR_APP
-```
-
-Optional knobs: `GC_INACTIVE_OUTREACH_BATCH_SIZE` (default `8`, groups per club per tick), `GC_INACTIVE_OUTREACH_INTERVAL_SEC` (default `120`), `GC_INACTIVE_OUTREACH_HISTORY_LIMIT` (default `200` messages per chat), `GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC` (default `300`, delay after boot before first tick).
-
-Requires `GC_DM_GC_LISTENER_ENABLED` (default on). The job seeds one row per tracking-title **megagroup** from `iter_dialogs`, dual-scans supergroup + legacy `old_chat_id`, merges timestamps, and stops when `inactive_group_outreach_control.scan_status=complete`. Unset env after completion (optional — DB gate prevents re-run).
-
-**Inactivity definition:** last message from an **eligible player** only (same exclusions as contact save / player discovery). Staff or bot messages do **not** count. When a supergroup has multiple pre-migration basic groups, **all** known legacy chat ids are scanned and the newest player activity is kept.
-
-**Monitor:**
-
-```sql
-SELECT scan_status, targets_total, rows_scanned,
-       inactive_90d_count, inactive_180d_count, entity_resolvable_count,
-       started_at, completed_at, last_error
-FROM inactive_group_outreach_control WHERE id = 1;
-
-SELECT club_key, COUNT(*) FROM inactive_group_outreach_rows
-WHERE inactive_180d AND entity_resolvable
-GROUP BY club_key;
-
-SELECT club_key, activity_merged_from, COUNT(*)
-FROM inactive_group_outreach_rows
-WHERE duplicate_title
-GROUP BY club_key, activity_merged_from;
-```
-
-Tail worker logs: `heroku logs -a YOUR_APP --dyno worker --tail | rg inactive_outreach`
-
-**Reset for a future re-scan** (manual):
-
-```sql
-UPDATE inactive_group_outreach_control
-SET scan_status = 'idle', started_at = NULL, completed_at = NULL,
-    targets_total = 0, rows_scanned = 0, inactive_90d_count = 0,
-    inactive_180d_count = 0, entity_resolvable_count = 0, last_error = NULL
-WHERE id = 1;
-TRUNCATE inactive_group_outreach_rows;
-```
-
-Then set `GC_INACTIVE_OUTREACH_SCAN_ENABLED=true` and restart the worker.
-
-Local single-group debug: [`scripts/run_inactive_group_outreach_scan.py`](../scripts/run_inactive_group_outreach_scan.py) (`--chat-id` / `--row-id`, default dry-run). Uses a dedicated MTProto session — do not run against a club session held by the worker.
-
 ## Group photo backfill (hourly, active RT/CC only)
 
 Sets club photos on **Round Table and Creator Club** support groups that appear in `support_group_idle_episode_state` (the escalation tracker) and currently have no Telegram photo. **10 groups per hour.** Reuses the worker's live MTProto listener — no `heroku run` and no `GC_MTPROTO_ENABLED=false`. `/gc` and other Telethon work stay up.
@@ -398,32 +247,6 @@ heroku config:unset GC_GROUP_PHOTO_BACKFILL_CHAT_ID -a YOUR_APP
 heroku restart worker -a YOUR_APP
 ```
 
-### Inactive outreach DM batch (phase 3)
-
-After staging groups and resolving players (`entity_resolvable=true`), staff compose outreach copy via **`/sendinactive`** in a private DM with the support bot (preview + Confirm/Cancel). The worker sends DMs from the club MTProto account when:
-
-```bash
-heroku config:set GC_INACTIVE_OUTREACH_DM_ENABLED=true -a YOUR_APP
-heroku restart worker -a YOUR_APP
-```
-
-Knobs: `GC_INACTIVE_OUTREACH_DM_BATCH_SIZE` (default `5`), `GC_INACTIVE_OUTREACH_DM_INTERVAL_SEC` (default `90`), `GC_INACTIVE_OUTREACH_DM_DELAY_SEC` (default `1.5` between sends), `GC_INACTIVE_OUTREACH_DM_FIRST_DELAY_SEC` (default `5`).
-
-Monitor:
-
-```sql
-SELECT dm_batch_status, dm_sent_count, dm_failed_count,
-       dm_campaign_started_at, dm_campaign_started_by_telegram_user_id
-FROM inactive_group_outreach_control WHERE id = 1;
-
-SELECT dm_status, COUNT(*) FROM inactive_group_outreach_rows
-WHERE stage_status = 'staged' GROUP BY dm_status;
-```
-
-Test one row first: `/sendinactive row <outreach_row_id>` then confirm. Local dry-run: [`scripts/run_inactive_outreach_dm.py`](../scripts/run_inactive_outreach_dm.py).
-
-Player replies to the club MTProto DM after `dm_status=sent` trigger re-onboard (erase old megagroup, fresh basic group with same title). See [`docs/GC.md`](GC.md) phase 3–4.
-
 ## Notification bot (`notification` dyno)
 
 Separate bot for payment notification bind replies (`TELEGRAM_NOTIFICATION_BOT_TOKEN`). Club bind chats (at least one required on the notification dyno): `PAYMENT_NOTIFICATION_CHAT_ID_GTO`, `PAYMENT_NOTIFICATION_CHAT_ID_RT_AT`, `PAYMENT_NOTIFICATION_CHAT_ID_CREATOR_CLUB`. Unbound/cross-club mixed cards broadcast to all configured club bind chats; CC+AT union and RT+CC candidate mixes go to RT/AT + Creator Club; single-bucket bound cards go to that club chat. Every successful Telegram delivery is mirrored to Slack AM escalations (`SLACK_ESCALATION_BOT_TOKEN` + `SLACK_ESCALATION_CHANNEL_ID`, or webhook). Failed/skipped Telegram club posts also notify head-admin Slack (`SLACK_HEAD_ADMIN_ESCALATION_CHANNEL_ID`). Bind replies, buttons, and `/report` work in all configured club bind chats.
@@ -434,7 +257,7 @@ Restart after deploy: `heroku restart notification -a YOUR_APP`
 
 ## Slack ops (Engineer noti service / custom app)
 
-Migration re-add **errors** (failed rows, rate limits, auto-disable) and notification **`/report`** tickets post to Slack when configured. Telegram DMs are unchanged; Slack is additive.
+Notification **`/report`** tickets post to Slack when configured. Telegram DMs are unchanged; Slack is additive.
 
 **Preferred: custom Slack app** ([`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage)) — e.g. **Engineer noti service**:
 

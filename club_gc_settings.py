@@ -472,111 +472,6 @@ def get_mtproto_telethon_client_kwargs() -> dict[str, int | float | bool]:
     }
 
 
-_MIGRATION_RECOVERY_CLUB_ENV: dict[str, str] = {
-    "round_table": "GC_MIGRATION_RECOVERY_ROUND_TABLE",
-    "creator_club": "GC_MIGRATION_RECOVERY_CREATOR_CLUB",
-    "clubgto": "GC_MIGRATION_RECOVERY_CLUB_GTO",
-}
-
-MIGRATION_RECOVERY_CLUB_KEYS: tuple[str, ...] = (
-    "round_table",
-    "creator_club",
-    "clubgto",
-)
-
-
-def get_migration_recovery_disabled_clubs() -> frozenset[str]:
-    """Club keys excluded from the migration recovery cron (env list + per-club false)."""
-
-    disabled: set[str] = set()
-    raw = (os.getenv("GC_MIGRATION_RECOVERY_DISABLED_CLUBS") or "").strip()
-    if raw:
-        for part in raw.split(","):
-            key = part.strip().lower()
-            if key:
-                disabled.add(key)
-    for club_key, env_var in _MIGRATION_RECOVERY_CLUB_ENV.items():
-        env_raw = os.getenv(env_var)
-        if env_raw is not None and str(env_raw).strip().lower() in (
-            "0",
-            "false",
-            "no",
-            "off",
-        ):
-            disabled.add(club_key)
-    return frozenset(disabled)
-
-
-def migration_recovery_active_club_keys() -> tuple[str, ...]:
-    """Clubs processed when ``GC_MIGRATION_RECOVERY_ENABLED`` is on."""
-
-    disabled = get_migration_recovery_disabled_clubs()
-    return tuple(k for k in MIGRATION_RECOVERY_CLUB_KEYS if k not in disabled)
-
-
-def is_migration_recovery_enabled_for_club(club_key: str) -> bool:
-    if club_key in get_migration_recovery_disabled_clubs():
-        return False
-    return is_migration_recovery_enabled()
-
-
-def is_migration_recovery_enabled() -> bool:
-    """Background batch re-add for migrated supergroups (worker job_queue)."""
-
-    if not is_dm_gc_listener_enabled():
-        return False
-    if not _env_bool("GC_MIGRATION_RECOVERY_ENABLED", default=False):
-        return False
-    from bot.services.migration_recovery import is_migration_recovery_auto_disabled
-
-    if is_migration_recovery_auto_disabled():
-        return False
-    return bool(migration_recovery_active_club_keys())
-
-
-def get_migration_recovery_interval_sec() -> int:
-    return max(60, _env_int("GC_MIGRATION_RECOVERY_INTERVAL_SEC", 300))
-
-
-def get_migration_recovery_batch_size() -> int:
-    return max(1, min(_env_int("GC_MIGRATION_RECOVERY_BATCH_SIZE", 5), 20))
-
-
-def get_migration_recovery_invite_delay_sec() -> float:
-    return max(0.0, _env_float("GC_MIGRATION_RECOVERY_INVITE_DELAY_SEC", 2.0))
-
-
-def get_migration_recovery_rate_limit_cooldown_sec() -> int:
-    """Extra wait after FloodWait ends before recovery cron resumes (default 1h)."""
-
-    return max(0, _env_int("GC_MIGRATION_RECOVERY_RATE_LIMIT_COOLDOWN_SEC", 3600))
-
-
-def is_migration_recovery_skip_welcome_enabled() -> bool:
-    """Skip member-join preamble/TOS for chats in ``migrated_group_recovery``."""
-
-    return _env_bool("GC_MIGRATION_RECOVERY_SKIP_WELCOME", default=False)
-
-
-def get_migration_recovery_slack_summary_interval_sec() -> int:
-    return max(600, _env_int("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_INTERVAL_SEC", 86400))
-
-
-def get_migration_recovery_slack_summary_check_delay_sec() -> float:
-    return max(
-        0.0, _env_float("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_CHECK_DELAY_SEC", 0.1)
-    )
-
-
-def is_migration_recovery_slack_summary_enabled() -> bool:
-    if not _env_bool("GC_MIGRATION_RECOVERY_SLACK_SUMMARY_ENABLED", default=True):
-        return False
-    token = (_env_optional("SLACK_OPS_BOT_TOKEN") or "").strip()
-    channel = (_env_optional("SLACK_OPS_CHANNEL_ID") or "").strip()
-    webhook = (_env_optional("SLACK_OPS_WEBHOOK_URL") or "").strip()
-    return bool((token and channel) or webhook)
-
-
 CONTACT_RESTORE_CLUB_KEYS: tuple[str, ...] = (
     "round_table",
     "creator_club",
@@ -613,57 +508,10 @@ def get_contact_restore_interval_sec() -> int:
     return max(60, _env_int("GC_CONTACT_RESTORE_INTERVAL_SEC", 90))
 
 
-INACTIVE_OUTREACH_CLUB_KEYS: tuple[str, ...] = MIGRATION_RECOVERY_CLUB_KEYS
-
-
 def is_group_transcript_cron_enabled() -> bool:
     """Nightly T+1 group-chat transcript extraction (3am ET). Default off."""
 
     return _env_bool("GROUP_TRANSCRIPT_CRON_ENABLED", default=False)
-
-
-def is_inactive_outreach_scan_enabled() -> bool:
-    """One-shot worker batch scan for inactive support megagroups (entity resolution only)."""
-
-    return _env_bool("GC_INACTIVE_OUTREACH_SCAN_ENABLED", default=False)
-
-
-def get_inactive_outreach_batch_size() -> int:
-    return max(1, min(_env_int("GC_INACTIVE_OUTREACH_BATCH_SIZE", 8), 50))
-
-
-def get_inactive_outreach_interval_sec() -> int:
-    return max(60, _env_int("GC_INACTIVE_OUTREACH_INTERVAL_SEC", 120))
-
-
-def get_inactive_outreach_history_limit() -> int:
-    return max(1, _env_int("GC_INACTIVE_OUTREACH_HISTORY_LIMIT", 200))
-
-
-def get_inactive_outreach_first_delay_sec() -> float:
-    return max(0.0, _env_float("GC_INACTIVE_OUTREACH_FIRST_DELAY_SEC", 300.0))
-
-
-def is_inactive_outreach_dm_enabled() -> bool:
-    """Worker batch DM send for staged inactive outreach (armed via /sendinactive)."""
-
-    return _env_bool("GC_INACTIVE_OUTREACH_DM_ENABLED", default=False)
-
-
-def get_inactive_outreach_dm_batch_size() -> int:
-    return max(1, min(_env_int("GC_INACTIVE_OUTREACH_DM_BATCH_SIZE", 5), 25))
-
-
-def get_inactive_outreach_dm_interval_sec() -> int:
-    return max(30, _env_int("GC_INACTIVE_OUTREACH_DM_INTERVAL_SEC", 90))
-
-
-def get_inactive_outreach_dm_delay_sec() -> float:
-    return max(0.0, _env_float("GC_INACTIVE_OUTREACH_DM_DELAY_SEC", 1.5))
-
-
-def get_inactive_outreach_dm_first_delay_sec() -> float:
-    return max(0.0, _env_float("GC_INACTIVE_OUTREACH_DM_FIRST_DELAY_SEC", 5.0))
 
 
 GROUP_PHOTO_BACKFILL_CLUB_KEYS: tuple[str, ...] = ("round_table", "creator_club")

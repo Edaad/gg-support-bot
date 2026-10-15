@@ -25,7 +25,6 @@ async def _send_command_list(
             "• /mycmds — List your custom commands",
             "• /delete <name> — Remove a custom command",
             "• /whoami — Show your user ID",
-            "• /whosnext — Next 10 GCs in migration recovery queue (DM)",
             "• /depositaccess — Blacklist/whitelist deposit methods for a group (DM)",
             "• /listdepositaccess — View deposit method access entries (DM)",
             "• /cashoutaccess — Blacklist/whitelist cashout methods for a group (DM)",

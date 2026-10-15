@@ -469,7 +469,6 @@ async def bonus_message_handler(
     # Other DM flows own later handler groups; only stop propagation when we act.
     active = context.user_data.get(ACTIVE_FLOW_KEY)
     if active in (
-        "inactive_outreach_send",
         "deposit_access",
         "issue_report",
         "support_note",

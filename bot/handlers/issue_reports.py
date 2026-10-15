@@ -1167,7 +1167,7 @@ def register_issue_report_handlers(app) -> None:
     app.add_handler(
         CallbackQueryHandler(draft_cancel_callback, pattern=r"^ir_draft_cancel:\d+$")
     )
-    # group=-1: after bonus/sendinactive/depositaccess (-4/-3/-2); see bot/main.py
+    # group=-1: after bonus/depositaccess (-4/-2); see bot/main.py
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE

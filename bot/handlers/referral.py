@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 _BLOCKING_DM_FLOWS = frozenset(
     {
         "bonus",
-        "inactive_outreach_send",
         "deposit_access",
         "issue_report",
         "support_note",
