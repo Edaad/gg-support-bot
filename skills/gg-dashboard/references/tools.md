@@ -915,9 +915,8 @@ Club KPIs for a day, week (Mon-Sun ET), month or custom range, each beside the
 previous period, like the dashboard KPIs tab: deposits (bound payments on every
 rail, counted once under the group's club), new players (support groups joined,
 how many have deposited since, first deposits), human first-response time
-(median, p90, % over 5 min), tickets by category, /deposit sessions that reached
-chips confirmed, and automation success (auto-deposit, early rakeback,
-auto-cashout, transfer). Also returns a trend (14 days / 8 weeks / 6 months) and a
+(median, % answered within 2 min), tickets by category, and automation success
+(auto-deposit, early rakeback, auto-cashout, transfer). Also returns a trend (14 days / 8 weeks / 6 months) and a
 per-club split when no club is given. `date_` is any America/New_York day inside
 the period (default: yesterday, last complete week or last complete month);
 custom uses `from_`/`to` (YYYY-MM-DD, inclusive). Rates are fractions. Club: Club

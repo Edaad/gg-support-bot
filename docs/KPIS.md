@@ -1,8 +1,9 @@
 # Club KPIs
 
-The dashboard **KPIs** tab (`/kpis`) shows six daily/weekly numbers for one
-period beside the period before it, a trend, and a club-by-club table. It is
-computed live from existing tables. There is no snapshot table and no migration.
+The dashboard **KPIs** tab (`/kpis`) shows five daily/weekly numbers (tickets,
+response time, automation, deposits, new players) for one period beside the
+period before it, a trend, and a club-by-club table. It is computed live from
+existing tables. There is no snapshot table and no migration.
 
 - Code: `api/kpis.py` (counting rules), `api/routes/kpis.py` (`GET /api/kpis`),
   `dashboard/src/pages/Kpis.tsx`, MCP tool `get_kpis`.
@@ -46,10 +47,9 @@ GET /api/kpis?granularity=custom&from=2026-10-01&to=2026-10-13
 |---|---|
 | **Deposits** | Bound rows only (`telegram_chat_id` set, `is_test` false), each counted once. Rails and dates: Venmo / Zelle / Cash App / PayPal by `created_at`; crypto by ISO `paid_at`, else `created_at`; Stripe `status='complete'` by `completed_at`, else `created_at`; Pool Pay = `manual_deposit_requests` on a `union_method` method with `trade_record_checked`, by `created_at`. Club = the bound group's `groups.club_id`, else the row's `club_id`. Per-club numbers add up to the total. |
 | **New players** | `groups.added_at` in the period. *Deposited* = the group has at least one deposit (same rule) at any time up to now, so recent periods catch up over the following days. *First deposits* = groups whose earliest-ever deposit falls in the period. |
-| **Response time** | `group_chat_tickets` by `activity_date`. First response = `compute_ticket_frt(events)`: player's first message to the first human admin reply. Median, p90 and % over 5 min use human-answered tickets only. Tickets with no human reply are reported separately. |
+| **Response time** | `group_chat_tickets` by `activity_date`. First response = `compute_ticket_frt(events)`: player's first message to the first human admin reply. The median and *under 2 min* (share of first replies within 2 minutes, ≤ 120 s) use human-answered tickets only. Tickets with no human reply are reported separately. |
 | **Tickets by category** | Same rows, counted by `category`. |
-| **Deposit funnel** | `/deposit` sessions (`deposit_started`) started in the period, and how many reached each step, ending at `chips_confirmed` (whenever it happened). Also shown for first-deposit sessions only (`is_first_deposit`). |
-| **Automation success** | `clubgg_rpa_events` by `started_at` for `payment_auto_deposit`, `early_rakeback`, `auto_cashout` and `transfer`. Success = completed ÷ (completed + failed + stuck). *Stuck* means still `started` after 15 minutes. `stale` rows are shown but not counted. `staff_*` sources are left out. Club = the row's group, else the row's `club_id`. |
+| **Automation success** | `clubgg_rpa_events` by `started_at` for `payment_auto_deposit`, `early_rakeback`, `auto_cashout` and `transfer`. Success = completed ÷ (completed + failed + stuck). *Stuck* means still `started` after 15 minutes. `stale` rows are shown but not counted. `staff_*` sources are left out. Club = the row's group, else the row's `club_id`. On the dashboard a row is Healthy at 90%+ (auto-cashout 80%+); below that it's flagged Watch. |
 
 Aces Table has no club row. Its traffic counts under Round Table (or under
 Creator Club for CC's own Aces deposits).

@@ -12,7 +12,6 @@ import {
   AutomationSection,
   ClubComparison,
   DepositsSection,
-  FunnelSection,
   KpiTiles,
   NewPlayersSection,
   ResponseSection,
@@ -128,9 +127,14 @@ function Segmented<T extends string | number>({
 
 function TileSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
-      {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className="h-[154px] animate-pulse rounded-2xl border border-border bg-surface p-4">
+    <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-6" aria-hidden="true">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div
+          key={i}
+          className={`h-[154px] animate-pulse rounded-2xl border border-border bg-surface p-4 ${
+            i < 3 ? 'lg:col-span-2' : i === 4 ? 'min-[480px]:col-span-2 lg:col-span-3' : 'lg:col-span-3'
+          }`}
+        >
           <div className="h-3 w-24 rounded bg-control" />
           <div className="mt-3 h-8 w-32 rounded bg-control" />
           <div className="mt-2 h-3 w-40 rounded bg-control" />
@@ -363,6 +367,14 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
         <div className={`space-y-5 transition-opacity ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
           <KpiTiles data={shown} onOpen={scrollTo} />
           <ClubComparison data={shown} onClub={(id) => setQuery({ club: String(id) })} />
+          <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
+            <TicketsSection data={shown} onSelect={selectBucket} />
+            <ResponseSection data={shown} onSelect={selectBucket} />
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
+            <AutomationSection data={shown} />
+            <NewPlayersSection data={shown} onSelect={selectBucket} />
+          </div>
           <DepositsSection
             data={shown}
             onSelect={selectBucket}
@@ -370,15 +382,6 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
             onMetric={setDepositMetric}
             onClub={(id) => setQuery({ club: String(id) })}
           />
-          <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-            <NewPlayersSection data={shown} onSelect={selectBucket} />
-            <FunnelSection data={shown} onSelect={selectBucket} />
-          </div>
-          <ResponseSection data={shown} onSelect={selectBucket} />
-          <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-            <TicketsSection data={shown} onSelect={selectBucket} />
-            <AutomationSection data={shown} />
-          </div>
           <p className="pb-2 text-center text-xs text-ink-faint">
             All dates are US Eastern; weeks run Monday–Sunday. Test, staff and internal groups are excluded.
             Tap any bar to jump to that period.

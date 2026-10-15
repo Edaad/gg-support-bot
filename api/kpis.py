@@ -1,4 +1,4 @@
-"""Club KPIs: deposits, new players, response time, tickets, deposit funnel, automation.
+"""Club KPIs: deposits, new players, response time, tickets, automation.
 
 Everything is computed live from tables the bot and dashboard already write; there
 is no snapshot table. SQL filters on UTC bounds and every row is bucketed into an
@@ -15,9 +15,8 @@ Counting rules (also documented in docs/KPIS.md):
   any deposit (same definition) up to now. First deposits counts groups whose
   earliest-ever deposit falls inside the period.
 - Response time: ``group_chat_tickets`` by ``activity_date``; first response is
-  ``compute_ticket_frt`` and only human-answered tickets count toward the median.
-- Deposit funnel: /deposit sessions started in the period that reached
-  ``chips_confirmed``.
+  ``compute_ticket_frt``; the median and the share answered within 2 minutes use
+  human-answered tickets only.
 - Automation: ``clubgg_rpa_events`` for the four bot automations. Rate is
   completed / (completed + failed + stuck), where stuck is a row still ``started``
   after ``STUCK_AFTER``; ``stale`` rows are reported but left out of the rate.
@@ -28,7 +27,6 @@ Test, staff and internal chats are excluded from every KPI.
 from __future__ import annotations
 
 import calendar
-import math
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -37,7 +35,7 @@ from decimal import Decimal
 from typing import Any, Iterable, Literal, Sequence
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.group_chat_ticket_helpers import compute_ticket_frt
@@ -49,7 +47,6 @@ from db.models import (
     ClubggRpaEvent,
     ClubPaymentMethod,
     CryptoPayment,
-    DepositFunnelEvent,
     Group,
     GroupChatTicket,
     ManualDepositRequest,
@@ -67,8 +64,7 @@ GRANULARITIES: tuple[str, ...] = ("day", "week", "month", "custom")
 
 MAX_CUSTOM_DAYS = 366
 STUCK_AFTER = timedelta(minutes=15)
-SLOW_FRT_SECONDS = 5 * 60
-SLOWEST_TICKETS = 5
+FAST_FRT_SECONDS = 2 * 60
 # Crypto rows are filtered on created_at in SQL and on paid_at in Python; widen the
 # SQL window so a payment ingested a little after it was paid is not missed.
 _CRYPTO_SLACK = timedelta(days=3)
@@ -111,22 +107,10 @@ AUTOMATION_LABELS: dict[str, str] = {
     "transfer": "Transfer",
 }
 
-FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
-    ("deposit_started", "/deposit started"),
-    ("amount_entered", "Amount entered"),
-    ("method_chosen", "Method chosen"),
-    ("instructions_sent", "Instructions sent"),
-    ("payment_received", "Payment received"),
-    ("payment_bound", "Payment bound"),
-    ("chips_credited", "Chips credited"),
-    ("chips_confirmed", "Chips confirmed"),
-)
-_FUNNEL_START = "deposit_started"
-_FUNNEL_DONE = "chips_confirmed"
-
 FRT_BUCKETS: tuple[tuple[str, str, int | None], ...] = (
     ("lt_1m", "< 1 min", 60),
-    ("1_5m", "1-5 min", 5 * 60),
+    ("1_2m", "1-2 min", 2 * 60),
+    ("2_5m", "2-5 min", 5 * 60),
     ("5_15m", "5-15 min", 15 * 60),
     ("15_60m", "15-60 min", 60 * 60),
     ("gt_60m", "> 1 hour", None),
@@ -359,21 +343,10 @@ class DepositRow:
 
 @dataclass(frozen=True, slots=True)
 class TicketRow:
-    id: int
     day: date
-    chat_id: int
     club_id: int | None
     category: str
     frt_seconds: int | None
-    brief_summary: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class FunnelSession:
-    day: date
-    club_id: int | None
-    is_first_deposit: bool
-    steps: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -640,84 +613,28 @@ def fetch_tickets(
     db: Session, window: Period, *, excluded: set[int]
 ) -> list[TicketRow]:
     rows = db.query(
-        GroupChatTicket.id,
         GroupChatTicket.activity_date,
         GroupChatTicket.chat_id,
         GroupChatTicket.club_id,
         GroupChatTicket.category,
         GroupChatTicket.events,
-        GroupChatTicket.brief_summary,
     ).filter(
         GroupChatTicket.activity_date >= window.start,
         GroupChatTicket.activity_date <= window.end,
     )
     out: list[TicketRow] = []
-    for tid, day, chat_id, club_id, category, events, brief in rows:
+    for day, chat_id, club_id, category, events in rows:
         if int(chat_id) in excluded:
             continue
         out.append(
             TicketRow(
-                id=int(tid),
                 day=day,
-                chat_id=int(chat_id),
                 club_id=int(club_id) if club_id is not None else None,
                 category=str(category or "other"),
                 frt_seconds=compute_ticket_frt(events),
-                brief_summary=brief,
             )
         )
     return out
-
-
-def fetch_funnel_sessions(
-    db: Session,
-    start_utc: datetime,
-    end_utc: datetime,
-    *,
-    groups: dict[int, GroupInfo],
-    excluded: set[int],
-) -> list[FunnelSession]:
-    """/deposit sessions started in [start, end) with every step they reached."""
-    started_filter = (
-        DepositFunnelEvent.step == _FUNNEL_START,
-        DepositFunnelEvent.created_at >= start_utc,
-        DepositFunnelEvent.created_at < end_utc,
-    )
-    started = db.query(
-        DepositFunnelEvent.deposit_session_id,
-        DepositFunnelEvent.created_at,
-        DepositFunnelEvent.club_id,
-        DepositFunnelEvent.telegram_chat_id,
-        DepositFunnelEvent.is_first_deposit,
-    ).filter(*started_filter)
-    sessions: dict[str, tuple[date, int | None, bool]] = {}
-    for sid, created_at, club_id, chat_id, first in started:
-        if chat_id is not None and int(chat_id) in excluded:
-            continue
-        sessions[str(sid)] = (
-            et_day(created_at),
-            _club_for(chat_id, club_id, groups),
-            bool(first),
-        )
-    if not sessions:
-        return []
-    started_ids = select(DepositFunnelEvent.deposit_session_id).where(*started_filter)
-    steps: dict[str, set[str]] = defaultdict(set)
-    for sid, step in (
-        db.query(DepositFunnelEvent.deposit_session_id, DepositFunnelEvent.step)
-        .filter(DepositFunnelEvent.deposit_session_id.in_(started_ids))
-        .distinct()
-    ):
-        steps[str(sid)].add(str(step))
-    return [
-        FunnelSession(
-            day=day,
-            club_id=club_id,
-            is_first_deposit=first,
-            steps=frozenset(steps.get(sid, ()) | {_FUNNEL_START}),
-        )
-        for sid, (day, club_id, first) in sessions.items()
-    ]
 
 
 def rpa_outcome(status: str | None, started_at: datetime, now: datetime) -> str:
@@ -814,50 +731,23 @@ def summarize_new_players(
     }
 
 
-def _percentile(sorted_values: Sequence[int], pct: float) -> float | None:
-    if not sorted_values:
-        return None
-    rank = max(1, math.ceil(pct * len(sorted_values)))
-    return float(sorted_values[rank - 1])
-
-
-def summarize_response(
-    tickets: Sequence[TicketRow], *, slowest: int = 0
-) -> dict[str, Any]:
+def summarize_response(tickets: Sequence[TicketRow]) -> dict[str, Any]:
     frts = sorted(t.frt_seconds for t in tickets if t.frt_seconds is not None)
-    over = sum(1 for v in frts if v > SLOW_FRT_SECONDS)
+    fast = sum(1 for v in frts if v <= FAST_FRT_SECONDS)
     distribution = []
     lower = -1
     for key, label, upper in FRT_BUCKETS:
         count = sum(1 for v in frts if v > lower and (upper is None or v <= upper))
         distribution.append({"key": key, "label": label, "count": count})
         lower = upper if upper is not None else lower
-    slow = sorted(
-        (t for t in tickets if t.frt_seconds is not None),
-        key=lambda t: (-t.frt_seconds, t.id),
-    )[:slowest]
     return {
         "tickets": len(tickets),
         "human_answered": len(frts),
         "no_human_reply": len(tickets) - len(frts),
         "median_seconds": float(statistics.median(frts)) if frts else None,
-        "p90_seconds": _percentile(frts, 0.9),
-        "over_5m": over,
-        "pct_over_5m": _rate(over, len(frts)),
+        "under_2m": fast,
+        "pct_under_2m": _rate(fast, len(frts)),
         "distribution": distribution,
-        "slowest": [
-            {
-                "ticket_id": t.id,
-                "activity_date": t.day,
-                "chat_id": t.chat_id,
-                "club_id": t.club_id,
-                "category": t.category,
-                "frt_seconds": t.frt_seconds,
-                "brief_summary": t.brief_summary,
-                "group_title": None,
-            }
-            for t in slow
-        ],
     }
 
 
@@ -870,33 +760,6 @@ def summarize_tickets(tickets: Sequence[TicketRow]) -> dict[str, Any]:
     ]
     by_category.sort(key=lambda x: -x["count"])
     return {"total": len(tickets), "by_category": by_category}
-
-
-def summarize_funnel(sessions: Sequence[FunnelSession]) -> dict[str, Any]:
-    started = len(sessions)
-    confirmed = sum(1 for s in sessions if _FUNNEL_DONE in s.steps)
-    first = [s for s in sessions if s.is_first_deposit]
-    first_confirmed = sum(1 for s in first if _FUNNEL_DONE in s.steps)
-    steps = []
-    for step, label in FUNNEL_STEPS:
-        count = sum(1 for s in sessions if step in s.steps)
-        steps.append(
-            {
-                "step": step,
-                "label": label,
-                "count": count,
-                "rate": _rate(count, started),
-            }
-        )
-    return {
-        "started": started,
-        "confirmed": confirmed,
-        "rate": _rate(confirmed, started),
-        "first_started": len(first),
-        "first_confirmed": first_confirmed,
-        "first_rate": _rate(first_confirmed, len(first)),
-        "steps": steps,
-    }
 
 
 def _automation_row(source: str, label: str, rows: Sequence[RpaRow]) -> dict[str, Any]:
@@ -955,13 +818,10 @@ class _Data:
     first_deposits: _DayIndex
     first_deposit_at: dict[int, datetime]
     tickets: _DayIndex
-    funnel: _DayIndex
     rpa: _DayIndex
 
 
-def _snapshot(
-    data: _Data, period: Period, club_id: int | None, *, slowest: int = 0
-) -> dict[str, Any]:
+def _snapshot(data: _Data, period: Period, club_id: int | None) -> dict[str, Any]:
     tickets = data.tickets.slice(period, club_id)
     return {
         "deposits": summarize_deposits(data.deposits.slice(period, club_id)),
@@ -970,9 +830,8 @@ def _snapshot(
             data.first_deposits.slice(period, club_id),
             data.first_deposit_at,
         ),
-        "response_time": summarize_response(tickets, slowest=slowest),
+        "response_time": summarize_response(tickets),
         "tickets": summarize_tickets(tickets),
-        "deposit_funnel": summarize_funnel(data.funnel.slice(period, club_id)),
         "automation": summarize_automation(data.rpa.slice(period, club_id)),
     }
 
@@ -981,7 +840,6 @@ def headline(snapshot: dict[str, Any]) -> dict[str, Any]:
     dep = snapshot["deposits"]
     new = snapshot["new_players"]
     rt = snapshot["response_time"]
-    fun = snapshot["deposit_funnel"]
     auto = snapshot["automation"]["overall"]
     return {
         "deposits_count": dep["count"],
@@ -992,9 +850,7 @@ def headline(snapshot: dict[str, Any]) -> dict[str, Any]:
         "first_deposits": new["first_deposits"],
         "tickets": snapshot["tickets"]["total"],
         "median_frt_seconds": rt["median_seconds"],
-        "pct_over_5m": rt["pct_over_5m"],
-        "funnel_started": fun["started"],
-        "funnel_rate": fun["rate"],
+        "pct_under_2m": rt["pct_under_2m"],
         "automation_attempted": auto["attempted"],
         "automation_rate": auto["rate"],
     }
@@ -1017,12 +873,6 @@ def _ordered_clubs(db: Session) -> list[tuple[int, str]]:
     rows = [(int(cid), str(name)) for cid, name in db.query(Club.id, Club.name)]
     rows = [r for r in rows if r[1] in _CLUB_ORDER] or rows
     return sorted(rows, key=lambda r: (_CLUB_ORDER.index(r[1]), r[0]))
-
-
-def _fill_slow_titles(snapshot: dict[str, Any], groups: dict[int, GroupInfo]) -> None:
-    for t in snapshot["response_time"]["slowest"]:
-        info = groups.get(int(t["chat_id"]))
-        t["group_title"] = info.title if info else None
 
 
 def compute_kpis(
@@ -1085,17 +935,13 @@ def compute_kpis(
         first_deposits=_DayIndex(first_deposits),
         first_deposit_at=first_deposit_at,
         tickets=_DayIndex(fetch_tickets(db, window, excluded=excluded)),
-        funnel=_DayIndex(
-            fetch_funnel_sessions(db, w_start, w_end, groups=groups, excluded=excluded)
-        ),
         rpa=_DayIndex(
             fetch_rpa(db, w_start, w_end, now=now, groups=groups, excluded=excluded)
         ),
     )
     tickets_through = db.query(func.max(GroupChatTicket.activity_date)).scalar()
 
-    current = _snapshot(data, plan.current, club_id, slowest=SLOWEST_TICKETS)
-    _fill_slow_titles(current, groups)
+    current = _snapshot(data, plan.current, club_id)
     previous = _snapshot(data, plan.previous, club_id)
 
     def pout(p: Period, kind: str | None = None) -> dict[str, Any]:

@@ -46,27 +46,14 @@ class KpiFrtBucket(BaseModel):
     count: int
 
 
-class KpiSlowTicket(BaseModel):
-    ticket_id: int
-    activity_date: date
-    chat_id: int
-    club_id: Optional[int] = None
-    group_title: Optional[str] = None
-    category: str
-    frt_seconds: int
-    brief_summary: Optional[str] = None
-
-
 class KpiResponseTime(BaseModel):
     tickets: int
     human_answered: int
     no_human_reply: int
     median_seconds: Optional[float] = None
-    p90_seconds: Optional[float] = None
-    over_5m: int
-    pct_over_5m: Optional[float] = None
+    under_2m: int
+    pct_under_2m: Optional[float] = None
     distribution: list[KpiFrtBucket]
-    slowest: list[KpiSlowTicket]
 
 
 class KpiCategoryCount(BaseModel):
@@ -78,23 +65,6 @@ class KpiCategoryCount(BaseModel):
 class KpiTickets(BaseModel):
     total: int
     by_category: list[KpiCategoryCount]
-
-
-class KpiFunnelStep(BaseModel):
-    step: str
-    label: str
-    count: int
-    rate: Optional[float] = None
-
-
-class KpiDepositFunnel(BaseModel):
-    started: int
-    confirmed: int
-    rate: Optional[float] = None
-    first_started: int
-    first_confirmed: int
-    first_rate: Optional[float] = None
-    steps: list[KpiFunnelStep]
 
 
 class KpiAutomationRow(BaseModel):
@@ -119,7 +89,6 @@ class KpiSnapshot(BaseModel):
     new_players: KpiNewPlayers
     response_time: KpiResponseTime
     tickets: KpiTickets
-    deposit_funnel: KpiDepositFunnel
     automation: KpiAutomation
 
 
@@ -132,9 +101,7 @@ class KpiHeadline(BaseModel):
     first_deposits: int
     tickets: int
     median_frt_seconds: Optional[float] = None
-    pct_over_5m: Optional[float] = None
-    funnel_started: int
-    funnel_rate: Optional[float] = None
+    pct_under_2m: Optional[float] = None
     automation_attempted: int
     automation_rate: Optional[float] = None
 
