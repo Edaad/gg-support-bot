@@ -49,7 +49,7 @@ GET /api/kpis?granularity=custom&from=2026-10-01&to=2026-10-13
 | **Response time** | `group_chat_tickets` by `activity_date`. First response = `compute_ticket_frt(events)`: player's first message to the first human admin reply. Median, p90 and % over 5 min use human-answered tickets only. Tickets with no human reply are reported separately. |
 | **Tickets by category** | Same rows, counted by `category`. |
 | **Deposit funnel** | `/deposit` sessions (`deposit_started`) started in the period, and how many reached each step, ending at `chips_confirmed` (whenever it happened). Also shown for first-deposit sessions only (`is_first_deposit`). |
-| **Automation success** | `clubgg_rpa_events` by `started_at` for `payment_auto_deposit`, `early_rakeback`, `auto_cashout` and `transfer`. Success = completed ÷ (completed + failed + stuck). *Stuck* means still `started` after 15 minutes. `stale` rows are shown but not counted. `staff_*` sources are left out. Club = the row's group, else the row's `club_id`. |
+| **Automation success** | `clubgg_rpa_events` by `started_at` for `payment_auto_deposit`, `early_rakeback`, `auto_cashout` and `transfer`. Success = completed ÷ (completed + failed + stuck). *Stuck* means still `started` after 15 minutes. `stale` rows are shown but not counted. `staff_*` sources are left out. Club = the row's group, else the row's `club_id`. On the dashboard a row is Healthy at 90%+ (auto-cashout 80%+); below that it's flagged Watch. |
 
 Aces Table has no club row. Its traffic counts under Round Table (or under
 Creator Club for CC's own Aces deposits).

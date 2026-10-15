@@ -47,7 +47,7 @@ const KPI_DEFINITIONS = {
   funnel:
     '/deposit sessions started in the period that reached “chips confirmed”, whenever that happened. First deposits are sessions flagged as the player’s first deposit in the club.',
   automation: (stuckMinutes: number) =>
-    `ClubGG chip moves the bot ran on its own: auto-deposit, early rakeback, auto-cashout and transfer. Success = completed ÷ (completed + failed + stuck). Stuck = still running after ${stuckMinutes} min. Stale commands (skipped because the message was too old) are shown but not counted. Staff /add and /cash are left out.`,
+    `ClubGG chip moves the bot ran on its own: auto-deposit, early rakeback, auto-cashout and transfer. Success = completed ÷ (completed + failed + stuck). Stuck = still running after ${stuckMinutes} min. Stale commands (skipped because the message was too old) are shown but not counted. Staff /add and /cash are left out. Healthy at 90%+ (auto-cashout 80%+); below that it’s flagged Watch.`,
 }
 
 export function DeltaPill({ delta, srContext }: { delta: Delta; srContext: string }) {
@@ -650,11 +650,16 @@ export function FunnelSection({ data, onSelect }: { data: KpiResponse; onSelect:
   )
 }
 
+// Success rate at or above which an automation reads Healthy; below it, Watch.
+const HEALTHY_AT: Record<string, number> = { auto_cashout: 0.8 }
+const HEALTHY_AT_DEFAULT = 0.9
+
 function rateStatus(row: KpiAutomationRow): { label: string; cls: string; icon: string } {
   if (row.rate == null) return { label: 'No runs', cls: 'bg-control text-ink-muted', icon: '–' }
-  if (row.rate >= 0.99) return { label: 'Healthy', cls: 'bg-success-bg text-success-ink', icon: '✓' }
-  if (row.rate >= 0.95) return { label: 'Watch', cls: 'bg-warning-bg text-warning-ink', icon: '!' }
-  return { label: 'Failing', cls: 'bg-danger-bg text-danger-ink', icon: '✕' }
+  if (row.rate >= (HEALTHY_AT[row.source] ?? HEALTHY_AT_DEFAULT)) {
+    return { label: 'Healthy', cls: 'bg-success-bg text-success-ink', icon: '✓' }
+  }
+  return { label: 'Watch', cls: 'bg-warning-bg text-warning-ink', icon: '!' }
 }
 
 export function AutomationSection({ data }: { data: KpiResponse }) {
@@ -699,7 +704,7 @@ export function AutomationSection({ data }: { data: KpiResponse }) {
                     </span>
                   </td>
                   <td className="py-2.5 pr-3 text-right text-ink">{fmtInt(r.completed)}</td>
-                  <td className={`py-2.5 pr-3 text-right ${r.failed ? 'text-danger-ink' : 'text-ink-faint'}`}>{fmtInt(r.failed)}</td>
+                  <td className={`py-2.5 pr-3 text-right ${r.failed ? 'text-warning-ink' : 'text-ink-faint'}`}>{fmtInt(r.failed)}</td>
                   <td className={`py-2.5 pr-3 text-right ${r.stuck ? 'text-warning-ink' : 'text-ink-faint'}`}>{fmtInt(r.stuck)}</td>
                   <td className="py-2.5 text-right text-ink-faint">{fmtInt(r.stale)}</td>
                 </tr>
