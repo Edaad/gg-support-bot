@@ -215,10 +215,10 @@ def period_label(p: Period) -> str:
     if p.kind == "month" and p.start.day == 1:
         return p.start.strftime("%B %Y")
     if p.start.month == p.end.month and p.start.year == p.end.year:
-        return f"{_fmt_md(p.start)} - {p.end.day}"
+        return f"{_fmt_md(p.start)} – {p.end.day}"
     if p.start.year == p.end.year:
-        return f"{_fmt_md(p.start)} - {_fmt_md(p.end)}"
-    return f"{_fmt_md(p.start)}, {p.start.year} - {_fmt_md(p.end)}, {p.end.year}"
+        return f"{_fmt_md(p.start)} – {_fmt_md(p.end)}"
+    return f"{_fmt_md(p.start)}, {p.start.year} – {_fmt_md(p.end)}, {p.end.year}"
 
 
 @dataclass(frozen=True)

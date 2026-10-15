@@ -18,6 +18,7 @@ import {
   ResponseSection,
   TicketsSection,
 } from '../components/kpis/KpiSections'
+import PeriodPicker from '../components/kpis/PeriodPicker'
 import { ErrorBanner } from '../components/mondayReview/shared'
 import { formatEasternTimeShort } from '../lib/easternTime'
 import {
@@ -25,7 +26,6 @@ import {
   addMonths,
   daysBetween,
   isYmd,
-  kpiPresets,
   mondayOf,
   periodStart,
   shiftAnchor,
@@ -33,13 +33,6 @@ import {
   todayEt,
 } from '../lib/kpiPeriods'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
-
-const GRANULARITIES: { value: KpiGranularity; label: string }[] = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'custom', label: 'Custom' },
-]
 
 const CLUB_ORDER = ['Round Table', 'Creator Club', 'ClubGTO']
 const CLUB_SHORT: Record<string, string> = {
@@ -246,24 +239,6 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
   }, [live])
 
   // ── navigation ───────────────────────────────────────────────────────────
-  const setGranularity = (next: KpiGranularity) => {
-    if (next === g) return
-    if (next === 'custom') {
-      const from = shown ? shown.period.start : anchor
-      const to = shown ? shown.period.end : anchor
-      setQuery({ g: next, d: null, from, to: to > today ? today : to })
-      return
-    }
-    const base = g === 'custom' ? customFrom : anchor
-    // Week -> day lands on the last day of the week that has already happened.
-    let d = periodStart(next, base)
-    if (next === 'day' && g !== 'custom' && shown) {
-      const end = shown.period.end
-      d = end >= today ? addDays(today, -1) : end
-    }
-    setQuery({ g: next, d, from: null, to: null })
-  }
-
   const step = (n: number) => {
     if (g === 'custom') {
       const len = daysBetween(customFrom, customTo) + 1
@@ -276,13 +251,6 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
   const nextDisabled =
     g === 'custom' ? addDays(customFrom, daysBetween(customFrom, customTo) + 1) > today : shiftAnchor(g, anchor, 1) > today
 
-  const presets = useMemo(() => kpiPresets(today), [today])
-  const activePreset = presets.find((p) =>
-    p.granularity === 'custom'
-      ? g === 'custom' && p.from === customFrom && p.to === customTo
-      : p.granularity === g && periodStart(g, p.date ?? '') === anchor,
-  )?.key
-
   const selectBucket = (p: KpiTrendPoint) => {
     const len = daysBetween(p.start, p.end) + 1
     const nextG: KpiGranularity = len === 1 ? 'day' : len <= 7 ? 'week' : 'month'
@@ -293,7 +261,7 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const periodTitle = shown?.period.label ?? (g === 'custom' ? `${shortDate(customFrom)} - ${shortDate(customTo)}` : '')
+  const periodTitle = shown?.period.label ?? (g === 'custom' ? `${shortDate(customFrom)} – ${shortDate(customTo)}` : '')
   const clubLabel = isGto
     ? GTO_CLUB_NAME
     : clubOptions.find((o) => o.value === (clubId ?? 0))?.label ?? 'All clubs'
@@ -330,72 +298,38 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
 
       {/* Filters: one row of controls that scope everything below. */}
       <div className="-mx-4 border-y border-border bg-surface px-4 py-3 sm:sticky sm:top-[6.75rem] sm:z-30 sm:mx-0 sm:rounded-2xl sm:border sm:bg-surface/95 sm:backdrop-blur">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <Segmented label="Period length" value={g} options={GRANULARITIES} onChange={setGranularity} />
-            <div className="flex w-full min-w-0 items-center gap-1 sm:w-auto">
-              <button
-                type="button"
-                onClick={() => step(-1)}
-                aria-label="Previous period"
-                className={`${g === 'custom' ? 'max-sm:hidden' : ''} inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink-muted hover:bg-control hover:text-ink ${focusRing}`}
-              >
-                <ChevronIcon dir="left" />
-              </button>
-              {g === 'custom' ? (
-                <div className="flex min-w-0 flex-1 items-center gap-1">
-                  <label className="sr-only" htmlFor="kpi-from">
-                    From
-                  </label>
-                  <input
-                    id="kpi-from"
-                    type="date"
-                    className="input-field-sm min-w-0 flex-1 px-2 sm:w-[9.5rem] sm:flex-none sm:px-3"
-                    value={customFrom}
-                    max={customTo}
-                    onChange={(e) => isYmd(e.target.value) && setQuery({ from: e.target.value })}
-                  />
-                  <span className="text-ink-faint" aria-hidden="true">
-                    –
-                  </span>
-                  <label className="sr-only" htmlFor="kpi-to">
-                    To
-                  </label>
-                  <input
-                    id="kpi-to"
-                    type="date"
-                    className="input-field-sm min-w-0 flex-1 px-2 sm:w-[9.5rem] sm:flex-none sm:px-3"
-                    value={customTo}
-                    min={customFrom}
-                    max={today}
-                    onChange={(e) => isYmd(e.target.value) && setQuery({ to: e.target.value })}
-                  />
-                </div>
-              ) : (
-                <label className="relative">
-                  <span className="sr-only">Jump to a date</span>
-                  <input
-                    type="date"
-                    className="input-field-sm w-[10rem]"
-                    value={anchor}
-                    max={today}
-                    onChange={(e) => isYmd(e.target.value) && setQuery({ d: periodStart(g, e.target.value) })}
-                  />
-                </label>
-              )}
-              <button
-                type="button"
-                onClick={() => step(1)}
-                disabled={nextDisabled}
-                aria-label="Next period"
-                className={`${g === 'custom' ? 'max-sm:hidden' : ''} inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink-muted hover:bg-control hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`}
-              >
-                <ChevronIcon dir="right" />
-              </button>
-            </div>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <PeriodPicker
+              g={g}
+              anchor={anchor}
+              from={customFrom}
+              to={customTo}
+              today={today}
+              onChange={(patch) => setQuery(patch)}
+            />
+            <button
+              type="button"
+              onClick={() => step(-1)}
+              aria-label="Previous period"
+              title="Previous period"
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink-muted hover:bg-control hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`}
+            >
+              <ChevronIcon dir="left" />
+            </button>
+            <button
+              type="button"
+              onClick={() => step(1)}
+              disabled={nextDisabled}
+              aria-label="Next period"
+              title="Next period"
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-raised text-ink-muted hover:bg-control hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`}
+            >
+              <ChevronIcon dir="right" />
+            </button>
           </div>
           {isGto ? (
-            <span className="inline-flex min-h-11 items-center rounded-lg border border-border bg-surface-raised px-3 text-sm font-medium text-ink">
+            <span className="inline-flex min-h-11 items-center self-start rounded-lg border border-border bg-surface-raised px-3 text-sm font-medium text-ink">
               {GTO_CLUB_NAME}
             </span>
           ) : (
@@ -406,31 +340,6 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
               onChange={(v) => setQuery({ club: v ? String(v) : null })}
             />
           )}
-        </div>
-        <div className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-          {presets.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              aria-pressed={activePreset === p.key}
-              onClick={() =>
-                setQuery(
-                  p.granularity === 'custom'
-                    ? { g: 'custom', d: null, from: p.from ?? null, to: p.to ?? null }
-                    : { g: p.granularity, d: periodStart(p.granularity, p.date ?? today), from: null, to: null },
-                )
-              }
-              className={[
-                'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition',
-                focusRing,
-                activePreset === p.key
-                  ? 'border-accent bg-accent/12 text-accent'
-                  : 'border-border bg-surface-raised text-ink-muted hover:text-ink',
-              ].join(' ')}
-            >
-              {p.label}
-            </button>
-          ))}
         </div>
       </div>
 

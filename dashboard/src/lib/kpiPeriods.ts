@@ -133,3 +133,41 @@ export function kpiPresets(today: string): KpiPreset[] {
     },
   ]
 }
+
+/** "Oct 5 – 11", "Sep 28 – Oct 4", "Dec 29, 2025 – Jan 4, 2026". */
+export function rangeLabel(start: string, end: string): string {
+  if (start === end) return weekdayDate(start)
+  const sameYear = start.slice(0, 4) === end.slice(0, 4)
+  if (sameYear && start.slice(0, 7) === end.slice(0, 7)) {
+    return `${shortDate(start)} – ${Number(end.slice(8))}`
+  }
+  if (sameYear) return `${shortDate(start)} – ${shortDate(end)}`
+  return `${shortDate(start, true)} – ${shortDate(end, true)}`
+}
+
+export function monthLabel(ymd: string): string {
+  return toUtc(ymd).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', year: 'numeric' })
+}
+
+/** Inclusive day range a granularity + anchor (or custom from/to) covers. */
+export function periodRange(
+  g: KpiGranularity,
+  anchor: string,
+  from?: string,
+  to?: string,
+): { start: string; end: string } {
+  if (g === 'custom') return { start: from ?? anchor, end: to ?? anchor }
+  if (g === 'week') {
+    const start = mondayOf(anchor)
+    return { start, end: addDays(start, 6) }
+  }
+  if (g === 'month') {
+    const start = monthStart(anchor)
+    return { start, end: monthEnd(start) }
+  }
+  return { start: anchor, end: anchor }
+}
+
+export function presetRange(p: KpiPreset): { start: string; end: string } {
+  return periodRange(p.granularity, p.date ?? p.from ?? '', p.from, p.to)
+}

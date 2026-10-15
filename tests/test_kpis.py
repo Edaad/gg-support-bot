@@ -149,11 +149,11 @@ class ResolvePeriodTests(unittest.TestCase):
     def test_labels(self):
         self.assertEqual(
             period_label(Period(date(2026, 10, 5), date(2026, 10, 11), "week")),
-            "Oct 5 - 11",
+            "Oct 5 – 11",
         )
         self.assertEqual(
             period_label(Period(date(2026, 9, 28), date(2026, 10, 4), "week")),
-            "Sep 28 - Oct 4",
+            "Sep 28 – Oct 4",
         )
         self.assertEqual(
             period_label(Period(date(2026, 10, 9), date(2026, 10, 9), "day")),
@@ -621,7 +621,7 @@ class KpiRouteTests(_SeededDb):
         )
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
-        self.assertEqual(body["period"]["label"], "Oct 5 - 11")
+        self.assertEqual(body["period"]["label"], "Oct 5 – 11")
         self.assertEqual(len(body["by_club"]), 3)
 
     def test_gto_is_scoped(self):
