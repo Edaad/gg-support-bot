@@ -349,18 +349,6 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
 
       <ErrorBanner message={error} />
 
-      {shown && (shown.period.tickets_pending || shown.period.is_partial) && (
-        <div className="rounded-xl border border-warning-ink/25 bg-warning-bg px-4 py-2.5 text-sm text-warning-ink">
-          {shown.period.is_partial && 'This period is still running; numbers update live (auto-refresh every 5 min). '}
-          {shown.period.tickets_pending &&
-            `Tickets and response times are written overnight${
-              shown.freshness.tickets_complete_through
-                ? ` and are in through ${shortDate(shown.freshness.tickets_complete_through)}`
-                : ''
-            }, so they fill in the next morning.`}
-        </div>
-      )}
-
       {!shown && loading && <TileSkeleton />}
 
       {shown && (
