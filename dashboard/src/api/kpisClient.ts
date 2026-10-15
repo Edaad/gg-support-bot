@@ -71,7 +71,6 @@ export type KpiResponseTime = {
   median_seconds: number | null
   under_2m: number
   pct_under_2m: number | null
-  distribution: { key: string; label: string; count: number }[]
 }
 
 export type KpiTickets = {

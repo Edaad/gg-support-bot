@@ -107,15 +107,6 @@ AUTOMATION_LABELS: dict[str, str] = {
     "transfer": "Transfer",
 }
 
-FRT_BUCKETS: tuple[tuple[str, str, int | None], ...] = (
-    ("lt_1m", "< 1 min", 60),
-    ("1_2m", "1-2 min", 2 * 60),
-    ("2_5m", "2-5 min", 5 * 60),
-    ("5_15m", "5-15 min", 15 * 60),
-    ("15_60m", "15-60 min", 60 * 60),
-    ("gt_60m", "> 1 hour", None),
-)
-
 _CLUB_ORDER = ("Round Table", "Creator Club", "ClubGTO")
 
 
@@ -734,12 +725,6 @@ def summarize_new_players(
 def summarize_response(tickets: Sequence[TicketRow]) -> dict[str, Any]:
     frts = sorted(t.frt_seconds for t in tickets if t.frt_seconds is not None)
     fast = sum(1 for v in frts if v <= FAST_FRT_SECONDS)
-    distribution = []
-    lower = -1
-    for key, label, upper in FRT_BUCKETS:
-        count = sum(1 for v in frts if v > lower and (upper is None or v <= upper))
-        distribution.append({"key": key, "label": label, "count": count})
-        lower = upper if upper is not None else lower
     return {
         "tickets": len(tickets),
         "human_answered": len(frts),
@@ -747,7 +732,6 @@ def summarize_response(tickets: Sequence[TicketRow]) -> dict[str, Any]:
         "median_seconds": float(statistics.median(frts)) if frts else None,
         "under_2m": fast,
         "pct_under_2m": _rate(fast, len(frts)),
-        "distribution": distribution,
     }
 
 

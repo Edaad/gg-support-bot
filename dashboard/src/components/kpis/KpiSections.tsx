@@ -74,19 +74,21 @@ function Card({
   title,
   tip,
   aside,
+  className = '',
   children,
 }: {
   id: string
   title: string
   tip?: string
   aside?: ReactNode
+  className?: string
   children: ReactNode
 }) {
   return (
     <section
       id={id}
       aria-labelledby={`${id}-title`}
-      className="min-w-0 scroll-mt-40 rounded-2xl border border-border bg-surface p-4 sm:p-5"
+      className={`min-w-0 scroll-mt-40 rounded-2xl border border-border bg-surface p-4 sm:p-5 ${className}`}
     >
       <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 id={`${id}-title`} className="flex items-center gap-2 text-base font-semibold text-ink">
@@ -488,48 +490,22 @@ export function ResponseSection({ data, onSelect }: { data: KpiResponse; onSelec
     { ticketBased: true },
   )
   return (
-    <Card id="kpi-response" title="Response time" tip={KPI_DEFINITIONS.responseTime}>
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <MiniStat
-          label="Median"
-          value={fmtSeconds(cur.median_seconds)}
-          sub={
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-              prev {fmtSeconds(prev.median_seconds)}
-              <DeltaPill
-                delta={computeDelta(cur.median_seconds, prev.median_seconds, { polarity: 'down' })}
-                srContext="vs previous period"
-              />
-            </span>
-          }
-        />
-        <MiniStat
-          label="Under 2 min"
-          value={fmtPct(cur.pct_under_2m)}
-          sub={
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-              {fmtInt(cur.under_2m)} of {fmtInt(cur.human_answered)} · prev {fmtPct(prev.pct_under_2m)}
-              <DeltaPill
-                delta={computeDelta(cur.pct_under_2m, prev.pct_under_2m, { kind: 'points' })}
-                srContext="vs previous period"
-              />
-            </span>
-          }
-        />
-      </div>
-      <h3 className="section-label">Median first response by period</h3>
+    <Card
+      id="kpi-response"
+      title="Median first response"
+      tip={KPI_DEFINITIONS.responseTime}
+      aside={
+        <span className="inline-flex items-center gap-2 text-sm">
+          <span className="font-semibold tabular-nums text-ink">{fmtSeconds(cur.median_seconds)}</span>
+          <span className="text-xs text-ink-muted">prev {fmtSeconds(prev.median_seconds)}</span>
+          <DeltaPill
+            delta={computeDelta(cur.median_seconds, prev.median_seconds, { polarity: 'down' })}
+            srContext="vs previous period"
+          />
+        </span>
+      }
+    >
       <TrendColumns columns={cols} formatValue={fmtSeconds} onSelect={selectByKey(data, onSelect)} />
-      <h3 className="section-label mt-5">How fast humans answered</h3>
-      <HBarList
-        emptyText="No human-answered tickets in this period"
-        rows={cur.distribution.map((b) => ({
-          key: b.key,
-          label: b.label,
-          value: b.count,
-          display: fmtInt(b.count),
-          sub: fmtPct(cur.human_answered ? b.count / cur.human_answered : null),
-        }))}
-      />
     </Card>
   )
 }
@@ -582,13 +558,14 @@ function rateStatus(row: KpiAutomationRow): { label: string; cls: string; icon: 
   return { label: 'Watch', cls: 'bg-warning-bg text-warning-ink', icon: '!' }
 }
 
-export function AutomationSection({ data }: { data: KpiResponse }) {
+export function AutomationSection({ data, className }: { data: KpiResponse; className?: string }) {
   const prev = new Map(data.prior.automation.by_source.map((r) => [r.source, r]))
   const rows = [...data.current.automation.by_source, data.current.automation.overall]
   return (
     <Card
       id="kpi-automation"
       title="Automation health"
+      className={className}
       tip={KPI_DEFINITIONS.automation(data.freshness.stuck_after_minutes)}
     >
       <div className="table-scroll border-0">

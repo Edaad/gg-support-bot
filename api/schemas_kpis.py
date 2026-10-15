@@ -40,12 +40,6 @@ class KpiNewPlayers(BaseModel):
     first_deposits: int
 
 
-class KpiFrtBucket(BaseModel):
-    key: str
-    label: str
-    count: int
-
-
 class KpiResponseTime(BaseModel):
     tickets: int
     human_answered: int
@@ -53,7 +47,6 @@ class KpiResponseTime(BaseModel):
     median_seconds: Optional[float] = None
     under_2m: int
     pct_under_2m: Optional[float] = None
-    distribution: list[KpiFrtBucket]
 
 
 class KpiCategoryCount(BaseModel):
