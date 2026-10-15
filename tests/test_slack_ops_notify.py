@@ -19,7 +19,9 @@ from bot.services.slack_ops_notify import (
 class TestFormatSlackOpsMessage(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_source_prefix_only(self) -> None:
-        text = format_slack_ops_message("Something failed", source="notification_report")
+        text = format_slack_ops_message(
+            "Something failed", source="notification_report"
+        )
         self.assertIn("*Notification Report*", text)
         self.assertIn("Something failed", text)
 
