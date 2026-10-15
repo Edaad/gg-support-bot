@@ -15,8 +15,7 @@ Counting rules (also documented in docs/KPIS.md):
   any deposit (same definition) up to now. First deposits counts groups whose
   earliest-ever deposit falls inside the period.
 - Response time: ``group_chat_tickets`` by ``activity_date``; first response is
-  ``compute_ticket_frt``; the median and the share answered within 2 minutes use
-  human-answered tickets only.
+  ``compute_ticket_frt``; the median uses human-answered tickets only.
 - Automation: ``clubgg_rpa_events`` for the four bot automations. Rate is
   completed / (completed + failed + stuck), where stuck is a row still ``started``
   after ``STUCK_AFTER``; ``stale`` rows are reported but left out of the rate.
@@ -64,7 +63,6 @@ GRANULARITIES: tuple[str, ...] = ("day", "week", "month", "custom")
 
 MAX_CUSTOM_DAYS = 366
 STUCK_AFTER = timedelta(minutes=15)
-FAST_FRT_SECONDS = 2 * 60
 # Crypto rows are filtered on created_at in SQL and on paid_at in Python; widen the
 # SQL window so a payment ingested a little after it was paid is not missed.
 _CRYPTO_SLACK = timedelta(days=3)
@@ -724,14 +722,11 @@ def summarize_new_players(
 
 def summarize_response(tickets: Sequence[TicketRow]) -> dict[str, Any]:
     frts = sorted(t.frt_seconds for t in tickets if t.frt_seconds is not None)
-    fast = sum(1 for v in frts if v <= FAST_FRT_SECONDS)
     return {
         "tickets": len(tickets),
         "human_answered": len(frts),
         "no_human_reply": len(tickets) - len(frts),
         "median_seconds": float(statistics.median(frts)) if frts else None,
-        "under_2m": fast,
-        "pct_under_2m": _rate(fast, len(frts)),
     }
 
 
@@ -834,7 +829,6 @@ def headline(snapshot: dict[str, Any]) -> dict[str, Any]:
         "first_deposits": new["first_deposits"],
         "tickets": snapshot["tickets"]["total"],
         "median_frt_seconds": rt["median_seconds"],
-        "pct_under_2m": rt["pct_under_2m"],
         "automation_attempted": auto["attempted"],
         "automation_rate": auto["rate"],
     }
