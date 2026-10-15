@@ -26,7 +26,6 @@ from db.models import (
     ClubggRpaEvent,
     ClubPaymentMethod,
     CryptoPayment,
-    DepositFunnelEvent,
     Group,
     GroupChatTicket,
     ManualDepositRequest,
@@ -53,7 +52,6 @@ TABLES = [
     "club_payment_methods",
     "manual_deposit_requests",
     "group_chat_tickets",
-    "deposit_funnel_events",
     "clubgg_rpa_events",
 ]
 
@@ -410,50 +408,6 @@ class _SeededDb(unittest.TestCase):
         ticket(6, date(2026, 10, 7), -104, RT, "other", 9999)  # test group
         ticket(7, date(2026, 10, 2), -101, CC, "cashout", 200)
 
-        def funnel(sid, chat, club, started_at, steps, first=False, done_at=None):
-            s.add(
-                DepositFunnelEvent(
-                    deposit_session_id=sid,
-                    step="deposit_started",
-                    telegram_chat_id=chat,
-                    club_id=club,
-                    is_first_deposit=first,
-                    created_at=started_at,
-                )
-            )
-            for step in steps:
-                s.add(
-                    DepositFunnelEvent(
-                        deposit_session_id=sid,
-                        step=step,
-                        telegram_chat_id=chat,
-                        club_id=club,
-                        is_first_deposit=first,
-                        created_at=done_at or started_at,
-                    )
-                )
-
-        funnel(
-            "s1",
-            -100,
-            RT,
-            _utc(10, 6),
-            ["amount_entered", "chips_credited", "chips_confirmed"],
-            first=True,
-        )
-        funnel("s2", -102, GTO, _utc(10, 8), ["amount_entered"], first=True)
-        funnel("s3", -107, CC, _utc(10, 9), ["amount_entered", "chips_confirmed"])
-        funnel("s4", -104, RT, _utc(10, 9), ["chips_confirmed"])  # test group
-        # Started Oct 11 23:00 ET, confirmed after the week: still counts.
-        funnel(
-            "s5",
-            -106,
-            GTO,
-            _utc(10, 12, 3),
-            ["chips_confirmed"],
-            done_at=_utc(10, 12, 5),
-        )
-
         def rpa(i, source, status, at, club=None, chat=None):
             s.add(
                 ClubggRpaEvent(
@@ -535,15 +489,14 @@ class ComputeKpisTests(_SeededDb):
         self.assertEqual(rt["human_answered"], 4)
         self.assertEqual(rt["no_human_reply"], 1)
         self.assertEqual(rt["median_seconds"], 90.0)
-        self.assertEqual(rt["p90_seconds"], 400.0)
-        self.assertEqual(rt["over_5m"], 1)
-        self.assertEqual(rt["pct_over_5m"], 0.25)
+        # FRTs 30, 60, 120, 400: exactly 2 minutes counts as under 2 minutes.
+        self.assertEqual(rt["under_2m"], 3)
+        self.assertEqual(rt["pct_under_2m"], 0.75)
         dist = {b["key"]: b["count"] for b in rt["distribution"]}
         self.assertEqual(
-            dist, {"lt_1m": 2, "1_5m": 1, "5_15m": 1, "15_60m": 0, "gt_60m": 0}
+            dist,
+            {"lt_1m": 2, "1_2m": 1, "2_5m": 0, "5_15m": 1, "15_60m": 0, "gt_60m": 0},
         )
-        self.assertEqual(rt["slowest"][0]["ticket_id"], 3)
-        self.assertEqual(rt["slowest"][0]["group_title"], "GTO / 5555-6666 / carol")
         cats = {
             c["category"]: c["count"] for c in out["current"]["tickets"]["by_category"]
         }
@@ -555,15 +508,6 @@ class ComputeKpisTests(_SeededDb):
         )
         self.assertTrue(out["period"]["tickets_pending"])
         self.assertFalse(out["previous"]["tickets_pending"])
-
-    def test_funnel(self):
-        f = self._kpis()["current"]["deposit_funnel"]
-        self.assertEqual((f["started"], f["confirmed"]), (4, 3))
-        self.assertEqual(f["rate"], 0.75)
-        self.assertEqual((f["first_started"], f["first_confirmed"]), (2, 1))
-        steps = {st["step"]: st["count"] for st in f["steps"]}
-        self.assertEqual(steps["deposit_started"], 4)
-        self.assertEqual(steps["amount_entered"], 3)
 
     def test_automation(self):
         auto = self._kpis()["current"]["automation"]

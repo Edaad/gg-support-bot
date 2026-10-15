@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import type {
   KpiAutomationRow,
   KpiClubHeadline,
@@ -19,7 +18,7 @@ import {
   type DeltaKind,
   type Polarity,
 } from '../../lib/kpiFormat'
-import { bucketLabel, shortDate, weekdayDate } from '../../lib/kpiPeriods'
+import { bucketLabel, weekdayDate } from '../../lib/kpiPeriods'
 import {
   HBarList,
   InfoTip,
@@ -41,11 +40,9 @@ const KPI_DEFINITIONS = {
   newPlayers:
     'Support groups created in the period (test, staff and internal groups left out). “Deposited” means the group has made at least one deposit at any point up to now, so recent periods start lower and catch up. First deposits counts groups whose very first deposit landed in the period.',
   responseTime:
-    'Median time from the player’s first message to the first human admin reply, on tickets a human answered. Tickets the bot handled with no human reply are left out of the median. Tickets are written nightly, so a day fills in the next morning.',
+    'Median time from the player’s first message to the first human admin reply, on tickets a human answered. Tickets the bot handled with no human reply are left out. “Under 2 min” is the share of human-answered tickets with a first reply within 2 minutes. Tickets are written nightly, so a day fills in the next morning.',
   tickets:
     'Support tickets segmented from group chats, by category. Written nightly (around 3 AM ET) for the previous day.',
-  funnel:
-    '/deposit sessions started in the period that reached “chips confirmed”, whenever that happened. First deposits are sessions flagged as the player’s first deposit in the club.',
   automation: (stuckMinutes: number) =>
     `ClubGG chip moves the bot ran on its own: auto-deposit, early rakeback, auto-cashout and transfer. Success = completed ÷ (completed + failed + stuck). Stuck = still running after ${stuckMinutes} min. Stale commands (skipped because the message was too old) are shown but not counted. Staff /add and /cash are left out. Healthy at 90%+ (auto-cashout 80%+); below that it’s flagged Watch.`,
 }
@@ -172,9 +169,21 @@ type TileSpec = {
   pending?: boolean
 }
 
-function KpiTile({ spec, onOpen }: { spec: TileSpec; onOpen: (id: string) => void }) {
+function KpiTile({
+  spec,
+  onOpen,
+  className = '',
+  wide = false,
+}: {
+  spec: TileSpec
+  onOpen: (id: string) => void
+  className?: string
+  wide?: boolean
+}) {
   return (
-    <div className="relative flex min-w-0 flex-col rounded-2xl border border-border bg-surface p-4 transition hover:border-accent/40">
+    <div
+      className={`relative flex min-w-0 flex-col rounded-2xl border border-border bg-surface p-4 transition hover:border-accent/40 ${className}`}
+    >
       <div className="mb-1 flex items-center justify-between gap-2">
         <button
           type="button"
@@ -192,7 +201,7 @@ function KpiTile({ spec, onOpen }: { spec: TileSpec; onOpen: (id: string) => voi
           <DeltaPill delta={spec.delta} srContext="vs previous period" />
           <span className="truncate text-xs text-ink-faint">prev {spec.previousText}</span>
         </div>
-        <Sparkline values={spec.spark} width={96} height={30} label={`${spec.label} trend`} />
+        <Sparkline values={spec.spark} width={wide ? 168 : 96} height={30} label={`${spec.label} trend`} />
       </div>
       {spec.pending && (
         <span className="absolute right-11 top-4 rounded-full bg-warning-bg px-2 py-0.5 text-[10px] font-semibold text-warning-ink">
@@ -223,6 +232,47 @@ export function KpiTiles({ data, onOpen }: { data: KpiResponse; onOpen: (id: str
 
   const tiles: TileSpec[] = [
     {
+      id: 'kpi-tickets',
+      label: 'Tickets',
+      tip: KPI_DEFINITIONS.tickets,
+      value: fmtInt(cur.tickets.total),
+      sub: topCategory && topCategory.count > 0 ? `most: ${topCategory.label} (${fmtInt(topCategory.count)})` : 'no tickets',
+      delta: d(cur.tickets.total, prev.tickets.total, 'relative', 'neutral'),
+      previousText: fmtInt(prev.tickets.total),
+      spark: trend.map((t) => (t.tickets_pending && t.tickets === 0 ? null : t.tickets)),
+      pending,
+    },
+    {
+      id: 'kpi-response',
+      label: 'First response',
+      tip: KPI_DEFINITIONS.responseTime,
+      value: fmtSeconds(cur.response_time.median_seconds),
+      sub: (
+        <>
+          <span className="font-medium text-ink">{fmtPct(cur.response_time.pct_under_2m)}</span> under 2 min ·
+          median
+        </>
+      ),
+      delta: d(cur.response_time.median_seconds, prev.response_time.median_seconds, 'relative', 'down'),
+      previousText: `${fmtSeconds(prev.response_time.median_seconds)} · ${fmtPct(prev.response_time.pct_under_2m)}`,
+      spark: trend.map((t) => t.median_frt_seconds),
+      pending,
+    },
+    {
+      id: 'kpi-automation',
+      label: 'Automation success',
+      tip: KPI_DEFINITIONS.automation(data.freshness.stuck_after_minutes),
+      value: fmtPct(auto.rate, 1),
+      sub: autoIssues.length
+        ? autoIssues.join(' · ')
+        : auto.attempted
+          ? `${fmtInt(auto.attempted)} runs, none failed`
+          : 'no runs',
+      delta: d(auto.rate, prev.automation.overall.rate, 'points'),
+      previousText: fmtPct(prev.automation.overall.rate, 1),
+      spark: trend.map((t) => t.automation_rate),
+    },
+    {
       id: 'kpi-deposits',
       label: 'Deposits',
       tip: KPI_DEFINITIONS.deposits,
@@ -247,63 +297,19 @@ export function KpiTiles({ data, onOpen }: { data: KpiResponse; onOpen: (id: str
       previousText: `${fmtInt(prev.new_players.joined)} · ${fmtPct(prev.new_players.conversion_rate)}`,
       spark: trend.map((t) => t.joined),
     },
-    {
-      id: 'kpi-response',
-      label: 'First response',
-      tip: KPI_DEFINITIONS.responseTime,
-      value: fmtSeconds(cur.response_time.median_seconds),
-      sub: (
-        <>
-          <span className="font-medium text-ink">{fmtPct(cur.response_time.pct_over_5m, 1)}</span> over 5 min ·
-          median
-        </>
-      ),
-      delta: d(cur.response_time.median_seconds, prev.response_time.median_seconds, 'relative', 'down'),
-      previousText: `${fmtSeconds(prev.response_time.median_seconds)} · ${fmtPct(prev.response_time.pct_over_5m, 1)}`,
-      spark: trend.map((t) => t.median_frt_seconds),
-      pending,
-    },
-    {
-      id: 'kpi-tickets',
-      label: 'Tickets',
-      tip: KPI_DEFINITIONS.tickets,
-      value: fmtInt(cur.tickets.total),
-      sub: topCategory && topCategory.count > 0 ? `most: ${topCategory.label} (${fmtInt(topCategory.count)})` : 'no tickets',
-      delta: d(cur.tickets.total, prev.tickets.total, 'relative', 'neutral'),
-      previousText: fmtInt(prev.tickets.total),
-      spark: trend.map((t) => (t.tickets_pending && t.tickets === 0 ? null : t.tickets)),
-      pending,
-    },
-    {
-      id: 'kpi-funnel',
-      label: 'Deposit funnel',
-      tip: KPI_DEFINITIONS.funnel,
-      value: fmtPct(cur.deposit_funnel.rate),
-      sub: `${fmtInt(cur.deposit_funnel.confirmed)} of ${fmtInt(cur.deposit_funnel.started)} reached chips · first ${fmtPct(cur.deposit_funnel.first_rate)}`,
-      delta: d(cur.deposit_funnel.rate, prev.deposit_funnel.rate, 'points'),
-      previousText: fmtPct(prev.deposit_funnel.rate),
-      spark: trend.map((t) => t.funnel_rate),
-    },
-    {
-      id: 'kpi-automation',
-      label: 'Automation success',
-      tip: KPI_DEFINITIONS.automation(data.freshness.stuck_after_minutes),
-      value: fmtPct(auto.rate, 1),
-      sub: autoIssues.length
-        ? autoIssues.join(' · ')
-        : auto.attempted
-          ? `${fmtInt(auto.attempted)} runs, none failed`
-          : 'no runs',
-      delta: d(auto.rate, prev.automation.overall.rate, 'points'),
-      previousText: fmtPct(prev.automation.overall.rate, 1),
-      spark: trend.map((t) => t.automation_rate),
-    },
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-3">
-      {tiles.map((t) => (
-        <KpiTile key={t.id} spec={t} onOpen={onOpen} />
+    // Five tiles: three across, then two wider ones, so no row has a gap.
+    <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 lg:grid-cols-6">
+      {tiles.map((t, i) => (
+        <KpiTile
+          key={t.id}
+          spec={t}
+          onOpen={onOpen}
+          wide={i >= 3}
+          className={i < 3 ? 'lg:col-span-2' : i === tiles.length - 1 ? 'min-[480px]:col-span-2 lg:col-span-3' : 'lg:col-span-3'}
+        />
       ))}
     </div>
   )
@@ -476,20 +482,19 @@ export function ResponseSection({ data, onSelect }: { data: KpiResponse; onSelec
     (p) => p.median_frt_seconds,
     (p) => [
       `median ${fmtSeconds(p.median_frt_seconds)}`,
-      `${fmtPct(p.pct_over_5m, 1)} over 5 min`,
+      `${fmtPct(p.pct_under_2m)} under 2 min`,
       `${fmtInt(p.tickets)} tickets`,
     ],
     { ticketBased: true },
   )
-  const humanShare = cur.tickets ? cur.human_answered / cur.tickets : null
   return (
     <Card id="kpi-response" title="Response time" tip={KPI_DEFINITIONS.responseTime}>
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3">
         <MiniStat
           label="Median"
           value={fmtSeconds(cur.median_seconds)}
           sub={
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex flex-wrap items-center gap-1.5">
               prev {fmtSeconds(prev.median_seconds)}
               <DeltaPill
                 delta={computeDelta(cur.median_seconds, prev.median_seconds, { polarity: 'down' })}
@@ -498,61 +503,33 @@ export function ResponseSection({ data, onSelect }: { data: KpiResponse; onSelec
             </span>
           }
         />
-        <MiniStat label="90th percentile" value={fmtSeconds(cur.p90_seconds)} sub={`prev ${fmtSeconds(prev.p90_seconds)}`} />
         <MiniStat
-          label="Over 5 min"
-          value={fmtPct(cur.pct_over_5m, 1)}
-          sub={`${fmtInt(cur.over_5m)} tickets · prev ${fmtPct(prev.pct_over_5m, 1)}`}
-        />
-        <MiniStat
-          label="Human answered"
-          value={fmtPct(humanShare)}
-          sub={`${fmtInt(cur.human_answered)} of ${fmtInt(cur.tickets)}`}
+          label="Under 2 min"
+          value={fmtPct(cur.pct_under_2m)}
+          sub={
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+              {fmtInt(cur.under_2m)} of {fmtInt(cur.human_answered)} · prev {fmtPct(prev.pct_under_2m)}
+              <DeltaPill
+                delta={computeDelta(cur.pct_under_2m, prev.pct_under_2m, { kind: 'points' })}
+                srContext="vs previous period"
+              />
+            </span>
+          }
         />
       </div>
       <h3 className="section-label">Median first response by period</h3>
       <TrendColumns columns={cols} formatValue={fmtSeconds} onSelect={selectByKey(data, onSelect)} />
-      <div className="mt-5 grid gap-6 md:grid-cols-2 [&>*]:min-w-0">
-        <div>
-          <h3 className="section-label">How fast humans answered</h3>
-          <HBarList
-            emptyText="No human-answered tickets in this period"
-            rows={cur.distribution.map((b) => ({
-              key: b.key,
-              label: b.label,
-              value: b.count,
-              display: fmtInt(b.count),
-              sub: fmtPct(cur.human_answered ? b.count / cur.human_answered : null),
-            }))}
-          />
-        </div>
-        <div>
-          <h3 className="section-label">Slowest first responses</h3>
-          {cur.slowest.length === 0 ? (
-            <p className="py-4 text-sm text-ink-muted">None in this period</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {cur.slowest.map((t) => (
-                <li key={t.ticket_id} className="flex items-start justify-between gap-3 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{t.group_title || `Chat ${t.chat_id}`}</p>
-                    <p className="truncate text-xs text-ink-muted">
-                      {shortDate(t.activity_date)} · {t.category.replace(/_/g, ' ')}
-                      {t.brief_summary ? ` · ${t.brief_summary}` : ''}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold tabular-nums text-warning-ink">
-                    {fmtSeconds(t.frt_seconds)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Link to="/analytics?section=tickets" className={`mt-2 inline-block text-xs font-medium text-accent hover:underline ${focusRing}`}>
-            Open tickets →
-          </Link>
-        </div>
-      </div>
+      <h3 className="section-label mt-5">How fast humans answered</h3>
+      <HBarList
+        emptyText="No human-answered tickets in this period"
+        rows={cur.distribution.map((b) => ({
+          key: b.key,
+          label: b.label,
+          value: b.count,
+          display: fmtInt(b.count),
+          sub: fmtPct(cur.human_answered ? b.count / cur.human_answered : null),
+        }))}
+      />
     </Card>
   )
 }
@@ -589,63 +566,6 @@ export function TicketsSection({ data, onSelect }: { data: KpiResponse; onSelect
       />
       <h3 className="section-label mt-5">Tickets by period</h3>
       <TrendColumns columns={cols} formatValue={fmtCompact} onSelect={selectByKey(data, onSelect)} />
-    </Card>
-  )
-}
-
-export function FunnelSection({ data, onSelect }: { data: KpiResponse; onSelect: SelectBucket }) {
-  const cur = data.current.deposit_funnel
-  const prev = data.prior.deposit_funnel
-  const cols = columnsFor(
-    data,
-    (p) => (p.funnel_rate == null ? null : p.funnel_rate * 100),
-    (p) => [`${fmtPct(p.funnel_rate)} reached chips`, `${fmtInt(p.funnel_started)} sessions`],
-  )
-  return (
-    <Card id="kpi-funnel" title="Deposit funnel" tip={KPI_DEFINITIONS.funnel}>
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <MiniStat
-          label="All /deposit sessions"
-          value={fmtPct(cur.rate)}
-          sub={
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-              {fmtInt(cur.confirmed)} of {fmtInt(cur.started)} · prev {fmtPct(prev.rate)}
-              <DeltaPill delta={computeDelta(cur.rate, prev.rate, { kind: 'points' })} srContext="vs previous period" />
-            </span>
-          }
-        />
-        <MiniStat
-          label="First deposits"
-          value={fmtPct(cur.first_rate)}
-          sub={
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-              {fmtInt(cur.first_confirmed)} of {fmtInt(cur.first_started)} · prev {fmtPct(prev.first_rate)}
-              <DeltaPill
-                delta={computeDelta(cur.first_rate, prev.first_rate, { kind: 'points' })}
-                srContext="vs previous period"
-              />
-            </span>
-          }
-        />
-      </div>
-      <h3 className="section-label">Where sessions drop off</h3>
-      <HBarList
-        max={cur.started}
-        emptyText="No /deposit sessions in this period"
-        rows={cur.steps.map((s) => ({
-          key: s.step,
-          label: s.label,
-          value: s.count,
-          display: fmtInt(s.count),
-          sub: s.step === 'deposit_started' ? undefined : fmtPct(s.rate),
-        }))}
-      />
-      <h3 className="section-label mt-5">Reached chips by period</h3>
-      <TrendColumns
-        columns={cols}
-        formatValue={(v) => `${Math.round(v)}%`}
-        onSelect={selectByKey(data, onSelect)}
-      />
     </Card>
   )
 }
@@ -725,16 +645,15 @@ export function AutomationSection({ data }: { data: KpiResponse }) {
 // ── Club comparison ─────────────────────────────────────────────────────────
 
 const CLUB_ROWS: { label: string; render: (h: KpiHeadline) => string }[] = [
+  { label: 'Tickets', render: (h) => fmtInt(h.tickets) },
+  { label: 'Median first response', render: (h) => fmtSeconds(h.median_frt_seconds) },
+  { label: 'Answered under 2 min', render: (h) => fmtPct(h.pct_under_2m) },
+  { label: 'Automation success', render: (h) => fmtPct(h.automation_rate, 1) },
   { label: 'Deposits ($)', render: (h) => fmtUsd(h.deposits_usd) },
   { label: 'Deposits (count)', render: (h) => fmtInt(h.deposits_count) },
   { label: 'New players', render: (h) => fmtInt(h.joined) },
   { label: 'Deposited since', render: (h) => `${fmtInt(h.converted)} · ${fmtPct(h.conversion_rate)}` },
   { label: 'First deposits', render: (h) => fmtInt(h.first_deposits) },
-  { label: 'Median first response', render: (h) => fmtSeconds(h.median_frt_seconds) },
-  { label: 'Tickets over 5 min', render: (h) => fmtPct(h.pct_over_5m, 1) },
-  { label: 'Tickets', render: (h) => fmtInt(h.tickets) },
-  { label: 'Funnel: reached chips', render: (h) => fmtPct(h.funnel_rate) },
-  { label: 'Automation success', render: (h) => fmtPct(h.automation_rate, 1) },
 ]
 
 function totalHeadline(data: KpiResponse): KpiHeadline {
@@ -750,9 +669,7 @@ function totalHeadline(data: KpiResponse): KpiHeadline {
       first_deposits: c.new_players.first_deposits,
       tickets: c.tickets.total,
       median_frt_seconds: c.response_time.median_seconds,
-      pct_over_5m: c.response_time.pct_over_5m,
-      funnel_started: c.deposit_funnel.started,
-      funnel_rate: c.deposit_funnel.rate,
+      pct_under_2m: c.response_time.pct_under_2m,
       automation_attempted: c.automation.overall.attempted,
       automation_rate: c.automation.overall.rate,
     }

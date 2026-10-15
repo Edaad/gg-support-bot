@@ -64,42 +64,19 @@ export type KpiNewPlayers = {
   first_deposits: number
 }
 
-export type KpiSlowTicket = {
-  ticket_id: number
-  activity_date: string
-  chat_id: number
-  club_id: number | null
-  group_title: string | null
-  category: string
-  frt_seconds: number
-  brief_summary: string | null
-}
-
 export type KpiResponseTime = {
   tickets: number
   human_answered: number
   no_human_reply: number
   median_seconds: number | null
-  p90_seconds: number | null
-  over_5m: number
-  pct_over_5m: number | null
+  under_2m: number
+  pct_under_2m: number | null
   distribution: { key: string; label: string; count: number }[]
-  slowest: KpiSlowTicket[]
 }
 
 export type KpiTickets = {
   total: number
   by_category: { category: string; label: string; count: number }[]
-}
-
-export type KpiDepositFunnel = {
-  started: number
-  confirmed: number
-  rate: number | null
-  first_started: number
-  first_confirmed: number
-  first_rate: number | null
-  steps: { step: string; label: string; count: number; rate: number | null }[]
 }
 
 export type KpiAutomationRow = {
@@ -119,7 +96,6 @@ export type KpiSnapshot = {
   new_players: KpiNewPlayers
   response_time: KpiResponseTime
   tickets: KpiTickets
-  deposit_funnel: KpiDepositFunnel
   automation: { overall: KpiAutomationRow; by_source: KpiAutomationRow[] }
 }
 
@@ -132,9 +108,7 @@ export type KpiHeadline = {
   first_deposits: number
   tickets: number
   median_frt_seconds: number | null
-  pct_over_5m: number | null
-  funnel_started: number
-  funnel_rate: number | null
+  pct_under_2m: number | null
   automation_attempted: number
   automation_rate: number | null
 }
