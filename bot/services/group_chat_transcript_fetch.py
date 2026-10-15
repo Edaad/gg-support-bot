@@ -597,6 +597,53 @@ async def _fetch_club_chats(
     return results
 
 
+def _results_after_club_crash(
+    targets: list[ActivityChatTarget], *, error: str
+) -> list[ChatFetchResult]:
+    """Results for a club whose session setup or teardown raised.
+
+    Chats already stored as complete keep that status; the rest are marked
+    failed so ``fetch_with_retries`` retries them.
+    """
+
+    if not targets:
+        return []
+    activity_date = targets[0].activity_date
+    with get_db() as session:
+        complete_ids = {
+            int(r[0])
+            for r in session.query(GroupChatDailyTranscript.chat_id).filter(
+                GroupChatDailyTranscript.activity_date == activity_date,
+                GroupChatDailyTranscript.chat_id.in_([t.chat_id for t in targets]),
+                GroupChatDailyTranscript.status == STATUS_COMPLETE,
+            )
+        }
+    results: list[ChatFetchResult] = []
+    for t in targets:
+        if t.chat_id in complete_ids:
+            results.append(
+                ChatFetchResult(
+                    chat_id=t.chat_id, club_id=t.club_id, status=STATUS_COMPLETE
+                )
+            )
+            continue
+        _mark_attempt_failed(
+            activity_date=t.activity_date,
+            chat_id=t.chat_id,
+            club_id=t.club_id,
+            error=error,
+        )
+        results.append(
+            ChatFetchResult(
+                chat_id=t.chat_id,
+                club_id=t.club_id,
+                status=STATUS_FAILED,
+                error=error,
+            )
+        )
+    return results
+
+
 async def fetch_transcripts_for_activity_date(
     activity_date: date,
     *,
@@ -647,11 +694,24 @@ async def fetch_transcripts_for_activity_date(
                     )
                 )
             return out
-        return await _fetch_club_chats(
-            cfg,
-            club_targets,
-            deadline_monotonic=deadline_monotonic,
-        )
+        try:
+            return await _fetch_club_chats(
+                cfg,
+                club_targets,
+                deadline_monotonic=deadline_monotonic,
+            )
+        except Exception as exc:
+            # A raise here would abort the gather while the other clubs keep
+            # fetching in the background, and the cron would analyse and audit
+            # a half-fetched day. Fail this club's chats instead.
+            logger.exception(
+                "group_transcript: club fetch crashed club=%s date=%s",
+                cfg.club_key,
+                activity_date,
+            )
+            return _results_after_club_crash(
+                club_targets, error=f"club fetch failed: {type(exc).__name__}: {exc}"
+            )
 
     club_results = await asyncio.gather(
         *[_club_task(cid, rows) for cid, rows in by_club.items()]

@@ -439,16 +439,32 @@ class ResponseAuditApiTests(unittest.TestCase):
 
 
 class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
-    async def test_alerts_when_candidates_but_no_verdicts(self):
+    def _snap(self, **kw):
+        from bot.services import response_audit_heartbeat as hb
+
+        base = dict(
+            builder_ran=True,
+            candidates=3,
+            verdicts=1,
+            clubs=[hb.ClubCoverage("ClubGTO", active=60, complete=60)],
+        )
+        base.update(kw)
+        return hb.HeartbeatSnapshot(**base)
+
+    async def _check(self, snap):
         from bot.services import response_audit_heartbeat as hb
 
         with (
-            patch.object(hb, "candidate_and_verdict_counts", return_value=(3, 0)),
+            patch.object(hb, "heartbeat_snapshot", return_value=snap),
             patch.object(
                 hb, "notify_slack_ops", new=AsyncMock(return_value=True)
             ) as slack,
         ):
             sent = await hb.check_response_audit_ran(DAY)
+        return sent, slack
+
+    async def test_alerts_when_candidates_but_no_verdicts(self):
+        sent, slack = await self._check(self._snap(verdicts=0))
         self.assertTrue(sent)
         slack.assert_awaited_once_with(
             "Response audit for 2026-09-29 has not run.",
@@ -456,15 +472,94 @@ class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_quiet_when_judged_or_no_candidates(self):
+        for candidates, verdicts in ((3, 1), (0, 0)):
+            sent, slack = await self._check(
+                self._snap(candidates=candidates, verdicts=verdicts)
+            )
+            self.assertFalse(sent)
+            slack.assert_not_awaited()
+
+    async def test_quiet_for_one_stray_failed_transcript(self):
         from bot.services import response_audit_heartbeat as hb
 
-        for counts in ((3, 1), (0, 0)):
-            with (
-                patch.object(hb, "candidate_and_verdict_counts", return_value=counts),
-                patch.object(hb, "notify_slack_ops", new=AsyncMock()) as slack,
-            ):
-                self.assertFalse(await hb.check_response_audit_ran(DAY))
-            slack.assert_not_awaited()
+        clubs = [hb.ClubCoverage("Round Table", active=25, complete=24)]
+        sent, slack = await self._check(self._snap(clubs=clubs))
+        self.assertFalse(sent)
+        slack.assert_not_awaited()
+
+    async def test_alerts_when_a_club_fetched_nothing(self):
+        """2026-10-14: RT and CC fetched 0 chats, the builder saw 0 candidates."""
+        from bot.services import response_audit_heartbeat as hb
+
+        clubs = [
+            hb.ClubCoverage("Round Table", active=22, complete=0),
+            hb.ClubCoverage("Creator Club", active=1, complete=0),
+            hb.ClubCoverage("ClubGTO", active=63, complete=63),
+        ]
+        sent, slack = await self._check(
+            self._snap(candidates=0, verdicts=0, clubs=clubs)
+        )
+        self.assertTrue(sent)
+        text = slack.await_args.args[0]
+        self.assertIn("Round Table 0/22", text)
+        self.assertIn("Creator Club 0/1", text)
+        self.assertNotIn("ClubGTO", text)
+
+    async def test_alerts_when_builder_did_not_run(self):
+        sent, slack = await self._check(
+            self._snap(builder_ran=False, candidates=0, verdicts=0)
+        )
+        self.assertTrue(sent)
+        slack.assert_awaited_once_with(
+            "Response audit builder for 2026-09-29 has not run.",
+            source="response_audit_heartbeat",
+        )
+
+    def test_snapshot_query(self):
+        from bot.services import response_audit_heartbeat as hb
+
+        factory = make_sqlite_session_factory(TABLES)
+        with factory() as s:
+            s.add(Club(id=1, name="RT", telegram_user_id=1))
+            s.add(Club(id=2, name="CC", telegram_user_id=2))
+            s.flush()
+            for club_id, chat_id in ((1, -1), (1, -2), (2, -3)):
+                s.add(
+                    GroupChatDailyActivity(
+                        activity_date=DAY,
+                        chat_id=chat_id,
+                        club_id=club_id,
+                        non_bot_message_count=3,
+                        first_message_at=_utc(2026, 9, 29, 14),
+                        last_message_at=_utc(2026, 9, 29, 15),
+                    )
+                )
+            s.add(
+                GroupChatDailyTranscript(
+                    activity_date=DAY, chat_id=-1, club_id=1, status="complete"
+                )
+            )
+            s.add(
+                GroupChatDailyTranscript(
+                    activity_date=DAY, chat_id=-2, club_id=1, status="failed"
+                )
+            )
+            s.add(
+                ResponseAuditRun(
+                    activity_date=DAY, ran_at=_utc(2026, 9, 30, 7), rule_version="ra-2"
+                )
+            )
+            s.commit()
+        with patch("db.connection.get_db", get_db_for(factory)):
+            snap = hb.heartbeat_snapshot(DAY)
+        self.assertTrue(snap.builder_ran)
+        self.assertEqual(
+            snap.clubs,
+            [
+                hb.ClubCoverage("RT", active=2, complete=1),
+                hb.ClubCoverage("CC", active=1, complete=0),
+            ],
+        )
 
     def test_counts_query(self):
         from bot.services import response_audit_heartbeat as hb

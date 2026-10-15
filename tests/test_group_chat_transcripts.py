@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import unittest
 from datetime import date, datetime, timezone
@@ -17,6 +18,8 @@ from bot.services import group_chat_transcript_cron as cron
 from bot.services import group_chat_transcript_fetch as fetch
 from bot.services.mtproto_club_health import STATUS_DISCONNECTED
 from db.connection import get_db_dependency
+from db.models import Club, GroupChatDailyTranscript
+from tests.support.sqlite_db import get_db_for, make_sqlite_session_factory
 
 TOKEN = create_token()
 
@@ -105,6 +108,84 @@ class FetchTailTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m["id"] for m in kwargs["tail_messages"]], [4])
         self.assertEqual(result.message_count, 2)
         self.assertEqual(result.tail_message_count, 1)
+
+
+class ClubCrashIsolationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_one_club_crash_does_not_abort_other_clubs(self):
+        """2026-10-14: RT/CC setup raised, the gather aborted mid-fetch."""
+        day = date(2026, 10, 14)
+        factory = make_sqlite_session_factory(["clubs", "group_chat_daily_transcripts"])
+        with factory() as s:
+            s.add_all(
+                [
+                    Club(id=2, name="RT", telegram_user_id=2),
+                    Club(id=4, name="GTO", telegram_user_id=4),
+                ]
+            )
+            s.commit()
+        targets = [
+            fetch.ActivityChatTarget(activity_date=day, chat_id=-201, club_id=2),
+            fetch.ActivityChatTarget(activity_date=day, chat_id=-401, club_id=4),
+        ]
+
+        async def _club_chats(cfg, club_targets, *, deadline_monotonic):
+            if cfg.club_key == "round_table":
+                raise RuntimeError("database is locked")
+            await asyncio.sleep(0.01)  # still running when RT raises
+            return [
+                fetch.ChatFetchResult(
+                    chat_id=t.chat_id, club_id=t.club_id, status=fetch.STATUS_COMPLETE
+                )
+                for t in club_targets
+            ]
+
+        keys = {2: "round_table", 4: "clubgto"}
+        with (
+            patch.object(fetch, "get_db", get_db_for(factory)),
+            patch.object(fetch, "list_activity_targets", return_value=targets),
+            patch.object(
+                fetch,
+                "get_club_gc_config_by_link_club_id",
+                side_effect=lambda cid: SimpleNamespace(club_key=keys[cid]),
+            ),
+            patch.object(fetch, "_fetch_club_chats", side_effect=_club_chats),
+        ):
+            summary = await fetch.fetch_transcripts_for_activity_date(day)
+
+        self.assertEqual((summary.complete, summary.failed), (1, 1))
+        with factory() as s:
+            row = s.query(GroupChatDailyTranscript).filter_by(chat_id=-201).one()
+        self.assertEqual(row.status, fetch.STATUS_FAILED)
+        self.assertIn("club fetch failed: RuntimeError", row.error)
+
+    def test_crash_keeps_chats_already_stored(self):
+        day = date(2026, 10, 14)
+        factory = make_sqlite_session_factory(["clubs", "group_chat_daily_transcripts"])
+        with factory() as s:
+            s.add_all(
+                [
+                    Club(id=2, name="RT", telegram_user_id=2),
+                    Club(id=4, name="GTO", telegram_user_id=4),
+                ]
+            )
+            s.commit()
+        with factory() as s:
+            s.add(
+                GroupChatDailyTranscript(
+                    activity_date=day, chat_id=-1, club_id=2, status="complete"
+                )
+            )
+            s.commit()
+        targets = [
+            fetch.ActivityChatTarget(activity_date=day, chat_id=-1, club_id=2),
+            fetch.ActivityChatTarget(activity_date=day, chat_id=-2, club_id=2),
+        ]
+        with patch.object(fetch, "get_db", get_db_for(factory)):
+            results = fetch._results_after_club_crash(targets, error="boom")
+        self.assertEqual(
+            [(r.chat_id, r.status) for r in results],
+            [(-1, fetch.STATUS_COMPLETE), (-2, fetch.STATUS_FAILED)],
+        )
 
 
 class SerializeMessageTest(unittest.TestCase):

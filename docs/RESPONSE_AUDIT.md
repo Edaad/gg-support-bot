@@ -127,7 +127,13 @@ Weekly attribution uses `audit_shifts`. An event belongs to the shift where `sta
 
 ## Heartbeat
 
-At 09:00 ET the worker checks yesterday (ET). If there are candidates but zero verdicts, it posts `Response audit for {date} has not run.` to the ops Slack channel (`SLACK_OPS_*`).
+At 09:00 ET the worker checks yesterday (ET) and posts one message to the ops Slack channel (`SLACK_OPS_*`) listing whichever of these hold:
+
+- A club's transcripts are incomplete: none of its active chats has a complete transcript, or more than 10% don't (`Group-chat transcripts for {date} are incomplete (Round Table 0/22, … chats fetched).`). The audit only covers fetched chats, so a club that failed to fetch would otherwise look like a quiet day.
+- No builder run is recorded for the day (`Response audit builder for {date} has not run.`).
+- There are candidates but zero verdicts (`Response audit for {date} has not run.`).
+
+A club whose MTProto setup raises during the nightly fetch has its chats marked `failed` (and retried within the budget) instead of aborting the whole extraction, so analysis and the audit always start after every club has finished.
 
 ## Related changes
 
