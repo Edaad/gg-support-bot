@@ -16,6 +16,7 @@ export const ACCOUNT_MANAGER_PATHS = [
 /** Paths gto may open (prefix match for nested routes). */
 export const GTO_PATHS = [
   '/clubs',
+  '/kpis',
   '/payments',
   '/cashout-records',
   '/bonuses',

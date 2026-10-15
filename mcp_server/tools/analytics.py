@@ -1,4 +1,4 @@
-"""Analytics tools: deposit funnel, daily group-chat activity, tickets, transcripts."""
+"""Analytics tools: KPIs, deposit funnel, daily group-chat activity, tickets, transcripts."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from api.group_chat_ticket_helpers import slice_ticket_messages
+from api.kpis import compute_kpis
 from api.routes.deposit_funnel import (
     deposit_funnel_latency_summary as _route_latency_summary,
 )
@@ -377,10 +378,57 @@ def get_chat_transcript(
     return single(item, include_pii=include_pii, notes=notes)
 
 
+@translate_errors
+def get_kpis(
+    granularity: str = "week",
+    date_: str | None = None,
+    from_: str | None = None,
+    to: str | None = None,
+    club: str | None = None,
+) -> dict[str, Any]:
+    """Club KPIs for a day, week (Mon-Sun ET), month or custom range, each beside the
+    previous period, like the dashboard KPIs tab: deposits (bound payments on every
+    rail, counted once under the group's club), new players (support groups joined,
+    how many have deposited since, first deposits), human first-response time
+    (median, p90, % over 5 min), tickets by category, /deposit sessions that reached
+    chips confirmed, and automation success (auto-deposit, early rakeback,
+    auto-cashout, transfer). Also returns a trend (14 days / 8 weeks / 6 months) and a
+    per-club split when no club is given. `date_` is any America/New_York day inside
+    the period (default: yesterday, last complete week or last complete month);
+    custom uses `from_`/`to` (YYYY-MM-DD, inclusive). Rates are fractions. Club: Club
+    id (int), key (round_table|creator_club|clubgto) or slug
+    (round-table|creator-club|clubgto|aces-table). Omit for all clubs."""
+    with read_session() as session:
+        club_row = resolve_club(session, club)
+        try:
+            result = compute_kpis(
+                session,
+                granularity=granularity,
+                anchor=parse_et_day(date_),
+                start=parse_et_day(from_),
+                end=parse_et_day(to),
+                club_id=int(club_row.id) if club_row is not None else None,
+            )
+        except ValueError as exc:
+            raise bad_input(str(exc)) from exc
+    notes = [
+        "dates are America/New_York days; weeks run Monday-Sunday",
+        "rates are fractions (0.45 = 45%); response times are seconds",
+        "test, staff and internal chats are excluded",
+        "tickets are written nightly; period.tickets_pending marks days not in yet",
+    ]
+    if result["previous_truncated"]:
+        notes.append(
+            "period is still running; previous is cut to the same elapsed days"
+        )
+    return single(result, notes=notes)
+
+
 def register(mcp: MCPServer) -> None:
     mcp.tool(name="deposit_funnel_summary", annotations=READ_ONLY)(
         deposit_funnel_summary
     )
+    mcp.tool(name="get_kpis", annotations=READ_ONLY)(get_kpis)
     mcp.tool(name="list_group_chat_activity", annotations=READ_ONLY)(
         list_group_chat_activity
     )

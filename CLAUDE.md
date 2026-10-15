@@ -81,6 +81,7 @@ Three independent long-running processes (see `Procfile`):
 - `api/app.py` — FastAPI app factory; refuses to boot unless the DB is at the Alembic head (`db/schema_guard.py`)
 - `api/auth.py` — shared-password JWT auth (`DASHBOARD_PASSWORD`)
 - `api/routes/` — one router per resource; all protected by JWT bearer token
+- `api/kpis.py` — Club KPIs (deposits, new players, response time, tickets, funnel, automation) behind `GET /api/kpis`, the dashboard KPIs tab and MCP `get_kpis`; counting rules in `docs/KPIS.md`
 
 ### MCP server (`mcp_server/`)
 
