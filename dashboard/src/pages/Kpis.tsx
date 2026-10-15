@@ -369,12 +369,13 @@ export default function Kpis({ token, role }: { token: string; role: DashboardRo
           <ClubComparison data={shown} onClub={(id) => setQuery({ club: String(id) })} />
           <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
             <TicketsSection data={shown} onSelect={selectBucket} />
-            <ResponseSection data={shown} onSelect={selectBucket} />
+            {/* Stacked so the pair matches the Tickets card's height. */}
+            <div className="flex flex-col gap-5">
+              <ResponseSection data={shown} onSelect={selectBucket} />
+              <AutomationSection data={shown} className="flex-1" />
+            </div>
           </div>
-          <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-            <AutomationSection data={shown} />
-            <NewPlayersSection data={shown} onSelect={selectBucket} />
-          </div>
+          <NewPlayersSection data={shown} onSelect={selectBucket} />
           <DepositsSection
             data={shown}
             onSelect={selectBucket}

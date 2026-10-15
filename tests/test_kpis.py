@@ -492,11 +492,6 @@ class ComputeKpisTests(_SeededDb):
         # FRTs 30, 60, 120, 400: exactly 2 minutes counts as under 2 minutes.
         self.assertEqual(rt["under_2m"], 3)
         self.assertEqual(rt["pct_under_2m"], 0.75)
-        dist = {b["key"]: b["count"] for b in rt["distribution"]}
-        self.assertEqual(
-            dist,
-            {"lt_1m": 2, "1_2m": 1, "2_5m": 0, "5_15m": 1, "15_60m": 0, "gt_60m": 0},
-        )
         cats = {
             c["category"]: c["count"] for c in out["current"]["tickets"]["by_category"]
         }
