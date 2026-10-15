@@ -45,8 +45,6 @@ class KpiResponseTime(BaseModel):
     human_answered: int
     no_human_reply: int
     median_seconds: Optional[float] = None
-    under_2m: int
-    pct_under_2m: Optional[float] = None
 
 
 class KpiCategoryCount(BaseModel):
@@ -94,7 +92,6 @@ class KpiHeadline(BaseModel):
     first_deposits: int
     tickets: int
     median_frt_seconds: Optional[float] = None
-    pct_under_2m: Optional[float] = None
     automation_attempted: int
     automation_rate: Optional[float] = None
 

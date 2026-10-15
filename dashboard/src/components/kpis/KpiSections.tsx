@@ -40,7 +40,7 @@ const KPI_DEFINITIONS = {
   newPlayers:
     'Support groups created in the period (test, staff and internal groups left out). “Deposited” means the group has made at least one deposit at any point up to now, so recent periods start lower and catch up. First deposits counts groups whose very first deposit landed in the period.',
   responseTime:
-    'Median time from the player’s first message to the first human admin reply, on tickets a human answered. Tickets the bot handled with no human reply are left out. “Under 2 min” is the share of human-answered tickets with a first reply within 2 minutes. Tickets are written nightly, so a day fills in the next morning.',
+    'Median time from the player’s first message to the first human admin reply, on tickets a human answered. Tickets the bot handled with no human reply are left out. Tickets are written nightly, so a day fills in the next morning.',
   tickets:
     'Support tickets segmented from group chats, by category. Written nightly (around 3 AM ET) for the previous day.',
   automation: (stuckMinutes: number) =>
@@ -249,14 +249,9 @@ export function KpiTiles({ data, onOpen }: { data: KpiResponse; onOpen: (id: str
       label: 'First response',
       tip: KPI_DEFINITIONS.responseTime,
       value: fmtSeconds(cur.response_time.median_seconds),
-      sub: (
-        <>
-          <span className="font-medium text-ink">{fmtPct(cur.response_time.pct_under_2m)}</span> under 2 min ·
-          median
-        </>
-      ),
+      sub: `median of ${fmtInt(cur.response_time.human_answered)} human replies`,
       delta: d(cur.response_time.median_seconds, prev.response_time.median_seconds, 'relative', 'down'),
-      previousText: `${fmtSeconds(prev.response_time.median_seconds)} · ${fmtPct(prev.response_time.pct_under_2m)}`,
+      previousText: fmtSeconds(prev.response_time.median_seconds),
       spark: trend.map((t) => t.median_frt_seconds),
       pending,
     },
@@ -484,7 +479,6 @@ export function ResponseSection({ data, onSelect }: { data: KpiResponse; onSelec
     (p) => p.median_frt_seconds,
     (p) => [
       `median ${fmtSeconds(p.median_frt_seconds)}`,
-      `${fmtPct(p.pct_under_2m)} under 2 min`,
       `${fmtInt(p.tickets)} tickets`,
     ],
     { ticketBased: true },
@@ -624,7 +618,6 @@ export function AutomationSection({ data, className }: { data: KpiResponse; clas
 const CLUB_ROWS: { label: string; render: (h: KpiHeadline) => string }[] = [
   { label: 'Tickets', render: (h) => fmtInt(h.tickets) },
   { label: 'Median first response', render: (h) => fmtSeconds(h.median_frt_seconds) },
-  { label: 'Answered under 2 min', render: (h) => fmtPct(h.pct_under_2m) },
   { label: 'Automation success', render: (h) => fmtPct(h.automation_rate, 1) },
   { label: 'Deposits ($)', render: (h) => fmtUsd(h.deposits_usd) },
   { label: 'Deposits (count)', render: (h) => fmtInt(h.deposits_count) },
@@ -646,7 +639,6 @@ function totalHeadline(data: KpiResponse): KpiHeadline {
       first_deposits: c.new_players.first_deposits,
       tickets: c.tickets.total,
       median_frt_seconds: c.response_time.median_seconds,
-      pct_under_2m: c.response_time.pct_under_2m,
       automation_attempted: c.automation.overall.attempted,
       automation_rate: c.automation.overall.rate,
     }

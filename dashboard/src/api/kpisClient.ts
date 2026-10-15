@@ -69,8 +69,6 @@ export type KpiResponseTime = {
   human_answered: number
   no_human_reply: number
   median_seconds: number | null
-  under_2m: number
-  pct_under_2m: number | null
 }
 
 export type KpiTickets = {
@@ -107,7 +105,6 @@ export type KpiHeadline = {
   first_deposits: number
   tickets: number
   median_frt_seconds: number | null
-  pct_under_2m: number | null
   automation_attempted: number
   automation_rate: number | null
 }

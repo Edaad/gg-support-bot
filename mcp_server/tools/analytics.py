@@ -390,7 +390,7 @@ def get_kpis(
     previous period, like the dashboard KPIs tab: deposits (bound payments on every
     rail, counted once under the group's club), new players (support groups joined,
     how many have deposited since, first deposits), human first-response time
-    (median, % answered within 2 min), tickets by category, and automation success
+    (median), tickets by category, and automation success
     (auto-deposit, early rakeback, auto-cashout, transfer). Also returns a trend (14 days / 8 weeks / 6 months) and a
     per-club split when no club is given. `date_` is any America/New_York day inside
     the period (default: yesterday, last complete week or last complete month);
