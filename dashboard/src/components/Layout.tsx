@@ -37,12 +37,12 @@ type NavLinkItem = {
 const RAKEBACK_URL = 'https://elevateautomations.io/'
 
 const ADMIN_TOP_NAV: NavLinkItem[] = [
+  { to: '/kpis', label: 'KPIs', icon: 'kpis' },
   { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
-  { to: '/kpis', label: 'KPIs', icon: 'kpis', moreOnMobile: true },
   { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
-  { to: RAKEBACK_URL, label: 'Rakeback', icon: 'rakeback', external: true },
+  { to: RAKEBACK_URL, label: 'Rakeback', icon: 'rakeback', external: true, moreOnMobile: true },
 ]
 
 const ADMIN_MORE_NAV: NavLinkItem[] = [
@@ -65,8 +65,8 @@ const AM_TOP_NAV: NavLinkItem[] = [
 ]
 
 const GTO_TOP_NAV: NavLinkItem[] = [
-  { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
   { to: '/kpis', label: 'KPIs', icon: 'kpis' },
+  { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
   { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
@@ -285,16 +285,40 @@ function MoreMenuLinks({
   pathname,
   onSelect,
   itemClassName,
-  leading = [],
+  extra = [],
 }: {
   pathname: string
   onSelect?: () => void
   itemClassName?: string
-  leading?: NavLinkItem[]
+  /** Top-nav items that move here on phones (listed after the usual entries). */
+  extra?: NavLinkItem[]
 }) {
+  const itemClass = (active: boolean) =>
+    [
+      'flex min-h-11 items-center gap-1.5 px-3 py-2 text-sm font-medium',
+      focusRing,
+      active ? 'bg-accent/12 text-accent' : 'text-ink hover:bg-control',
+      itemClassName ?? '',
+    ].join(' ')
   return (
     <>
-      {[...leading, ...ADMIN_MORE_NAV].map((n) => {
+      {[...ADMIN_MORE_NAV, ...extra].map((n) => {
+        if (n.external) {
+          return (
+            <a
+              key={n.to}
+              href={n.to}
+              target="_blank"
+              rel="noopener noreferrer"
+              role="menuitem"
+              onClick={onSelect}
+              className={itemClass(false)}
+            >
+              {navItemLabel(n)}
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          )
+        }
         const active = isNavActive(pathname, n.to, n.exact)
         return (
           <Link
@@ -303,12 +327,7 @@ function MoreMenuLinks({
             role="menuitem"
             aria-current={active ? 'page' : undefined}
             onClick={onSelect}
-            className={[
-              'flex min-h-11 items-center gap-1.5 px-3 py-2 text-sm font-medium',
-              focusRing,
-              active ? 'bg-accent/12 text-accent' : 'text-ink hover:bg-control',
-              itemClassName ?? '',
-            ].join(' ')}
+            className={itemClass(active)}
           >
             {navItemLabel(n)}
           </Link>
@@ -404,12 +423,12 @@ function MoreSheet({
   open,
   onClose,
   pathname,
-  leading,
+  extra,
 }: {
   open: boolean
   onClose: () => void
   pathname: string
-  leading: NavLinkItem[]
+  extra: NavLinkItem[]
 }) {
   useEffect(() => {
     if (!open) return
@@ -440,7 +459,7 @@ function MoreSheet({
           pathname={pathname}
           onSelect={onClose}
           itemClassName="px-4"
-          leading={leading}
+          extra={extra}
         />
       </div>
     </div>
@@ -638,7 +657,7 @@ export default function Layout({
         open={moreOpen}
         onClose={() => setMoreOpen(false)}
         pathname={pathname}
-        leading={mobileMoreItems}
+        extra={mobileMoreItems}
       />
     </div>
   )
