@@ -22,6 +22,7 @@ type NavIconName =
   | 'balances'
   | 'zelle'
   | 'monday'
+  | 'kpis'
 
 type NavLinkItem = {
   to: string
@@ -29,12 +30,15 @@ type NavLinkItem = {
   icon: NavIconName
   external?: boolean
   exact?: boolean
+  /** Phone bottom bar: list under More instead (keeps the bar's labels readable). */
+  moreOnMobile?: boolean
 }
 
 const RAKEBACK_URL = 'https://elevateautomations.io/'
 
 const ADMIN_TOP_NAV: NavLinkItem[] = [
   { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
+  { to: '/kpis', label: 'KPIs', icon: 'kpis', moreOnMobile: true },
   { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
@@ -62,6 +66,7 @@ const AM_TOP_NAV: NavLinkItem[] = [
 
 const GTO_TOP_NAV: NavLinkItem[] = [
   { to: ADMIN_SECTION_HOME, label: 'Bot', icon: 'telegram' },
+  { to: '/kpis', label: 'KPIs', icon: 'kpis' },
   { to: '/payments', label: 'Payments', icon: 'payments' },
   { to: '/cashout-records', label: 'Cashouts', icon: 'cashouts' },
   { to: '/bonuses', label: 'Bonuses', icon: 'bonuses' },
@@ -193,6 +198,14 @@ function NavIcon({ name }: { name: NavIconName }) {
       </StrokeIcon>
     )
   }
+  if (name === 'kpis') {
+    return (
+      <StrokeIcon>
+        <path d="m22 7-8.5 8.5-5-5L2 17" />
+        <path d="M16 7h6v6" />
+      </StrokeIcon>
+    )
+  }
   if (name === 'analytics') {
     return (
       <StrokeIcon>
@@ -272,14 +285,16 @@ function MoreMenuLinks({
   pathname,
   onSelect,
   itemClassName,
+  leading = [],
 }: {
   pathname: string
   onSelect?: () => void
   itemClassName?: string
+  leading?: NavLinkItem[]
 }) {
   return (
     <>
-      {ADMIN_MORE_NAV.map((n) => {
+      {[...leading, ...ADMIN_MORE_NAV].map((n) => {
         const active = isNavActive(pathname, n.to, n.exact)
         return (
           <Link
@@ -389,10 +404,12 @@ function MoreSheet({
   open,
   onClose,
   pathname,
+  leading,
 }: {
   open: boolean
   onClose: () => void
   pathname: string
+  leading: NavLinkItem[]
 }) {
   useEffect(() => {
     if (!open) return
@@ -423,6 +440,7 @@ function MoreSheet({
           pathname={pathname}
           onSelect={onClose}
           itemClassName="px-4"
+          leading={leading}
         />
       </div>
     </div>
@@ -486,7 +504,10 @@ export default function Layout({
   const isAdmin = role === 'admin'
   const topItems = topNavForRole(role)
   const [moreOpen, setMoreOpen] = useState(false)
-  const moreActive = isMoreNavActive(pathname)
+  const mobileMoreItems = isAdmin ? topItems.filter((n) => n.moreOnMobile) : []
+  const bottomItems = isAdmin ? topItems.filter((n) => !n.moreOnMobile) : topItems
+  const moreActive =
+    isMoreNavActive(pathname) || mobileMoreItems.some((n) => isNavActive(pathname, n.to, n.exact))
 
   useEffect(() => {
     setMoreOpen(false)
@@ -569,7 +590,7 @@ export default function Layout({
         aria-label="Main"
       >
         <div className="flex items-stretch gap-0.5 px-1 py-1">
-          {topItems.map((n) => {
+          {bottomItems.map((n) => {
             if (n.external) {
               return (
                 <a
@@ -613,7 +634,12 @@ export default function Layout({
           )}
         </div>
       </nav>
-      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} pathname={pathname} />
+      <MoreSheet
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        pathname={pathname}
+        leading={mobileMoreItems}
+      />
     </div>
   )
 }

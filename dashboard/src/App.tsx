@@ -17,6 +17,7 @@ import Audit from './pages/Audit'
 import Alerts from './pages/Alerts'
 import Balances from './pages/Balances'
 import MondayReview from './pages/MondayReview'
+import Kpis from './pages/Kpis'
 import Layout from './components/Layout'
 import { ConfirmProvider } from './components/ConfirmProvider'
 import {
@@ -105,6 +106,7 @@ export default function App() {
               <Route path="/alerts" element={<Alerts token={token} />} />
               <Route path="/balances" element={<Balances token={token} />} />
               <Route path="/monday-review" element={<MondayReview token={token} />} />
+              <Route path="/kpis" element={<Kpis token={token} role={role} />} />
               <Route
                 path="/analytics"
                 element={
