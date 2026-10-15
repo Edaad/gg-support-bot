@@ -19,13 +19,15 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     ConversationHandler,
-    MessageHandler,
-    filters,
+    TypeHandler,
 )
 
 from bot.handlers.flow_cancel import block_if_group_money_flow_active
 from bot.handlers.flow_staleness import (
+    answer_stale_callback,
+    flow_callback_message_ids,
     handle_stale_flow_callback,
+    has_active_earlyrb_flow,
     register_flow_callback_message,
     reset_flow_callback_messages,
 )
@@ -90,6 +92,19 @@ def _cleanup(context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in _CHAT_DATA_KEYS:
         context.chat_data.pop(key, None)
     reset_flow_callback_messages(context, flow="earlyrb")
+
+
+async def _strip_flow_buttons(context: ContextTypes.DEFAULT_TYPE, chat_id) -> None:
+    """Take the union/Claim buttons off this session's prompts so none stay tappable."""
+    if chat_id is None:
+        return
+    for message_id in flow_callback_message_ids(context, flow="earlyrb"):
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=chat_id, message_id=message_id, reply_markup=None
+            )
+        except Exception:
+            pass
 
 
 async def _replace_status(status_msg, chat, text: str) -> None:
@@ -643,11 +658,22 @@ async def earlyrb_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if stage.kind == "amount_changed":
-        context.chat_data["earlyrb_quote"] = stage.quote
+        # Staff may have recorded it by hand meanwhile: a fresh quote of $0 or
+        # below the minimum must end the flow, not offer another Claim.
         context.chat_data["earlyrb_requoted"] = True
         context.chat_data.pop("earlyrb_committing", None)
         await _replace_status(status_msg, chat, AMOUNT_CHANGED_COPY)
-        return await _prompt_claim(update, context, stage.quote)
+        quote_stage = await auto.classify_quote(club_id=club_id, quote=stage.quote)
+        return await _present_quote_stage(
+            update,
+            context,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+            fee=fee,
+            target=target,
+            quote_stage=quote_stage,
+        )
 
     await _replace_status(status_msg, chat, stage.player_message)
     _cleanup(context)
@@ -685,6 +711,9 @@ async def earlyrb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message:
             await update.message.reply_text(ADDING_IN_PROGRESS_COPY)
         return EARLYRB_CONFIRM
+    await _strip_flow_buttons(
+        context, context.chat_data.get("earlyrb_chat_id") or _chat_id(update)
+    )
     _cleanup(context)
     if update.message:
         await update.message.reply_text(CANCELLED_COPY)
@@ -693,6 +722,9 @@ async def earlyrb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def earlyrb_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
+    await _strip_flow_buttons(
+        context, context.chat_data.get("earlyrb_chat_id") or _chat_id(update)
+    )
     _cleanup(context)
     if chat is not None:
         try:
@@ -700,6 +732,52 @@ async def earlyrb_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
     return ConversationHandler.END
+
+
+def _chat_id(update: Update):
+    chat = update.effective_chat
+    return chat.id if chat is not None else None
+
+
+async def earlyrb_orphan_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """A union/Claim/Cancel tap the conversation didn't take.
+
+    After a deploy or restart the new worker has no session for the prompt the
+    old one sent, or the prompt outlived its session. Without this the tap gets
+    no answer at all. It can never add chips: the player has to run /earlyrb,
+    which re-quotes from Elevate.
+    """
+    query = update.callback_query
+    if query is None:
+        return
+    message_id = query.message.message_id if query.message is not None else None
+    if has_active_earlyrb_flow(context) and message_id in flow_callback_message_ids(
+        context, flow="earlyrb"
+    ):
+        # Live prompt tapped while the lookup or chip add is still running.
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        return
+    logger.info(
+        "earlyrb: orphan button %r chat_id=%s message_id=%s",
+        query.data,
+        _chat_id(update),
+        message_id,
+    )
+    await answer_stale_callback(update, context, flow_command="/earlyrb")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+def get_earlyrb_orphan_handler() -> CallbackQueryHandler:
+    """Register right after the /earlyrb conversation so it only sees what that skips."""
+    return CallbackQueryHandler(
+        earlyrb_orphan_button, pattern=r"^(ebclaim|ebcancel|ebunion:.*)$"
+    )
 
 
 _EARLYRB_CANCEL = CommandHandler("cancel", earlyrb_cancel)
@@ -731,9 +809,10 @@ def get_earlyrb_handler() -> ConversationHandler:
                 _EARLYRB_CANCEL,
             ],
             ConversationHandler.WAITING: [_EARLYRB_CANCEL],
-            ConversationHandler.TIMEOUT: [
-                MessageHandler(filters.ALL, earlyrb_timeout),
-            ],
+            # TypeHandler, not a MessageHandler: the update that started the
+            # wait may be a button tap, and the prompt still has to lose its
+            # buttons when the session times out.
+            ConversationHandler.TIMEOUT: [TypeHandler(Update, earlyrb_timeout)],
         },
         fallbacks=[_EARLYRB_CANCEL],
         conversation_timeout=TIMEOUT_SECONDS,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   addMondayNote,
   completeMondayTask,
@@ -232,6 +232,18 @@ export default function MondayReview({ token }: { token: string }) {
 
       {tab === 'board' && (
         <>
+          <Link
+            to={`/kpis?g=week&d=${shiftWeek(weekOf, -1)}`}
+            className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm transition hover:border-accent/60 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <span>
+              <span className="font-semibold text-ink">KPIs for the week of {weekLabel(shiftWeek(weekOf, -1), false)}</span>
+              <span className="ml-2 text-ink-muted">deposits, new players, response time, funnel, automation</span>
+            </span>
+            <span className="shrink-0 font-medium text-accent" aria-hidden="true">
+              Open →
+            </span>
+          </Link>
           <div className="mb-5 rounded-2xl border border-border bg-surface p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">

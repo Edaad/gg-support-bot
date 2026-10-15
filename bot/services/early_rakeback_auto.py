@@ -255,8 +255,11 @@ async def quote_feeback(
         return QuoteStage(
             "escalate", detail=f"quote failed ({result.error_code}): {result.detail}"
         )
+    return await classify_quote(club_id=club_id, quote=result.quote)
 
-    quote = result.quote
+
+async def classify_quote(*, club_id: int, quote: Any) -> QuoteStage:
+    """Decide whether a quote may be claimed; also used on a mid-claim re-quote."""
     if not quote.eligible:
         if quote.reason == elevate.REASON_NOTHING_REMAINING:
             return QuoteStage(

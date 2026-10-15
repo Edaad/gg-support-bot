@@ -171,7 +171,7 @@ UTC); day-based tools take `activity_date` / `audit_date`.
 | Cashouts | `list_cashout_records`, `get_cashout_record`, `list_cashout_money_sends` |
 | Bonuses / expenses | `list_bonus_records`, `list_bonus_types`, `list_expenses` |
 | Sends / balances | `list_outbound_sends`, `get_account_balances`, `list_blocking_sends` |
-| Analytics | `deposit_funnel_summary`, `list_group_chat_activity`, `list_tickets`, `get_ticket_messages`, `get_chat_transcript` |
+| Analytics | `get_kpis` (day/week/month/custom KPIs vs previous period, trend and club split; see `docs/KPIS.md`), `deposit_funnel_summary`, `list_group_chat_activity`, `list_tickets`, `get_ticket_messages`, `get_chat_transcript` |
 | Escalations | `list_escalation_events`, `get_escalation_episode` |
 | Audit | `list_reconcile_runs`, `get_reconcile_report`, `list_trade_record_uploads`, `list_early_rakeback_snapshots` |
 | Ops | `list_deposit_method_alerts`, `list_gto_zelle_cards`, `list_plaid_zelle`, `list_issue_reports`, `list_mcp_tool_calls` |
