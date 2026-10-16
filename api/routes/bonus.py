@@ -1,5 +1,6 @@
 """CRUD for bonus types and bonus records."""
 
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +17,7 @@ from api.gto_club import (
 from api.record_csv_export import (
     build_bonus_records_csv,
     csv_streaming_response,
+    et_range_to_utc_naive,
     parse_inclusive_date_range,
 )
 from api.schemas import (
@@ -43,6 +45,30 @@ router = APIRouter(
 
 def _to_read(data: dict) -> BonusRecordRead:
     return BonusRecordRead.model_validate(data)
+
+
+def _parse_et_day(raw: Optional[str]) -> Optional[date]:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid date: {raw!r}") from exc
+
+
+def _issued_bounds(
+    from_raw: Optional[str], to_raw: Optional[str]
+) -> tuple[Optional[datetime], Optional[datetime]]:
+    """Inclusive America/New_York calendar days as naive UTC bounds."""
+
+    from_day = _parse_et_day(from_raw)
+    to_day = _parse_et_day(to_raw)
+    if from_day and to_day and from_day > to_day:
+        raise HTTPException(400, "from must be on or before to")
+    issued_from = et_range_to_utc_naive(from_day, from_day)[0] if from_day else None
+    issued_to = et_range_to_utc_naive(to_day, to_day)[1] if to_day else None
+    return issued_from, issued_to
 
 
 def _load_bonus_and_assert_gto(record_id: int, role: str, db: Session) -> None:
@@ -105,12 +131,19 @@ def list_bonus_records(
     bonus_type_id: Optional[int] = Query(None),
     other: bool = Query(False),
     q: Optional[str] = Query(None),
+    from_date: Optional[str] = Query(
+        None, alias="from", description="YYYY-MM-DD (ET, inclusive)"
+    ),
+    to_date: Optional[str] = Query(
+        None, alias="to", description="YYYY-MM-DD (ET, inclusive)"
+    ),
     role: str = Depends(get_current_admin),
     db: Session = Depends(get_db_dependency),
 ):
     effective_club_id, empty = resolve_gto_list_club_id(role, club_id, db)
     if empty:
         return []
+    issued_from, issued_to = _issued_bounds(from_date, to_date)
     return [
         _to_read(row)
         for row in list_bonus_record_rows(
@@ -118,6 +151,8 @@ def list_bonus_records(
             bonus_type_id=bonus_type_id,
             other=other,
             q=q,
+            issued_from=issued_from,
+            issued_to=issued_to,
         )
     ]
 

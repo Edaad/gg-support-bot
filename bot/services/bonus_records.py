@@ -100,6 +100,8 @@ def list_bonus_records(
     bonus_type_id: Optional[int] = None,
     other: bool = False,
     q: Optional[str] = None,
+    issued_from: Optional[datetime] = None,
+    issued_to: Optional[datetime] = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     needle = _search_needle(q)
@@ -109,6 +111,10 @@ def list_bonus_records(
             .options(joinedload(BonusRecord.bonus_type), joinedload(BonusRecord.club))
             .order_by(BonusRecord.issued_at.desc())
         )
+        if issued_from is not None:
+            query = query.filter(BonusRecord.issued_at >= issued_from)
+        if issued_to is not None:
+            query = query.filter(BonusRecord.issued_at <= issued_to)
         if club_id is not None:
             query = query.filter(BonusRecord.club_id == int(club_id))
         if other:

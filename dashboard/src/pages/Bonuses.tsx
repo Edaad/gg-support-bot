@@ -21,14 +21,17 @@ import EasternInstant from '../components/EasternInstant'
 import {
   easternCalendarDateString,
   fromEasternDatetimeLocalValue,
+  latestMondayEasternDateString,
   toEasternDatetimeLocalValue,
 } from '../lib/easternTime'
 import { GTO_CLUB_NAME, type DashboardRole } from '../lib/rbac'
 
-function daysAgoEastern(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return easternCalendarDateString(d)
+function defaultFromDate() {
+  return latestMondayEasternDateString()
+}
+
+function defaultToDate() {
+  return easternCalendarDateString()
 }
 
 function recordMatchesSearch(r: BonusRecordT, needle: string) {
@@ -148,6 +151,8 @@ export default function Bonuses({
   const [q, setQ] = useState('')
   const [clubFilter, setClubFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [fromDate, setFromDate] = useState(defaultFromDate)
+  const [toDate, setToDate] = useState(defaultToDate)
   const reqId = useRef(0)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -159,8 +164,8 @@ export default function Bonuses({
   const [description, setDescription] = useState('')
   const [issuedAtLocal, setIssuedAtLocal] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
-  const [exportFrom, setExportFrom] = useState(() => daysAgoEastern(6))
-  const [exportTo, setExportTo] = useState(() => easternCalendarDateString())
+  const [exportFrom, setExportFrom] = useState(defaultFromDate)
+  const [exportTo, setExportTo] = useState(defaultToDate)
   const [exporting, setExporting] = useState(false)
   const [exportErr, setExportErr] = useState<string | null>(null)
   const [typesOpen, setTypesOpen] = useState(false)
@@ -174,6 +179,8 @@ export default function Bonuses({
       bonusTypeId: typeFilter && typeFilter !== 'other' ? Number(typeFilter) : undefined,
       other: typeFilter === 'other',
       q: q || undefined,
+      from: fromDate || undefined,
+      to: toDate || undefined,
     })
       .then((rows) => {
         if (id !== reqId.current) return
@@ -193,9 +200,13 @@ export default function Bonuses({
     return () => window.clearTimeout(t)
   }, [search])
 
+  const dateError =
+    fromDate && toDate && fromDate > toDate ? 'From must be on or before to.' : ''
+
   useEffect(() => {
+    if (dateError) return
     reload()
-  }, [token, clubFilter, typeFilter, q])
+  }, [token, clubFilter, typeFilter, q, fromDate, toDate, dateError])
 
   useEffect(() => {
     listClubs(token)
@@ -321,8 +332,8 @@ export default function Bonuses({
   }
 
   const openExport = () => {
-    setExportFrom(daysAgoEastern(6))
-    setExportTo(easternCalendarDateString())
+    setExportFrom(fromDate || defaultFromDate())
+    setExportTo(toDate || defaultToDate())
     setExportErr(null)
     setExportOpen(true)
   }
@@ -460,9 +471,37 @@ export default function Bonuses({
             <option value="other">Other</option>
           </select>
         </div>
+        <div>
+          <label className="label-field-xs" htmlFor="bonus-from">
+            From (ET)
+          </label>
+          <input
+            id="bonus-from"
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="input-field-sm"
+          />
+        </div>
+        <div>
+          <label className="label-field-xs" htmlFor="bonus-to">
+            To (ET)
+          </label>
+          <input
+            id="bonus-to"
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="input-field-sm"
+          />
+        </div>
         <ExportIconButton onClick={openExport} />
         </FilterExtras>
       </div>
+
+      {dateError && (
+        <p className="mb-4 text-sm text-danger-ink">{dateError}</p>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger-ink">
@@ -479,7 +518,9 @@ export default function Bonuses({
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : visible.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          {clubFilter || typeFilter || needle ? 'No matching bonuses.' : 'No bonus records yet.'}
+          {clubFilter || typeFilter || needle || fromDate || toDate
+            ? 'No matching bonuses.'
+            : 'No bonus records yet.'}
         </p>
       ) : (
         <>

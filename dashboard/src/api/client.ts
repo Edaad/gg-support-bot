@@ -297,13 +297,22 @@ export const deleteBonusType = (token: string, id: number) =>
   request<void>(`/bonus/types/${id}`, { method: 'DELETE' }, token)
 export const listBonusRecords = (
   token: string,
-  opts?: { clubId?: number; bonusTypeId?: number; other?: boolean; q?: string },
+  opts?: {
+    clubId?: number
+    bonusTypeId?: number
+    other?: boolean
+    q?: string
+    from?: string
+    to?: string
+  },
 ) => {
   const params = new URLSearchParams()
   if (opts?.clubId != null) params.set('club_id', String(opts.clubId))
   if (opts?.bonusTypeId != null) params.set('bonus_type_id', String(opts.bonusTypeId))
   if (opts?.other) params.set('other', 'true')
   if (opts?.q) params.set('q', opts.q)
+  if (opts?.from) params.set('from', opts.from)
+  if (opts?.to) params.set('to', opts.to)
   const qs = params.toString()
   return request<BonusRecordT[]>(`/bonus/records${qs ? `?${qs}` : ''}`, {}, token)
 }

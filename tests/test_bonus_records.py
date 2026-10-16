@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -310,6 +311,29 @@ class BonusRecordsApiTestCase(unittest.TestCase):
         self.assertEqual(kwargs["bonus_type_id"], 2)
         self.assertEqual(kwargs["q"], "Jacob")
         self.assertFalse(kwargs["other"])
+        self.assertIsNone(kwargs["issued_from"])
+        self.assertIsNone(kwargs["issued_to"])
+
+    def test_list_date_range(self) -> None:
+        from api.record_csv_export import et_range_to_utc_naive
+
+        with patch(
+            "api.routes.bonus.list_bonus_record_rows",
+            return_value=[],
+        ) as mock_list:
+            client = TestClient(_make_api_app())
+            resp = client.get("/api/bonus/records?from=2026-10-12&to=2026-10-16")
+        self.assertEqual(resp.status_code, 200)
+        start, _ = et_range_to_utc_naive(date(2026, 10, 12), date(2026, 10, 12))
+        _, end = et_range_to_utc_naive(date(2026, 10, 16), date(2026, 10, 16))
+        kwargs = mock_list.call_args.kwargs
+        self.assertEqual(kwargs["issued_from"], start)
+        self.assertEqual(kwargs["issued_to"], end)
+
+    def test_list_inverted_dates_400(self) -> None:
+        client = TestClient(_make_api_app())
+        resp = client.get("/api/bonus/records?from=2026-10-16&to=2026-10-12")
+        self.assertEqual(resp.status_code, 400)
 
     def test_list_other_type(self) -> None:
         with patch(
