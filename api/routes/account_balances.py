@@ -1,4 +1,4 @@
-"""Round Table Venmo and Cash App balance cards."""
+"""Round Table Venmo, Cash App, PayPal, and crypto balance cards."""
 
 from __future__ import annotations
 
@@ -23,6 +23,9 @@ router = APIRouter(prefix="/api/account-balances", tags=["account-balances"])
 class AccountBalanceCardRead(BaseModel):
     method: str
     tag: str
+    label: str
+    detail: str | None
+    custom_label: str | None
     balance_cents: int
     offset_cents: int
     received_week_cents: int
@@ -36,6 +39,8 @@ class AccountBalanceCardRead(BaseModel):
 class AccountBalanceListResponse(BaseModel):
     venmo: list[AccountBalanceCardRead]
     cashapp: list[AccountBalanceCardRead]
+    paypal: list[AccountBalanceCardRead]
+    crypto: list[AccountBalanceCardRead]
 
 
 class BlockingSendRead(BaseModel):
@@ -50,12 +55,16 @@ class AccountBalanceSettingsIn(BaseModel):
     balance_cents: int
     sending_ceiling_cents: int = Field(gt=0)
     inflow_max_cents: int = Field(gt=0)
+    label: str | None = None
 
 
 def _card_read(card: AccountBalanceCard) -> AccountBalanceCardRead:
     return AccountBalanceCardRead(
         method=card.method,
         tag=card.tag,
+        label=card.label,
+        detail=card.detail,
+        custom_label=card.custom_label,
         balance_cents=card.balance_cents,
         offset_cents=card.offset_cents,
         received_week_cents=card.received_week_cents,
@@ -74,6 +83,8 @@ def get_account_balances(_role: str = Depends(require_admin)):
     return AccountBalanceListResponse(
         venmo=[_card_read(card) for card in grouped["venmo"]],
         cashapp=[_card_read(card) for card in grouped["cashapp"]],
+        paypal=[_card_read(card) for card in grouped["paypal"]],
+        crypto=[_card_read(card) for card in grouped["crypto"]],
     )
 
 
@@ -120,6 +131,8 @@ def patch_account_balance_settings(
                 ),
                 sending_ceiling_cents=body.sending_ceiling_cents,
                 inflow_max_cents=body.inflow_max_cents,
+                label=body.label,
+                set_label="label" in body.model_fields_set,
             )
     except LookupError as e:
         raise HTTPException(404, str(e)) from e

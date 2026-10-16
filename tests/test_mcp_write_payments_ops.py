@@ -498,6 +498,8 @@ class AccountBalanceSettingsTests(_RoundTableCase):
         "outbound_sends",
         "venmo_payments",
         "cashapp_payments",
+        "paypal_payments",
+        "crypto_payments",
         "account_balance_settings",
     ]
 
@@ -544,7 +546,7 @@ class AccountBalanceSettingsTests(_RoundTableCase):
     def test_validation_errors(self) -> None:
         with self.assertRaises(ToolError) as cm:
             update_account_balance_settings("zelle", "x", offset=1)
-        self.assertIn("venmo or cashapp", str(cm.exception))
+        self.assertIn("paypal", str(cm.exception))
         with self.assertRaises(ToolError) as cm:
             update_account_balance_settings("venmo", "Godfather4444")
         self.assertIn("at least one", str(cm.exception))

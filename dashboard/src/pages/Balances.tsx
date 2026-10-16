@@ -14,6 +14,8 @@ import PaymentMethodIcon from '../components/PaymentMethodIcon'
 const SECTIONS = [
   { method: 'venmo' as const, label: 'Venmo' },
   { method: 'cashapp' as const, label: 'Cash App' },
+  { method: 'paypal' as const, label: 'PayPal' },
+  { method: 'crypto' as const, label: 'Crypto' },
 ]
 
 function fmtMoney(cents: number): string {
@@ -78,8 +80,11 @@ function BalanceCard({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <PaymentMethodIcon slug={card.method} className="h-4 w-4" />
-            <h2 className="truncate text-sm font-semibold text-ink">{card.tag}</h2>
+            <h2 className="truncate text-sm font-semibold text-ink">{card.label}</h2>
           </div>
+          {card.detail && (
+            <p className="mt-0.5 truncate text-xs text-ink-muted">{card.detail}</p>
+          )}
           {(card.send_power_maxed || card.inflow_maxed) && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {card.send_power_maxed && (
@@ -98,7 +103,7 @@ function BalanceCard({
         <button
           type="button"
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-control text-ink-muted transition hover:bg-control-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          aria-label={`Settings for ${card.tag}`}
+          aria-label={`Settings for ${card.label}`}
           onClick={(e: MouseEvent) => {
             e.stopPropagation()
             onGear(card)
@@ -159,6 +164,7 @@ export default function Balances({ token }: { token: string }) {
   const [balance, setBalance] = useState('')
   const [ceiling, setCeiling] = useState('')
   const [inflowMax, setInflowMax] = useState('')
+  const [labelText, setLabelText] = useState('')
 
   const [detailCard, setDetailCard] = useState<AccountBalanceCardT | null>(null)
   const [sends, setSends] = useState<BlockingSendT[]>([])
@@ -168,6 +174,7 @@ export default function Balances({ token }: { token: string }) {
   const balanceId = useId()
   const ceilingId = useId()
   const inflowId = useId()
+  const labelFieldId = useId()
 
   const reload = useCallback(() => {
     setError(null)
@@ -187,6 +194,7 @@ export default function Balances({ token }: { token: string }) {
     setBalance(centsToInput(card.balance_cents))
     setCeiling(centsToInput(card.sending_ceiling_cents))
     setInflowMax(centsToInput(card.inflow_max_cents))
+    setLabelText(card.custom_label ?? '')
     setFormError(null)
   }
 
@@ -221,6 +229,7 @@ export default function Balances({ token }: { token: string }) {
         balance_cents: balanceCents,
         sending_ceiling_cents: ceilingCents,
         inflow_max_cents: inflowCents,
+        label: labelText.trim(),
       })
       setSettingsCard(null)
       reload()
@@ -278,7 +287,7 @@ export default function Balances({ token }: { token: string }) {
       <Modal
         open={settingsCard != null}
         onClose={() => !saving && setSettingsCard(null)}
-        title={settingsCard ? settingsCard.tag : 'Settings'}
+        title={settingsCard ? settingsCard.label : 'Settings'}
       >
         <div className="space-y-4">
           {formError && (
@@ -286,6 +295,19 @@ export default function Balances({ token }: { token: string }) {
               {formError}
             </p>
           )}
+          <div>
+            <label className="label-field-xs" htmlFor={labelFieldId}>
+              Label
+            </label>
+            <input
+              id={labelFieldId}
+              type="text"
+              value={labelText}
+              onChange={(e) => setLabelText(e.target.value)}
+              placeholder="Default name"
+              className="input-field-sm w-full"
+            />
+          </div>
           <div>
             <label className="label-field-xs" htmlFor={balanceId}>
               Current balance
@@ -338,7 +360,7 @@ export default function Balances({ token }: { token: string }) {
       <Modal
         open={detailCard != null}
         onClose={() => setDetailCard(null)}
-        title={detailCard ? detailCard.tag : 'Sends'}
+        title={detailCard ? detailCard.label : 'Sends'}
         wide
       >
         {detailCard && (

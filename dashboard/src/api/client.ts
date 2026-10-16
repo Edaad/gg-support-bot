@@ -459,8 +459,11 @@ export const deleteOutboundSend = (token: string, id: number) =>
   request<void>(`/outbound-sends/${id}`, { method: 'DELETE' }, token)
 
 export type AccountBalanceCardT = {
-  method: 'venmo' | 'cashapp'
+  method: 'venmo' | 'cashapp' | 'paypal' | 'crypto'
   tag: string
+  label: string
+  detail: string | null
+  custom_label: string | null
   balance_cents: number
   offset_cents: number
   received_week_cents: number
@@ -474,6 +477,8 @@ export type AccountBalanceCardT = {
 export type AccountBalanceListT = {
   venmo: AccountBalanceCardT[]
   cashapp: AccountBalanceCardT[]
+  paypal: AccountBalanceCardT[]
+  crypto: AccountBalanceCardT[]
 }
 
 export type BlockingSendT = {
@@ -488,6 +493,7 @@ export type AccountBalanceSettingsIn = {
   balance_cents: number
   sending_ceiling_cents: number
   inflow_max_cents: number
+  label?: string
 }
 
 function accountBalancePath(method: string, tag: string): string {

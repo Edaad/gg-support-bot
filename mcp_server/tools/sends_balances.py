@@ -121,6 +121,9 @@ def _card_dict(card: AccountBalanceCard) -> dict[str, Any]:
     return {
         "method": card.method,
         "tag": card.tag,
+        "label": card.label,
+        "detail": card.detail,
+        "custom_label": card.custom_label,
         "balance_cents": card.balance_cents,
         "balance_usd": cents_to_usd(card.balance_cents),
         "offset_cents": card.offset_cents,
@@ -140,14 +143,17 @@ def _card_dict(card: AccountBalanceCard) -> dict[str, Any]:
 
 @translate_errors
 def get_account_balances() -> dict[str, Any]:
-    """Round Table Venmo and Cash App balance cards: running balance (offset +
-    received - sent), this ET week's inflow vs its cap, and remaining sending
-    power inside the rolling 168-hour window. All amounts are cents (``*_cents``)
-    with ``*_usd`` twins. Use list_blocking_sends for the sends eating the window."""
+    """Round Table Venmo, Cash App, PayPal, and crypto balance cards: running
+    balance (offset + received - sent), this ET week's inflow vs its cap, and
+    remaining sending power inside the rolling 168-hour window. ``label`` is the
+    header (a saved custom label, otherwise the handle, PayPal email, or crypto
+    chain name). ``detail`` is the crypto wallet address. All amounts are cents
+    (``*_cents``) with ``*_usd`` twins. Use list_blocking_sends for the sends
+    eating the window."""
     with read_session() as session:
         grouped = list_account_balances(session)
     items: list[dict[str, Any]] = []
-    for method in ("venmo", "cashapp"):
+    for method in BALANCE_METHODS:
         for card in grouped.get(method, []):
             items.append(_card_dict(card))
     return page(
@@ -170,11 +176,13 @@ def list_blocking_sends(
 ) -> dict[str, Any]:
     """Outbound sends still inside the rolling 168-hour sending window for one
     Round Table account (they reduce sending_remaining_cents on its balance card),
-    newest first with the time each one expires. `method` is venmo|cashapp; `tag`
-    is the account handle. Amounts are cents. `recipient` masked unless include_pii."""
+    newest first with the time each one expires. `method` is venmo|cashapp|paypal|crypto;
+    `tag` is the account handle, PayPal email, or crypto wallet. Amounts are cents.
+    `recipient` masked unless include_pii."""
     method_slug = (method or "").strip().lower()
     if method_slug not in BALANCE_METHODS:
-        raise bad_input("method must be venmo or cashapp")
+        allowed = ", ".join(BALANCE_METHODS)
+        raise bad_input(f"method must be one of: {allowed}")
     if not (tag or "").strip():
         raise bad_input("tag is required")
     with read_session() as session:
@@ -523,25 +531,36 @@ def update_account_balance_settings(
     offset: float | None = None,
     sending_ceiling: float | None = None,
     inflow_max: float | None = None,
+    label: str | None = None,
     confirm: bool = False,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Set the knobs behind one Round Table balance card (the dashboard
-    Balances card's settings form). `method` is venmo|cashapp, `tag` the account
-    handle. All three values are dollars (stored as cents): `offset` is added
-    to received - sent to give the running balance (any sign), `sending_ceiling`
-    (> 0) caps sends inside the rolling 168-hour window, `inflow_max` (> 0) is the
-    weekly deposit cap behind inflow_maxed. Only the values you pass change;
-    unset ones keep the current (or default) value. No notifications. Without
-    confirm=true returns a dry run with the current card."""
+    Balances card's settings form). `method` is venmo|cashapp|paypal|crypto, `tag`
+    the account handle, PayPal email, or crypto wallet. Dollar values are stored
+    as cents: `offset` is added to received - sent to give the running balance
+    (any sign), `sending_ceiling` (> 0) caps sends inside the rolling 168-hour
+    window, `inflow_max` (> 0) is the weekly deposit cap behind inflow_maxed.
+    `label` replaces the card header; an empty string clears it back to the
+    default name. Only the values you pass change; unset ones keep the current
+    (or default) value. No notifications. Without confirm=true returns a dry run
+    with the current card."""
     method_slug = (method or "").strip().lower()
     if method_slug not in BALANCE_METHODS:
-        raise bad_input("method must be venmo or cashapp")
+        allowed = ", ".join(BALANCE_METHODS)
+        raise bad_input(f"method must be one of: {allowed}")
     stored_tag = _balance_tag(method_slug, tag)
     if not stored_tag or stored_tag in {"@", "$"}:
         raise bad_input("tag is required")
-    if offset is None and sending_ceiling is None and inflow_max is None:
-        raise bad_input("provide at least one of offset, sending_ceiling, inflow_max")
+    if (
+        offset is None
+        and sending_ceiling is None
+        and inflow_max is None
+        and label is None
+    ):
+        raise bad_input(
+            "provide at least one of offset, sending_ceiling, inflow_max, label"
+        )
     offset_cents = _balance_cents(offset, "offset")
     ceiling_cents = _balance_cents(sending_ceiling, "sending_ceiling")
     inflow_cents = _balance_cents(inflow_max, "inflow_max")
@@ -563,7 +582,12 @@ def update_account_balance_settings(
         if inflow_cents is not None
         else before["inflow_max_cents"],
     }
-    proposed = {k: v for k, v in target.items() if v != before[k]}
+    if label is not None:
+        target["label"] = label
+    current = {**before, "label": before.get("custom_label")}
+    proposed = {
+        key: value for key, value in target.items() if value != current.get(key)
+    }
     notes = ["amounts are cents in current/proposed; the parameters are dollars"]
     if not confirm:
         return dry_run(
@@ -581,6 +605,8 @@ def update_account_balance_settings(
             offset_cents=target["offset_cents"],
             sending_ceiling_cents=target["sending_ceiling_cents"],
             inflow_max_cents=target["inflow_max_cents"],
+            label=label,
+            set_label=label is not None,
         )
         after = _card_dict(card)
     return write_result(

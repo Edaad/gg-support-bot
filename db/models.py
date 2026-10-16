@@ -3689,7 +3689,7 @@ class AccountBalanceSettings(Base):
             "method", "tag", name="uq_account_balance_settings_method_tag"
         ),
         CheckConstraint(
-            "method IN ('venmo', 'cashapp')",
+            "method IN ('venmo', 'cashapp', 'paypal', 'crypto')",
             name="ck_account_balance_settings_method",
         ),
         CheckConstraint(
@@ -3705,6 +3705,7 @@ class AccountBalanceSettings(Base):
     id = Column(Integer, primary_key=True)
     method = Column(String(16), nullable=False)
     tag = Column(String(64), nullable=False)
+    label = Column(String(100), nullable=True)
     offset_cents = Column(Integer, nullable=False)
     sending_ceiling_cents = Column(Integer, nullable=False)
     inflow_max_cents = Column(Integer, nullable=False)

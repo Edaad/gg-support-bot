@@ -29,7 +29,9 @@ from db.models import (
     ClubPaymentMethod,
     ClubPaymentTier,
     ClubPaymentTierVariant,
+    CryptoPayment,
     OutboundSend,
+    PayPalPayment,
     VenmoPayment,
 )
 
@@ -48,6 +50,8 @@ class AccountBalanceServiceTestCase(unittest.TestCase):
             VenmoPayment.__table__,
             CashAppPayment.__table__,
             OutboundSend.__table__,
+            PayPalPayment.__table__,
+            CryptoPayment.__table__,
             Base.metadata.tables["account_balance_settings"],
         ]
         Base.metadata.create_all(engine, tables=tables)
@@ -287,6 +291,169 @@ class AccountBalanceServiceTestCase(unittest.TestCase):
         self.assertEqual(card.balance_cents, 100_000)
         self.assertEqual(card.offset_cents, -160_000)
 
+    def _paypal(self, email: str, amount_cents: int, **kwargs) -> None:
+        self.session.add(
+            PayPalPayment(
+                method_owner=kwargs.get("method_owner", "round-table"),
+                payer_name="Payer",
+                amount_cents=amount_cents,
+                paypal_email=email,
+                paid_at=kwargs.get("paid_at"),
+                created_at=kwargs.get("created_at", NOW),
+                is_test=kwargs.get("is_test", False),
+            )
+        )
+
+    def _crypto(
+        self,
+        address: str,
+        chain: str,
+        amount_cents: int,
+        *,
+        created_at: datetime = NOW,
+        **kwargs,
+    ) -> None:
+        self.session.add(
+            CryptoPayment(
+                method_owner=kwargs.get("method_owner", "round-table"),
+                amount_cents=amount_cents,
+                token_symbol="USDC",
+                chain=chain,
+                from_address="0xsender",
+                to_address=address,
+                transaction_hash=kwargs["transaction_hash"],
+                alert_scope="rt",
+                paid_at=kwargs.get("paid_at"),
+                created_at=created_at,
+                is_test=kwargs.get("is_test", False),
+            )
+        )
+
+    def test_paypal_card_is_only_the_aiden_email(self):
+        self._paypal("Aiden@ConcordConsulting.com", 200_000)
+        self._paypal("payments@clubgto.com", 900_000)
+        self._paypal("aiden@concordconsulting.com", 50_000, is_test=True)
+        self._paypal("aiden@concordconsulting.com", 10_000, method_owner="vaughn")
+        self.session.commit()
+
+        cards = list_account_balances(self.session, now=NOW)
+        self.assertEqual(len(cards["paypal"]), 1)
+        card = cards["paypal"][0]
+        self.assertEqual(card.tag, "aiden@concordconsulting.com")
+        self.assertEqual(card.label, "aiden@concordconsulting.com")
+        self.assertIsNone(card.detail)
+        self.assertIsNone(card.custom_label)
+        self.assertEqual(card.balance_cents, 200_000)
+        self.assertEqual(card.sending_ceiling_cents, 500_000)
+        self.assertEqual(card.inflow_max_cents, 500_000)
+        self.assertEqual(card.sending_remaining_cents, 500_000)
+
+    def test_crypto_collapses_chains_and_numbers_solana_by_first_deposit(self):
+        evm = "0xc50b01cAa68EcB657807b198E1C3360fAC3CBA96"
+        first = "EHYyR77wLRdTqP4vSdjbFAaeVLA9udjBtTBVDNx94bPe"
+        second = "BZYb4e4x2pgmz2U9YoyCzWXzNgqoGZ4E9PZksHEMktqH"
+        self._crypto(
+            evm,
+            "base",
+            100,
+            transaction_hash="base",
+            created_at=NOW - timedelta(days=3),
+        )
+        self._crypto(
+            evm.lower(),
+            "ethereum",
+            200,
+            transaction_hash="eth",
+            created_at=NOW - timedelta(days=2),
+        )
+        self._crypto(
+            evm,
+            "bsc",
+            300,
+            transaction_hash="bsc",
+            created_at=NOW - timedelta(days=1),
+        )
+        self._crypto(
+            second,
+            "solana",
+            400,
+            transaction_hash="sol-late",
+            created_at=NOW - timedelta(days=1),
+        )
+        self._crypto(
+            first,
+            "solana",
+            500,
+            transaction_hash="sol-early",
+            created_at=NOW - timedelta(days=4),
+        )
+        self._crypto(first, "solana", 1, transaction_hash="test", is_test=True)
+        self._send(
+            "crypto",
+            evm,
+            50,
+            source_external_id="evm-send",
+        )
+        self.session.commit()
+
+        cards = {
+            card.tag: card
+            for card in list_account_balances(self.session, now=NOW)["crypto"]
+        }
+        self.assertEqual(set(cards), {evm.lower(), first, second})
+        shared = cards[evm.lower()]
+        self.assertEqual(shared.label, "Ethereum, BSC, Base")
+        self.assertEqual(shared.detail, evm)
+        self.assertEqual(shared.balance_cents, 100 + 200 + 300 - 50)
+        self.assertEqual(shared.sending_ceiling_cents, 500_000)
+        self.assertEqual(cards[first].label, "Solana #1")
+        self.assertEqual(cards[second].label, "Solana #2")
+        self.assertEqual(cards[first].detail, first)
+
+    def test_variant_name_and_custom_label(self):
+        address = "TTswLWyB8WRb9ZPHiZ1zXsmAjeh3ux4Som"
+        self._add_variant(self.rt, "crypto", "deposit", address)
+        variant = (
+            self.session.query(ClubPaymentTierVariant).filter_by(label=address).one()
+        )
+        variant.tag = address
+        variant.label = "Tron treasury"
+        self._crypto(address, "tron", 80_000, transaction_hash="tron")
+        self.session.commit()
+
+        card = list_account_balances(self.session, now=NOW)["crypto"][0]
+        self.assertEqual(card.label, "Tron treasury")
+        self.assertIsNone(card.custom_label)
+
+        renamed = update_account_balance_settings(
+            self.session,
+            "crypto",
+            address,
+            offset_cents=0,
+            sending_ceiling_cents=500_000,
+            inflow_max_cents=500_000,
+            label="Hot wallet",
+            set_label=True,
+            now=NOW,
+        )
+        self.assertEqual(renamed.label, "Hot wallet")
+        self.assertEqual(renamed.custom_label, "Hot wallet")
+        self.assertEqual(renamed.detail, address)
+
+        cleared = update_account_balance_settings(
+            self.session,
+            "crypto",
+            address,
+            offset_cents=0,
+            sending_ceiling_cents=500_000,
+            inflow_max_cents=500_000,
+            label="  ",
+            set_label=True,
+            now=NOW,
+        )
+        self.assertEqual(cleared.label, "Tron treasury")
+        self.assertIsNone(cleared.custom_label)
+
 
 class AccountBalanceApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -312,6 +479,8 @@ class AccountBalanceApiTestCase(unittest.TestCase):
                 VenmoPayment.__table__,
                 CashAppPayment.__table__,
                 OutboundSend.__table__,
+                PayPalPayment.__table__,
+                CryptoPayment.__table__,
                 Base.metadata.tables["account_balance_settings"],
             ],
         )
