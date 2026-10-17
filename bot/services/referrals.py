@@ -66,7 +66,7 @@ class ReferralBindMessages(list):
         self.just_credited = just_credited
 
 
-DEPOSIT_OBLIGATION_CENTS = 10_000
+DEPOSIT_OBLIGATION_CENTS = 9_995  # $99.95
 
 WAITING_HEADER = "Still waiting on a $100 deposit"
 EARNED_HEADER = "$30 bonus earned"

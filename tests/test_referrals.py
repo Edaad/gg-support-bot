@@ -691,7 +691,7 @@ class DepositNotifyActionTest(unittest.TestCase):
                 telegram_sent=False,
                 slack_sent=False,
                 slack_skipped=False,
-                total_after=9999,
+                total_after=9_994,
                 total_before=0,
                 already_over_counts=False,
             ),
@@ -745,7 +745,7 @@ class DepositNotifyActionTest(unittest.TestCase):
             referred_gg_player_id="8190-5287",
         )
         self.assertTrue(ref.attribution_should_suppress(row, 10_000))
-        self.assertFalse(ref.attribution_should_suppress(row, 9999))
+        self.assertFalse(ref.attribution_should_suppress(row, 9_994))
         told = SimpleNamespace(**{**row.__dict__, "deposit_telegram_sent_at": object()})
         self.assertFalse(ref.attribution_should_suppress(told, 10_000))
 
