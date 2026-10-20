@@ -164,29 +164,14 @@ class ZapierNameTestCase(unittest.TestCase):
 
 
 class StaffCashoutRecordServiceTestCase(unittest.TestCase):
-    def test_round_up_cashout_amount(self) -> None:
-        from bot.services.staff_cashout_records import (
-            ROUND_UP_EXPENSE_TYPE,
-            round_up_cashout_amount,
-            round_up_expense_description,
-        )
+    def test_floor_cashout_amount(self) -> None:
+        from bot.services.cashout_amount import floor_cashout_amount
 
-        rounded, expense = round_up_cashout_amount(Decimal("372.34"))
-        self.assertEqual(rounded, Decimal("373"))
-        self.assertEqual(expense, Decimal("0.66"))
-        self.assertEqual(ROUND_UP_EXPENSE_TYPE, "Cashout round-up")
-        self.assertEqual(
-            round_up_expense_description(9, Decimal("372.34"), rounded, "RT / 1-2 / X"),
-            "Cashout #9 · 372.34 rounded to 373 · RT / 1-2 / X",
-        )
-
-        whole, no_expense = round_up_cashout_amount(Decimal("372.00"))
-        self.assertEqual(whole, Decimal("372.00"))
-        self.assertIsNone(no_expense)
-
-        tiny, tiny_expense = round_up_cashout_amount(Decimal("372.01"))
-        self.assertEqual(tiny, Decimal("373"))
-        self.assertEqual(tiny_expense, Decimal("0.99"))
+        self.assertEqual(floor_cashout_amount(Decimal("50.5")), Decimal("50"))
+        self.assertEqual(floor_cashout_amount(Decimal("372.99")), Decimal("372"))
+        self.assertEqual(floor_cashout_amount(Decimal("372.00")), Decimal("372"))
+        self.assertEqual(floor_cashout_amount(Decimal("0.75")), Decimal("0"))
+        self.assertEqual(floor_cashout_amount(372.34), Decimal("372"))
 
     def test_clean_cashout_note(self) -> None:
         from bot.services.staff_cashout_records import clean_cashout_note
@@ -272,10 +257,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             ]
             self.assertEqual(expenses, [])
 
-    def test_create_from_job_rounds_up_and_records_expense(self) -> None:
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
+    def test_create_from_job_rounds_down_without_expense(self) -> None:
         from db.models import Expense, StaffCashoutRecord
 
         session = MagicMock()
@@ -310,31 +292,18 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
 
             rid, stored = create_staff_cashout_record_from_job(job)
 
-        self.assertEqual((rid, stored), (7, Decimal("373")))
+        self.assertEqual((rid, stored), (7, Decimal("372")))
         record = session.add.call_args_list[0][0][0]
         self.assertIsInstance(record, StaffCashoutRecord)
-        self.assertEqual(record.amount, Decimal("373"))
+        self.assertEqual(record.amount, Decimal("372"))
         expenses = [
             call[0][0]
             for call in session.add.call_args_list
             if isinstance(call[0][0], Expense)
         ]
-        self.assertEqual(len(expenses), 1)
-        expense = expenses[0]
-        self.assertEqual(expense.amount, Decimal("0.66"))
-        self.assertEqual(expense.expense_type, "Cashout round-up")
-        self.assertEqual(expense.club_id, 2)
-        self.assertFalse(expense.pending)
-        self.assertEqual(
-            expense.description,
-            "Cashout #7 · 372.34 rounded to 373 · RT / 1-2 / X",
-        )
-        self.assertEqual(
-            expense.expense_date,
-            datetime.now(ZoneInfo("America/New_York")).date(),
-        )
+        self.assertEqual(expenses, [])
 
-    def test_manual_create_rounds_up_and_records_expense(self) -> None:
+    def test_manual_create_rounds_down_without_expense(self) -> None:
         from db.models import Club, Expense, StaffCashoutPayment, StaffCashoutRecord
 
         session = MagicMock()
@@ -364,7 +333,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             ),
             patch(
                 "bot.services.staff_cashout_records._record_to_dict",
-                return_value={"id": 11, "amount": Decimal("373")},
+                return_value={"id": 11, "amount": Decimal("372")},
             ),
             patch("bot.services.staff_cashout_pushover.notify_cashout_pushover_sync"),
         ):
@@ -392,7 +361,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             for call in session.add.call_args_list
             if isinstance(call[0][0], StaffCashoutRecord)
         )
-        self.assertEqual(record.amount, Decimal("373"))
+        self.assertEqual(record.amount, Decimal("372"))
         payment = next(
             call[0][0]
             for call in session.add.call_args_list
@@ -404,13 +373,20 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             for call in session.add.call_args_list
             if isinstance(call[0][0], Expense)
         ]
-        self.assertEqual(len(expenses), 1)
-        self.assertEqual(expenses[0].amount, Decimal("0.66"))
-        self.assertFalse(expenses[0].pending)
-        self.assertEqual(
-            expenses[0].description,
-            "Cashout #11 · 372.34 rounded to 373 · RT / 1-2 / X",
+        self.assertEqual(expenses, [])
+
+    def test_manual_create_rejects_amount_under_a_dollar(self) -> None:
+        from bot.services.staff_cashout_records import (
+            create_staff_cashout_record_manual,
         )
+
+        with self.assertRaisesRegex(ValueError, "at least"):
+            create_staff_cashout_record_manual(
+                club_id=2,
+                group_title="RT / 1-2 / X",
+                amount=Decimal("0.50"),
+                payments=[{"method_display_name": "Venmo"}],
+            )
 
     def test_manual_create_writes_payments_before_notify(self) -> None:
         from db.models import Club, StaffCashoutPayment, StaffCashoutRecord

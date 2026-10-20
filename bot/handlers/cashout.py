@@ -38,6 +38,7 @@ from bot.services.club import (
     get_group_title_for_chat,
     update_group_name,
 )
+from bot.services.cashout_amount import floor_cashout_amount
 from bot.services.cashout_handle_validation import (
     supported_cashout_slug,
     validate_cashout_handle,
@@ -289,7 +290,8 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
 
     raw = message_text.strip().replace("$", "").replace(",", "")
     try:
-        amount = Decimal(raw)
+        # Whole dollars only: 50.50 claims/records 50; the cents stay in the account.
+        amount = floor_cashout_amount(Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
@@ -357,7 +359,8 @@ async def cashout_simple_amount_received(
 
     raw = message_text.strip().replace("$", "").replace(",", "")
     try:
-        amount = Decimal(raw)
+        # Whole dollars only: 50.50 claims/records 50; the cents stay in the account.
+        amount = floor_cashout_amount(Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
@@ -548,7 +551,8 @@ async def cashout_auto_amount_received(update, context):
 
     raw = message_text.strip().replace("$", "").replace(",", "")
     try:
-        amount = Decimal(raw)
+        # Whole dollars only: 50.50 claims/records 50; the cents stay in the account.
+        amount = floor_cashout_amount(Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):

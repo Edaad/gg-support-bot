@@ -75,8 +75,9 @@ mistake.
    sub-options). Catalogue methods need `payout_details`; a custom method needs
    `method_display_name` instead.
 3. Dry run `create_cashout_record(club, group_title, amount, payments=[{...}],
-   note=...)`. Amount is dollars and is rounded up to the next dollar with a
-   round-up expense, as on the dashboard. Show the operator the destinations.
+   note=...)`. Amount is dollars and is rounded down to a whole dollar (the
+   cents stay in the player's account), as on the dashboard. Show the operator
+   the destinations.
 4. On yes, `confirm=true`. Staff get the "New cashout" Pushover.
 5. Fix destinations later with `add_/update_/remove_cashout_destination`.
 

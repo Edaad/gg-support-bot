@@ -23,6 +23,7 @@ from bot.services.club import (
     get_sub_option_by_id,
     get_sub_options,
 )
+from bot.services.cashout_amount import floor_cashout_amount
 from bot.services.cashout_handle_validation import venmo_payout_as_link
 from bot.services.method_resolution import resolve_method_display
 from bot.services.player_details import (
@@ -377,7 +378,7 @@ async def amount_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     raw = (update.message.text or "").strip().replace("$", "").replace(",", "")
     try:
-        amount = Decimal(raw)
+        amount = floor_cashout_amount(Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
