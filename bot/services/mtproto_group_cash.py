@@ -12,7 +12,6 @@ from telethon import events
 
 from club_gc_settings import ClubGcConfig, get_club_gc_config_by_link_club_id
 from bot.services import automated_staff_messages as asm
-from bot.services.cashout_amount import floor_cashout_amount
 from bot.services.club import get_club_for_chat
 from bot.services.mtproto_group_add import _format_money, _parse_money_token
 from bot.services.mtproto_group_create import (
@@ -81,15 +80,10 @@ async def _notify_invoker_cash_failure(
 
 
 def parse_cash_command(text: str) -> Decimal | None:
-    """``/cash 50.50`` -> 50: cents are floored off and stay in the player's account."""
     m = _CASH_CMD_RE.match((text or "").strip())
     if not m:
         return None
-    amount = _parse_money_token(m.group(1))
-    if amount is None:
-        return None
-    amount = floor_cashout_amount(amount)
-    return amount if amount > 0 else None
+    return _parse_money_token(m.group(1))
 
 
 def format_cash_owed(amount: Decimal) -> str:

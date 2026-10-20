@@ -525,10 +525,9 @@ Create a staff cashout record (what a player is owed) as the dashboard
 "New cashout" form does. `club` is an id, key (round_table|creator_club|
 clubgto) or slug; `group_title` is the player's group title ("GTO / 8190-5287
 / name", the gg_player_id is parsed from it); `amount` is dollars and is
-rounded DOWN to a whole dollar (the cents stay in the player's account; no
-expense is written). `payments` is a non-empty list of payout destinations, each
-{payment_method_id?, payment_sub_option_id?, method_display_name?,
-payout_details?, amount?}: a catalog method (payment_method_id from
+recorded as given, cents included. `payments` is a non-empty list of payout
+destinations, each {payment_method_id?, payment_sub_option_id?,
+method_display_name?, payout_details?, amount?}: a catalog method (payment_method_id from
 list_payment_methods, direction=cashout) needs payout_details; a custom method
 needs method_display_name. Like the dashboard, the record is not linked to a
 Telegram chat (no owed pin / player notify). Creating fires the "New cashout"

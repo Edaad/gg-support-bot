@@ -83,6 +83,17 @@ CASHOUT_AMOUNT, CASHOUT_CHOOSE, CASHOUT_SUB, CASHOUT_SIMPLE_AMOUNT = range(4)
 ) = range(4, 10)
 
 
+def _player_cashout_amount(context, sender_id, amount):
+    """Players get whole dollars (50.50 claims/records 50; the cents stay in the
+    account). Staff typing the amount keep the cents; a failed staff lookup floors."""
+    try:
+        if _auto_sender_is_helper(context, sender_id):
+            return amount
+    except Exception:
+        logger.warning("cashout: staff lookup failed sender_id=%s", sender_id)
+    return floor_cashout_amount(amount)
+
+
 def _cashout_amount_prompt_kwargs(context):
     kwargs = {}
     strip = popup_keyboard_svc.pop_strip_reply_markup(context)
@@ -290,8 +301,7 @@ async def cashout_amount_received(update: Update, context: ContextTypes.DEFAULT_
 
     raw = message_text.strip().replace("$", "").replace(",", "")
     try:
-        # Whole dollars only: 50.50 claims/records 50; the cents stay in the account.
-        amount = floor_cashout_amount(Decimal(raw))
+        amount = _player_cashout_amount(context, sender_id, Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
@@ -359,8 +369,7 @@ async def cashout_simple_amount_received(
 
     raw = message_text.strip().replace("$", "").replace(",", "")
     try:
-        # Whole dollars only: 50.50 claims/records 50; the cents stay in the account.
-        amount = floor_cashout_amount(Decimal(raw))
+        amount = _player_cashout_amount(context, sender_id, Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):
@@ -551,8 +560,7 @@ async def cashout_auto_amount_received(update, context):
 
     raw = message_text.strip().replace("$", "").replace(",", "")
     try:
-        # Whole dollars only: 50.50 claims/records 50; the cents stay in the account.
-        amount = floor_cashout_amount(Decimal(raw))
+        amount = _player_cashout_amount(context, sender_id, Decimal(raw))
         if amount <= 0:
             raise InvalidOperation()
     except (InvalidOperation, Exception):

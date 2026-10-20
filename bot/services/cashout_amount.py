@@ -1,4 +1,4 @@
-"""Cashout amounts are whole dollars: cents are floored and stay in the player's account."""
+"""Player cashout amounts are whole dollars: cents are floored and stay in the account."""
 
 from __future__ import annotations
 

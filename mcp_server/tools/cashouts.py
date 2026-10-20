@@ -334,16 +334,14 @@ def create_cashout_record(
     "New cashout" form does. `club` is an id, key (round_table|creator_club|
     clubgto) or slug; `group_title` is the player's group title ("GTO / 8190-5287
     / name", the gg_player_id is parsed from it); `amount` is dollars and is
-    rounded DOWN to a whole dollar (the cents stay in the player's account; no
-    expense is written). `payments` is a non-empty list of payout destinations, each
-    {payment_method_id?, payment_sub_option_id?, method_display_name?,
-    payout_details?, amount?}: a catalog method (payment_method_id from
+    recorded as given, cents included. `payments` is a non-empty list of payout
+    destinations, each {payment_method_id?, payment_sub_option_id?,
+    method_display_name?, payout_details?, amount?}: a catalog method (payment_method_id from
     list_payment_methods, direction=cashout) needs payout_details; a custom method
     needs method_display_name. Like the dashboard, the record is not linked to a
     Telegram chat (no owed pin / player notify). Creating fires the "New cashout"
     Pushover alert and the record joins the Slack reminder cycle while active.
     Without confirm=true returns a dry run with the validated destinations."""
-    from bot.services.cashout_amount import floor_cashout_amount
     from bot.services.staff_cashout_records import (
         clean_cashout_note,
         create_staff_cashout_record_manual,
@@ -353,10 +351,7 @@ def create_cashout_record(
     title = (group_title or "").strip()
     if not title:
         raise bad_input("group_title is required")
-    original = _positive_amount(amount)
-    rounded = floor_cashout_amount(original)
-    if rounded <= 0:
-        raise bad_input("amount must be at least 1 dollar")
+    amount_value = _positive_amount(amount)
     rows = _parse_payments(payments)
     clean_note = clean_cashout_note(note)
     actor = actor_from_context(ctx)
@@ -372,31 +367,25 @@ def create_cashout_record(
         "club_name": club_name,
         "group_title": title,
         "gg_player_id": parsed[1] if parsed else None,
-        "amount": rounded,
-        "requested_amount": original,
+        "amount": amount_value,
         "note": clean_note,
         "trigger": "dashboard",
         "tracks_money_sent": True,
         "payments": validated,
     }
     notes = [_DOLLARS, _DESTINATION_RULES, _CREATE_NOTIFY_NOTE]
-    if rounded != original:
-        notes.append(
-            f"amount rounded down from {original} to {rounded}; the cents stay"
-            " in the player's account"
-        )
     if not confirm:
         return dry_run(
             actor=actor,
             current=None,
             proposed=proposed,
-            message=f"dry run: would create a {rounded} cashout record for {title}",
+            message=f"dry run: would create a {amount_value} cashout record for {title}",
             notes=notes,
         )
     data = create_staff_cashout_record_manual(
         club_id=club_id,
         group_title=title,
-        amount=original,
+        amount=amount_value,
         payments=rows,
         note=clean_note,
     )
@@ -407,7 +396,7 @@ def create_cashout_record(
         before=None,
         after=after,
         message=(
-            f"created cashout record {after['id']} for {title}: {rounded}"
+            f"created cashout record {after['id']} for {title}: {amount_value}"
             f" via {len(validated)} destination(s)"
         ),
         notes=notes,

@@ -199,10 +199,8 @@ class CreateCashoutRecordTests(_CashoutCase):
         self.assertEqual(proposed["club_name"], "ClubGTO")
         self.assertEqual(proposed["group_title"], "RT / 2427-3267 / Samin")
         self.assertEqual(proposed["gg_player_id"], "2427-3267")
-        self.assertEqual(proposed["amount"], 372.0)
-        self.assertEqual(proposed["requested_amount"], 372.34)
+        self.assertEqual(proposed["amount"], 372.34)
         self.assertNotIn("round_up_expense", proposed)
-        self.assertTrue(any("rounded down" in n for n in out["notes"]))
         self.assertEqual(proposed["note"], "first cashout")
         self.assertEqual(proposed["trigger"], "dashboard")
         self.assertEqual(len(proposed["payments"]), 1)
@@ -215,9 +213,7 @@ class CreateCashoutRecordTests(_CashoutCase):
         self.assertEqual(len(self._records()), 1)
         self.pushover.assert_not_called()
 
-    def test_confirm_creates_record_destinations_rounds_down_and_notifies(
-        self,
-    ) -> None:
+    def test_confirm_creates_record_destinations_and_notifies(self) -> None:
         out = create_cashout_record(
             "1",
             "RT / 2427-3267 / Samin",
@@ -238,7 +234,7 @@ class CreateCashoutRecordTests(_CashoutCase):
         after = out["after"]
         new_id = after["id"]
         self.assertNotEqual(new_id, 5)
-        self.assertEqual(after["amount"], 372.0)
+        self.assertEqual(after["amount"], 372.34)
         self.assertEqual(after["status"], "active")
         self.assertEqual(after["club_name"], "ClubGTO")
         self.assertEqual(after["gg_player_id"], "2427-3267")
@@ -251,7 +247,7 @@ class CreateCashoutRecordTests(_CashoutCase):
         self.assertEqual(self.pushover.call_args.args[0], new_id)
 
         row = self._record(new_id)
-        self.assertEqual(row.amount, Decimal("372"))
+        self.assertEqual(row.amount, Decimal("372.34"))
         self.assertEqual(row.trigger, "dashboard")
         self.assertIsNone(row.chat_id)
         payments = self._payments(new_id)
@@ -272,16 +268,8 @@ class CreateCashoutRecordTests(_CashoutCase):
             confirm=True,
         )
         self.assertEqual(out["after"]["amount"], 200.0)
-        self.assertFalse(any("rounded down" in n for n in out["notes"]))
         with self.factory() as session:
             self.assertEqual(session.query(Expense).count(), 0)
-
-    def test_amount_under_a_dollar_is_refused(self) -> None:
-        with self.assertRaises(ToolError) as cm:
-            create_cashout_record(
-                "clubgto", "GTO / 1-2 / X", 0.5, [{"method_display_name": "Chips"}]
-            )
-        self.assertIn("at least 1 dollar", str(cm.exception))
 
     def test_validation_errors(self) -> None:
         dest = [{"method_display_name": "Venmo", "payout_details": "@x"}]

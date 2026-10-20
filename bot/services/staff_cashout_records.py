@@ -13,7 +13,6 @@ from bot.services.club import (
     get_method_by_id,
     get_sub_option_by_id,
 )
-from bot.services.cashout_amount import floor_cashout_amount
 from bot.services.cashout_handle_validation import venmo_payout_as_link
 from bot.services.player_details import parse_tracking_title
 from club_gc_settings import get_club_gc_config_by_link_club_id
@@ -304,8 +303,8 @@ def create_staff_cashout_record_from_job(
 ) -> Optional[tuple[int, Decimal]]:
     """Create order + first destination. New rows track money sent (start at $0).
 
-    Returns the record id and the amount stored on that row. Cents are floored
-    off (they stay in the player's account). An existing row is returned unchanged.
+    Returns the record id and the amount stored on that row (the job amount as
+    entered, cents included). An existing row is returned unchanged.
     """
     job_id = job.get("id")
     if job_id is None:
@@ -326,7 +325,7 @@ def create_staff_cashout_record_from_job(
             return int(existing.id), _as_decimal(existing.amount)
 
         group_title = job.get("group_title") or ""
-        amount = floor_cashout_amount(_as_decimal(job.get("amount")))
+        amount = _as_decimal(job.get("amount"))
 
         record = StaffCashoutRecord(
             cashier_job_id=int(job_id),
@@ -486,9 +485,9 @@ def create_staff_cashout_record_manual(
     title = (group_title or "").strip()
     if not title:
         raise ValueError("Name is required")
-    amount = floor_cashout_amount(_as_decimal(amount))
+    amount = _as_decimal(amount)
     if amount <= 0:
-        raise ValueError("Amount must be at least $1")
+        raise ValueError("Amount must be greater than zero")
     payment_rows = list(payments or [])
     if not payment_rows:
         raise ValueError("At least one payment destination is required")

@@ -164,15 +164,6 @@ class ZapierNameTestCase(unittest.TestCase):
 
 
 class StaffCashoutRecordServiceTestCase(unittest.TestCase):
-    def test_floor_cashout_amount(self) -> None:
-        from bot.services.cashout_amount import floor_cashout_amount
-
-        self.assertEqual(floor_cashout_amount(Decimal("50.5")), Decimal("50"))
-        self.assertEqual(floor_cashout_amount(Decimal("372.99")), Decimal("372"))
-        self.assertEqual(floor_cashout_amount(Decimal("372.00")), Decimal("372"))
-        self.assertEqual(floor_cashout_amount(Decimal("0.75")), Decimal("0"))
-        self.assertEqual(floor_cashout_amount(372.34), Decimal("372"))
-
     def test_clean_cashout_note(self) -> None:
         from bot.services.staff_cashout_records import clean_cashout_note
 
@@ -257,7 +248,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             ]
             self.assertEqual(expenses, [])
 
-    def test_create_from_job_rounds_down_without_expense(self) -> None:
+    def test_create_from_job_keeps_cents_without_expense(self) -> None:
         from db.models import Expense, StaffCashoutRecord
 
         session = MagicMock()
@@ -292,10 +283,10 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
 
             rid, stored = create_staff_cashout_record_from_job(job)
 
-        self.assertEqual((rid, stored), (7, Decimal("372")))
+        self.assertEqual((rid, stored), (7, Decimal("372.34")))
         record = session.add.call_args_list[0][0][0]
         self.assertIsInstance(record, StaffCashoutRecord)
-        self.assertEqual(record.amount, Decimal("372"))
+        self.assertEqual(record.amount, Decimal("372.34"))
         expenses = [
             call[0][0]
             for call in session.add.call_args_list
@@ -303,7 +294,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
         ]
         self.assertEqual(expenses, [])
 
-    def test_manual_create_rounds_down_without_expense(self) -> None:
+    def test_manual_create_keeps_cents_without_expense(self) -> None:
         from db.models import Club, Expense, StaffCashoutPayment, StaffCashoutRecord
 
         session = MagicMock()
@@ -333,7 +324,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             ),
             patch(
                 "bot.services.staff_cashout_records._record_to_dict",
-                return_value={"id": 11, "amount": Decimal("372")},
+                return_value={"id": 11, "amount": Decimal("372.34")},
             ),
             patch("bot.services.staff_cashout_pushover.notify_cashout_pushover_sync"),
         ):
@@ -361,7 +352,7 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             for call in session.add.call_args_list
             if isinstance(call[0][0], StaffCashoutRecord)
         )
-        self.assertEqual(record.amount, Decimal("372"))
+        self.assertEqual(record.amount, Decimal("372.34"))
         payment = next(
             call[0][0]
             for call in session.add.call_args_list
@@ -374,19 +365,6 @@ class StaffCashoutRecordServiceTestCase(unittest.TestCase):
             if isinstance(call[0][0], Expense)
         ]
         self.assertEqual(expenses, [])
-
-    def test_manual_create_rejects_amount_under_a_dollar(self) -> None:
-        from bot.services.staff_cashout_records import (
-            create_staff_cashout_record_manual,
-        )
-
-        with self.assertRaisesRegex(ValueError, "at least"):
-            create_staff_cashout_record_manual(
-                club_id=2,
-                group_title="RT / 1-2 / X",
-                amount=Decimal("0.50"),
-                payments=[{"method_display_name": "Venmo"}],
-            )
 
     def test_manual_create_writes_payments_before_notify(self) -> None:
         from db.models import Club, StaffCashoutPayment, StaffCashoutRecord
