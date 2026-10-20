@@ -525,10 +525,9 @@ Create a staff cashout record (what a player is owed) as the dashboard
 "New cashout" form does. `club` is an id, key (round_table|creator_club|
 clubgto) or slug; `group_title` is the player's group title ("GTO / 8190-5287
 / name", the gg_player_id is parsed from it); `amount` is dollars and is
-rounded UP to the next whole dollar, the difference becoming a "Cashout
-round-up" expense. `payments` is a non-empty list of payout destinations, each
-{payment_method_id?, payment_sub_option_id?, method_display_name?,
-payout_details?, amount?}: a catalog method (payment_method_id from
+recorded as given, cents included. `payments` is a non-empty list of payout
+destinations, each {payment_method_id?, payment_sub_option_id?,
+method_display_name?, payout_details?, amount?}: a catalog method (payment_method_id from
 list_payment_methods, direction=cashout) needs payout_details; a custom method
 needs method_display_name. Like the dashboard, the record is not linked to a
 Telegram chat (no owed pin / player notify). Creating fires the "New cashout"
@@ -635,10 +634,9 @@ Parameters: `bonus_type_id` (integer); `confirm` (boolean, default false). Requi
 
 Permanently delete a staff cashout record together with its payout
 destinations and money-sent rows, like the dashboard Delete button. Works on
-any status; a "Cashout round-up" expense created with it is left in place and
-no notification is sent. Prefer update_cashout_record(do_not_send=true) to
-hold a payout instead. Without confirm=true returns a dry run with the full
-record that would be removed.
+any status and no notification is sent. Prefer
+update_cashout_record(do_not_send=true) to hold a payout instead. Without
+confirm=true returns a dry run with the full record that would be removed.
 
 Parameters: `record_id` (integer); `confirm` (boolean, default false). Required: record_id.
 

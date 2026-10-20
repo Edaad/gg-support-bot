@@ -334,10 +334,9 @@ def create_cashout_record(
     "New cashout" form does. `club` is an id, key (round_table|creator_club|
     clubgto) or slug; `group_title` is the player's group title ("GTO / 8190-5287
     / name", the gg_player_id is parsed from it); `amount` is dollars and is
-    rounded UP to the next whole dollar, the difference becoming a "Cashout
-    round-up" expense. `payments` is a non-empty list of payout destinations, each
-    {payment_method_id?, payment_sub_option_id?, method_display_name?,
-    payout_details?, amount?}: a catalog method (payment_method_id from
+    recorded as given, cents included. `payments` is a non-empty list of payout
+    destinations, each {payment_method_id?, payment_sub_option_id?,
+    method_display_name?, payout_details?, amount?}: a catalog method (payment_method_id from
     list_payment_methods, direction=cashout) needs payout_details; a custom method
     needs method_display_name. Like the dashboard, the record is not linked to a
     Telegram chat (no owed pin / player notify). Creating fires the "New cashout"
@@ -346,14 +345,13 @@ def create_cashout_record(
     from bot.services.staff_cashout_records import (
         clean_cashout_note,
         create_staff_cashout_record_manual,
-        round_up_cashout_amount,
     )
     from bot.services.player_details import parse_tracking_title
 
     title = (group_title or "").strip()
     if not title:
         raise bad_input("group_title is required")
-    original = _positive_amount(amount)
+    amount_value = _positive_amount(amount)
     rows = _parse_payments(payments)
     clean_note = clean_cashout_note(note)
     actor = actor_from_context(ctx)
@@ -363,16 +361,13 @@ def create_cashout_record(
             raise bad_input("club is required")
         club_id, club_name = int(club_row.id), str(club_row.name)
     validated = [_validate_destination(row) for row in rows]
-    rounded, round_up = round_up_cashout_amount(original)
     parsed = parse_tracking_title(title)
     proposed = {
         "club_id": club_id,
         "club_name": club_name,
         "group_title": title,
         "gg_player_id": parsed[1] if parsed else None,
-        "amount": rounded,
-        "requested_amount": original,
-        "round_up_expense": round_up,
+        "amount": amount_value,
         "note": clean_note,
         "trigger": "dashboard",
         "tracks_money_sent": True,
@@ -384,26 +379,24 @@ def create_cashout_record(
             actor=actor,
             current=None,
             proposed=proposed,
-            message=f"dry run: would create a {rounded} cashout record for {title}",
+            message=f"dry run: would create a {amount_value} cashout record for {title}",
             notes=notes,
         )
     data = create_staff_cashout_record_manual(
         club_id=club_id,
         group_title=title,
-        amount=original,
+        amount=amount_value,
         payments=rows,
         note=clean_note,
     )
     after = _compact_record(data)
     after["club_name"] = club_name
-    if round_up is not None:
-        notes.append(f"round-up expense of {round_up} recorded for {club_name}")
     return write_result(
         actor=actor,
         before=None,
         after=after,
         message=(
-            f"created cashout record {after['id']} for {title}: {rounded}"
+            f"created cashout record {after['id']} for {title}: {amount_value}"
             f" via {len(validated)} destination(s)"
         ),
         notes=notes,
@@ -418,10 +411,9 @@ def delete_cashout_record(
 ) -> dict[str, Any]:
     """Permanently delete a staff cashout record together with its payout
     destinations and money-sent rows, like the dashboard Delete button. Works on
-    any status; a "Cashout round-up" expense created with it is left in place and
-    no notification is sent. Prefer update_cashout_record(do_not_send=true) to
-    hold a payout instead. Without confirm=true returns a dry run with the full
-    record that would be removed."""
+    any status and no notification is sent. Prefer
+    update_cashout_record(do_not_send=true) to hold a payout instead. Without
+    confirm=true returns a dry run with the full record that would be removed."""
     from bot.services.staff_cashout_records import delete_staff_cashout_record
 
     actor = actor_from_context(ctx)
