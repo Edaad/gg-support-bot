@@ -14,7 +14,7 @@ Escalation is **observe-only** relative to `/deposit` and `/cashout` wizards (ne
 | Mid `/cashout` | Unexpected free text opens/feeds the idle episode as `player_idle`. Method picks are callbacks (not seen by the message handler). Expected amount accepts are marked so activity skips escalate for that update. |
 | Everything else | Player free text/media opens or feeds a durable idle episode. |
 
-`cashout_started` is unchanged and does **not** open an episode. Bare `/deposit` / flow commands do not open an episode.
+`cashout_started` is unchanged and does **not** open an episode. Bare `/deposit` / `/cancel` / flow commands do not open an episode.
 
 ## Player idle episode (Slack only)
 

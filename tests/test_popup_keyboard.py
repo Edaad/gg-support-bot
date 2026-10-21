@@ -285,6 +285,8 @@ class FlowCommandTextTests(unittest.TestCase):
         self.assertTrue(pk.is_flow_command_text("/earlyrb@MyBot"))
         self.assertTrue(pk.is_flow_command_text("/withdraw"))
         self.assertTrue(pk.is_flow_command_text("/deposit@MyBot"))
+        self.assertTrue(pk.is_flow_command_text("/cancel"))
+        self.assertTrue(pk.is_flow_command_text("/cancel@MyBot"))
         self.assertFalse(pk.is_flow_command_text("hello"))
         self.assertFalse(pk.is_flow_command_text(None))
 
