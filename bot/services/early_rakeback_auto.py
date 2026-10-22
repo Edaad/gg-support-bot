@@ -15,6 +15,7 @@ Player-facing copy says **fee** and **feeback**, never rake or rakeback.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import uuid
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from api.club_slug import CLUB_LABEL_TO_SLUG
 from bot.services.agent_handoff_copy import ADMIN_SHORTLY_COPY
 from bot.services import elevate_early_rakeback_api as elevate
 from bot.services.club import (
+    get_club_by_id,
     get_early_rakeback_max_auto_amount,
     get_escalate_auto_early_rakeback,
     invalidate_pending_one_time_bypasses,
@@ -163,6 +165,250 @@ class FeeStage:
     detail: str = ""
 
 
+def _format_stat_amount(amount: Decimal, *, signed: bool = False) -> str:
+    """Comma-separated cents. Positive PnL gets a leading plus."""
+    quantized = amount.quantize(Decimal("0.01"))
+    body = f"{abs(quantized):,.2f}"
+    if quantized < 0:
+        return f"-{body}"
+    if signed and quantized > 0:
+        return f"+{body}"
+    return body
+
+
+def _format_percent(amount: Decimal) -> str:
+    """Deal rate as Elevate sends it: 60 → ``60%``, 12.5 → ``12.5%``."""
+    quantized = amount.quantize(Decimal("0.01"))
+    text = format(quantized, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
+def _role_label(role: Optional[str]) -> str:
+    raw = " ".join(
+        (role or "").strip().lower().replace("-", " ").replace("_", " ").split()
+    )
+    return {"player": "Player", "agent": "Agent", "super agent": "Super Agent"}.get(
+        raw, "unavailable"
+    )
+
+
+def _upline_label(has_upline: Optional[bool]) -> str:
+    if has_upline is True:
+        return "yes"
+    if has_upline is False:
+        return "no"
+    return "unknown"
+
+
+def _deal_kind_label(deal_type: Optional[str]) -> Optional[str]:
+    """Parenthetical on the percentage line. Flat and threshold are the two deals."""
+    raw = (deal_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not raw:
+        return None
+    if "threshold" in raw:
+        return "Threshold"
+    if "flat" in raw:
+        return "Flat"
+    return None
+
+
+def _code(value: str) -> str:
+    return f"<code>{html.escape(value, quote=False)}</code>"
+
+
+def format_rake_report(
+    *,
+    club: str,
+    group_title: Optional[str],
+    telegram_chat_id: Optional[int],
+    player_id: Optional[str],
+    role: Optional[str],
+    has_upline: Optional[bool],
+    range_start: Optional[str],
+    range_end: Optional[str],
+    rake_overall: Optional[Decimal],
+    rake_filtered: Optional[Decimal],
+    pnl_overall: Optional[Decimal],
+    pnl_filtered: Optional[Decimal],
+    percentage: Optional[Decimal],
+    deal_type: Optional[str],
+    available: Optional[Decimal],
+    tax_rebate_amount: Optional[Decimal] = None,
+) -> str:
+    """Telegram HTML for the payment-notification chat. Not sent to Slack."""
+    from notification.formatting import format_group_chat_line
+
+    club_name = html.escape((club or "").strip() or "Unknown", quote=False)
+    lines = [f"📊 <b>Rake report</b> — {club_name}", ""]
+    lines.append(
+        format_group_chat_line(
+            group_title=group_title,
+            telegram_chat_id=telegram_chat_id,
+        )
+    )
+    player = (player_id or "").strip()
+    if player:
+        lines.append(f"Player ID: {_code(player)}")
+    lines.append("")
+    lines.append(
+        f"• Role: {_code(_role_label(role))} · Upline: {_code(_upline_label(has_upline))}"
+    )
+    if range_start and range_end:
+        lines.append(f"• Week: {_code(f'{range_start} ~ {range_end}')} (EST)")
+    else:
+        lines.append(f"• Week: {_code('unavailable')}")
+    rake_overall_text = (
+        _format_stat_amount(rake_overall) if rake_overall is not None else "unavailable"
+    )
+    rake_week_text = (
+        _format_stat_amount(rake_filtered)
+        if rake_filtered is not None
+        else "unavailable"
+    )
+    pnl_overall_text = (
+        _format_stat_amount(pnl_overall, signed=True)
+        if pnl_overall is not None
+        else "unavailable"
+    )
+    pnl_week_text = (
+        _format_stat_amount(pnl_filtered, signed=True)
+        if pnl_filtered is not None
+        else "unavailable"
+    )
+    lines.append(
+        f"• Rake: overall {_code(rake_overall_text)} · this week {_code(rake_week_text)}"
+    )
+    lines.append(
+        f"• PnL: overall {_code(pnl_overall_text)} · this week {_code(pnl_week_text)}"
+    )
+    if percentage is None:
+        lines.append(f"• Percentage: {_code('unavailable')}")
+    else:
+        kind = _deal_kind_label(deal_type)
+        percent = _format_percent(percentage)
+        if kind:
+            lines.append(f"• Percentage: {_code(percent)} ({kind})")
+        else:
+            lines.append(f"• Percentage: {_code(percent)}")
+    # Elevate adds -(tax% / 100) × (filtered rake + filtered PnL) to the gross.
+    # A positive result is a rebate; a negative one is a tax. Zero or absent
+    # means the deal has neither, so the line stays off.
+    if tax_rebate_amount is not None and tax_rebate_amount != 0:
+        kind = "Rebate" if tax_rebate_amount > 0 else "Tax"
+        lines.append(f"• {kind}: {_code(_format_stat_amount(abs(tax_rebate_amount)))}")
+    available_text = (
+        _format_stat_amount(available) if available is not None else "unavailable"
+    )
+    lines.append(f"• Available: {_code(available_text)}")
+    return "\n".join(lines)
+
+
+def _rake_stats_present(fee: Any) -> bool:
+    return any(
+        value is not None
+        for value in (
+            fee.rake_overall,
+            fee.rake_filtered,
+            fee.pnl_overall,
+            fee.pnl_filtered,
+        )
+    )
+
+
+async def publish_rake_report(
+    *,
+    club_id: int,
+    chat_id: int,
+    group_title: Optional[str],
+    union_shorthand: Optional[str],
+    fee: Any,
+) -> None:
+    """Post the rake report to the club payment-notification chat. Never raises.
+
+    Fires when the RPA job returned rake or PnL figures. Elevate supplies the
+    deal percentage and the early feeback still available; a quote failure leaves
+    those two lines as ``unavailable`` and still posts the rake stats.
+    """
+    if not _rake_stats_present(fee):
+        return
+    try:
+        from notification.payment_notification_routing import (
+            notification_destination_buckets,
+            resolve_notification_chat_ids,
+        )
+
+        if not notification_destination_buckets([group_title]):
+            logger.info(
+                "rake report: no payment-notification chat for title=%r",
+                group_title,
+            )
+            return
+
+        percentage = None
+        deal_type = None
+        available = None
+        tax_rebate_amount = None
+        rake = fee.rake_filtered
+        if rake is not None and rake > 0:
+            club = await asyncio.to_thread(get_club_by_id, int(club_id))
+            target = resolve_club_target(club.name if club else None, union_shorthand)
+            if target is not None and fee.player_id:
+                quoted = await elevate.quote_early_rakeback(
+                    club_slug=target.elevate_slug,
+                    gg_player_id=str(fee.player_id),
+                    rake=rake,
+                    pl=(
+                        fee.pnl_filtered
+                        if fee.pnl_filtered is not None
+                        else Decimal("0")
+                    ),
+                )
+                if quoted.ok and quoted.quote is not None:
+                    percentage = quoted.quote.percentage
+                    deal_type = quoted.quote.deal_type
+                    available = quoted.quote.remaining
+                    tax_rebate_amount = quoted.quote.tax_rebate_amount
+                else:
+                    logger.info(
+                        "rake report: quote unavailable slug=%s player=%s code=%s",
+                        target.elevate_slug,
+                        fee.player_id,
+                        quoted.error_code,
+                    )
+
+        text = format_rake_report(
+            club=fee.clubgg_club or "",
+            group_title=group_title,
+            telegram_chat_id=int(chat_id),
+            player_id=fee.player_id,
+            role=fee.role,
+            has_upline=fee.has_upline,
+            range_start=fee.range_start,
+            range_end=fee.range_end,
+            rake_overall=fee.rake_overall,
+            rake_filtered=fee.rake_filtered,
+            pnl_overall=fee.pnl_overall,
+            pnl_filtered=fee.pnl_filtered,
+            percentage=percentage,
+            deal_type=deal_type,
+            available=available,
+            tax_rebate_amount=tax_rebate_amount,
+        )
+        from bot.services.venmo_payments import send_telegram_notification
+
+        for notify_chat_id in resolve_notification_chat_ids([group_title]):
+            try:
+                await send_telegram_notification(text, chat_id=int(notify_chat_id))
+            except Exception:
+                logger.exception(
+                    "rake report: telegram send failed chat_id=%s", notify_chat_id
+                )
+    except Exception:
+        logger.exception("rake report: failed chat_id=%s", chat_id)
+
+
 async def check_fee(
     *,
     club_id: int,
@@ -177,6 +423,13 @@ async def check_fee(
         request_id=f"earlyrb-rake-{uuid.uuid4().hex[:12]}",
         group_title=group_title,
         union_shorthand=union_shorthand,
+    )
+    await publish_rake_report(
+        club_id=club_id,
+        chat_id=chat_id,
+        group_title=group_title,
+        union_shorthand=union_shorthand,
+        fee=fee,
     )
 
     if not fee.ok or fee.rake_filtered is None:

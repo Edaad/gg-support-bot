@@ -383,6 +383,7 @@ class TestRunRakeCheck(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome.range_start, "2026-09-14")
         self.assertEqual(outcome.range_end, "2026-09-16")
         self.assertIs(outcome.has_upline, False)
+        self.assertEqual(outcome.role, "player")
         self.assertEqual(client.get_urls, ["https://tunnel.test/rake/abc"])
 
     async def test_has_upline_is_read_verbatim(self) -> None:

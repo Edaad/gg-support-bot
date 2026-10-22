@@ -66,6 +66,9 @@ class Quote:
     source: Optional[str] = None
     deal_type: Optional[str] = None
     percentage: Optional[Decimal] = None
+    # Dollar adjustment already applied to the gross. Negative is a tax,
+    # positive is a rebate. None when the deal has neither.
+    tax_rebate_amount: Optional[Decimal] = None
     total_already_given: Optional[Decimal] = None
     on_trial: bool = False
     warnings: tuple[str, ...] = ()
@@ -222,6 +225,7 @@ def _parse_quote(data: dict[str, Any]) -> Quote:
         source=data.get("source"),
         deal_type=data.get("dealType"),
         percentage=_decimal(data.get("percentage")),
+        tax_rebate_amount=_decimal(data.get("taxRebateAmount")),
         total_already_given=_decimal(data.get("totalAlreadyGiven")),
         on_trial=bool(data.get("onTrial")),
         warnings=tuple(str(w) for w in warnings) if isinstance(warnings, list) else (),

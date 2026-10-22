@@ -1027,6 +1027,9 @@ class RakeOutcome:
     # None when the bot did not report it — an unreadable upline is not the same
     # as "no upline", and callers that gate on it must not read None as False.
     has_upline: Optional[bool] = None
+    # ClubGG member role as returned (`player`, `agent`, `super_agent`). None
+    # when the bot did not report it.
+    role: Optional[str] = None
     job_id: Optional[str] = None
 
 
@@ -1179,6 +1182,10 @@ async def _run_rake_check_body(
 
         raw_upline = payload.get("has_upline")
         has_upline = raw_upline if isinstance(raw_upline, bool) else None
+        raw_role = payload.get("role")
+        role = (
+            raw_role.strip() if isinstance(raw_role, str) and raw_role.strip() else None
+        )
 
         logger.info(
             "rake_check: result club=%s player=%s status=%s reason=%s range=%s..%s "
@@ -1205,6 +1212,7 @@ async def _run_rake_check_body(
             range_start=rng.get("start"),
             range_end=rng.get("end"),
             has_upline=has_upline,
+            role=role,
             job_id=str(remote_job_id),
         )
     except Exception as exc:

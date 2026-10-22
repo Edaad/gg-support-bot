@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.services import early_rakeback_auto as auto
@@ -21,6 +23,7 @@ def _fee(
     status="success",
     reason="",
     has_upline=False,
+    role=None,
 ):
     def dec(v):
         return None if v is None else Decimal(v)
@@ -38,6 +41,7 @@ def _fee(
         range_start="2026-09-14",
         range_end="2026-09-17",
         has_upline=has_upline,
+        role=role,
         job_id="job-1",
     )
 
@@ -218,7 +222,10 @@ class IdempotencyKeyTests(unittest.TestCase):
 
 class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
     async def _check(self, fee):
-        with patch.object(auto, "run_rake_check", AsyncMock(return_value=fee)):
+        with (
+            patch.object(auto, "run_rake_check", AsyncMock(return_value=fee)),
+            patch.object(auto, "publish_rake_report", AsyncMock()),
+        ):
             return await auto.check_fee(
                 club_id=1,
                 chat_id=-100,
@@ -229,6 +236,21 @@ class CheckFeeTests(unittest.IsolatedAsyncioTestCase):
     async def test_happy_path(self) -> None:
         stage = await self._check(_fee())
         self.assertEqual(stage.kind, "ok")
+
+    async def test_stats_are_handed_to_the_rake_report(self) -> None:
+        fee = _fee()
+        with (
+            patch.object(auto, "run_rake_check", AsyncMock(return_value=fee)),
+            patch.object(auto, "publish_rake_report", AsyncMock()) as publish,
+        ):
+            await auto.check_fee(
+                club_id=1,
+                chat_id=-100,
+                group_title="RT / 8272-5942 / P",
+                union_shorthand="RT",
+            )
+        publish.assert_awaited_once()
+        self.assertIs(publish.await_args.kwargs["fee"], fee)
 
     async def test_failed_job_escalates(self) -> None:
         stage = await self._check(
@@ -753,6 +775,163 @@ class ClaimTests(unittest.IsolatedAsyncioTestCase):
         self.timer.assert_not_called()
         self.notify_failed.assert_awaited_once()
         self.assertIn("DRY RUN", self.notify_failed.call_args.kwargs["detail"])
+
+
+class RakeReportTests(unittest.TestCase):
+    def _report(self, **overrides):
+        fields = dict(
+            club="Round Table",
+            group_title="RT / 5778-7429 / Alex",
+            telegram_chat_id=-1005778742900,
+            player_id="5778-7429",
+            role="player",
+            has_upline=False,
+            range_start="2026-10-20",
+            range_end="2026-10-22",
+            rake_overall=Decimal("3290.57"),
+            rake_filtered=Decimal("222.05"),
+            pnl_overall=Decimal("831.80"),
+            pnl_filtered=Decimal("2252.16"),
+            percentage=Decimal("60"),
+            deal_type="flat",
+            available=Decimal("66.62"),
+        )
+        fields.update(overrides)
+        return auto.format_rake_report(**fields)
+
+    def test_flat_deal_percentage_and_available(self) -> None:
+        text = self._report()
+        self.assertIn("📊 <b>Rake report</b> — Round Table", text)
+        self.assertIn("Player ID: <code>5778-7429</code>", text)
+        self.assertIn("• Role: <code>Player</code> · Upline: <code>no</code>", text)
+        self.assertIn("• Week: <code>2026-10-20 ~ 2026-10-22</code> (EST)", text)
+        self.assertIn(
+            "• Rake: overall <code>3,290.57</code> · this week <code>222.05</code>",
+            text,
+        )
+        self.assertIn(
+            "• PnL: overall <code>+831.80</code> · this week <code>+2,252.16</code>",
+            text,
+        )
+        self.assertIn("• Percentage: <code>60%</code> (Flat)", text)
+        self.assertIn("• Available: <code>66.62</code>", text)
+        self.assertNotIn("• Tax:", text)
+        self.assertNotIn("• Rebate:", text)
+
+    def test_negative_adjustment_is_a_tax_line(self) -> None:
+        text = self._report(tax_rebate_amount=Decimal("-60"))
+        self.assertIn("• Tax: <code>60.00</code>", text)
+        self.assertNotIn("• Rebate:", text)
+        self.assertLess(
+            text.index("• Tax:"),
+            text.index("• Available:"),
+        )
+
+    def test_positive_adjustment_is_a_rebate_line(self) -> None:
+        text = self._report(tax_rebate_amount=Decimal("12.5"))
+        self.assertIn("• Rebate: <code>12.50</code>", text)
+        self.assertNotIn("• Tax:", text)
+
+    def test_zero_adjustment_is_omitted(self) -> None:
+        text = self._report(tax_rebate_amount=Decimal("0"))
+        self.assertNotIn("• Tax:", text)
+        self.assertNotIn("• Rebate:", text)
+
+    def test_threshold_deal_labels_the_percentage(self) -> None:
+        text = self._report(deal_type="threshold", percentage=Decimal("40"))
+        self.assertIn("• Percentage: <code>40%</code> (Threshold)", text)
+        self.assertNotIn("(Flat)", text)
+
+    def test_super_agent_role_and_upline(self) -> None:
+        text = self._report(role="super_agent", has_upline=True)
+        self.assertIn(
+            "• Role: <code>Super Agent</code> · Upline: <code>yes</code>", text
+        )
+
+    def test_missing_quote_leaves_the_deal_lines_unavailable(self) -> None:
+        text = self._report(percentage=None, deal_type=None, available=None)
+        self.assertIn("• Percentage: <code>unavailable</code>", text)
+        self.assertIn("• Available: <code>unavailable</code>", text)
+        self.assertIn("• Rake: overall <code>3,290.57</code>", text)
+
+
+class PublishRakeReportTests(unittest.IsolatedAsyncioTestCase):
+    def _fee(self, **overrides):
+        fee = _fee(role="player")
+        if not overrides:
+            return fee
+        return replace(fee, **overrides)
+
+    async def _publish(self, fee, quote_result):
+        send = AsyncMock()
+        quote = AsyncMock(return_value=quote_result)
+        with (
+            patch(
+                "notification.payment_notification_routing.notification_destination_buckets",
+                return_value=frozenset({"rt_at"}),
+            ),
+            patch(
+                "notification.payment_notification_routing.resolve_notification_chat_ids",
+                return_value=[4242],
+            ),
+            patch.object(
+                auto, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
+            ),
+            patch.object(auto.elevate, "quote_early_rakeback", quote),
+            patch("bot.services.venmo_payments.send_telegram_notification", send),
+        ):
+            await auto.publish_rake_report(
+                club_id=2,
+                chat_id=-1005778742900,
+                group_title="RT / 5778-7429 / Alex",
+                union_shorthand="RT",
+                fee=fee,
+            )
+        return send, quote
+
+    async def test_posts_flat_deal_to_the_payment_chat(self) -> None:
+        send, quote = await self._publish(
+            self._fee(),
+            elevate.QuoteResult(True, quote=_quote()),
+        )
+        send.assert_awaited_once()
+        self.assertEqual(send.await_args.kwargs["chat_id"], 4242)
+        text = send.await_args.args[0]
+        self.assertIn("• Percentage: <code>60%</code> (Flat)", text)
+        self.assertIn("• Available: <code>240.00</code>", text)
+        quote.assert_awaited_once()
+
+    async def test_quote_failure_still_posts_the_rake_lines(self) -> None:
+        send, _quote_call = await self._publish(
+            self._fee(),
+            elevate.QuoteResult(False, "request_failed", "timeout"),
+        )
+        text = send.await_args.args[0]
+        self.assertIn("• Rake: overall <code>1,200.00</code>", text)
+        self.assertIn("• Percentage: <code>unavailable</code>", text)
+        self.assertIn("• Available: <code>unavailable</code>", text)
+
+    async def test_zero_rake_skips_the_quote(self) -> None:
+        send, quote = await self._publish(
+            self._fee(rake_filtered=Decimal("0")),
+            elevate.QuoteResult(False, "not_called"),
+        )
+        quote.assert_not_awaited()
+        send.assert_awaited_once()
+        self.assertIn("• Percentage: <code>unavailable</code>", send.await_args.args[0])
+
+    async def test_no_stats_does_not_post(self) -> None:
+        send, quote = await self._publish(
+            self._fee(
+                rake_overall=None,
+                rake_filtered=None,
+                pnl_overall=None,
+                pnl_filtered=None,
+            ),
+            elevate.QuoteResult(False, "not_called"),
+        )
+        quote.assert_not_awaited()
+        send.assert_not_awaited()
 
 
 if __name__ == "__main__":

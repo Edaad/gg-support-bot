@@ -99,6 +99,7 @@ class QuoteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quote.remaining, Decimal("540"))
         self.assertFalse(quote.below_minimum)
         self.assertEqual(quote.minimum_threshold, Decimal("50"))
+        self.assertEqual(quote.tax_rebate_amount, Decimal("-60"))
         self.assertEqual(quote.member_type, "player")
         self.assertEqual(quote.display_decimal_places, 2)
         self.assertEqual(quote.warnings, ())
