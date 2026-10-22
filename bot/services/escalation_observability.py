@@ -34,6 +34,7 @@ REASON_EXPECTED_FLOW = "expected_flow"
 REASON_FLOW_CMD = "flow_cmd"
 REASON_DEPOSIT_FLOW_ANSWER = "deposit_flow_answer"
 REASON_DEPOSIT_SENT_ACK_IGNORE = "deposit_sent_ack_ignore"
+REASON_DEPOSIT_SENT_DELAYED_HOLD = "deposit_sent_delayed_hold"
 
 # Fire reasons (group_activity_handler)
 REASON_PLAYER_IDLE_OPENED = "player_idle_opened"

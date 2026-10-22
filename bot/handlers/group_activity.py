@@ -23,6 +23,7 @@ from bot.services.escalation_observability import (
     DECISION_SKIPPED,
     REASON_DEPOSIT_FLOW_ANSWER,
     REASON_DEPOSIT_SENT_ACK_IGNORE,
+    REASON_DEPOSIT_SENT_DELAYED_HOLD,
     REASON_EMPTY_BODY,
     REASON_ESC_OFF,
     REASON_EXPECTED_FLOW,
@@ -208,6 +209,12 @@ async def group_activity_handler(
                     trigger=trigger,
                     episode_id=result.episode_id,
                 )
+            elif (getattr(context, "chat_data", None) or {}).get(
+                "deposit_sent_delayed_hold"
+            ):
+                # Crypto/Zelle: no Slack and no idle episode until the 3-minute mark.
+                skip_episode = True
+                skip_reason = REASON_DEPOSIT_SENT_DELAYED_HOLD
             elif esc.is_valid_deposit_flow_answer(context, message):
                 # Amount / referral answers: no Slack, no episode.
                 skip_episode = True

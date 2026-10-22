@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 DEPOSIT_SENT_WAIT_SECONDS = 300  # 5 minutes
 DEPOSIT_SENT_WAIT_SECONDS_TEST = 30
+# Crypto and Zelle wait for the player "received" message or /add, then ask.
+DEPOSIT_SENT_DELAYED_WAIT_SECONDS = 180  # 3 minutes
+DEPOSIT_SENT_DELAYED_WAIT_SECONDS_TEST = 18
+DELAYED_DEPOSIT_SENT_SLUGS = frozenset({"crypto", "zelle"})
 
 REASON_PLAYER_IDLE = "player_idle"
 REASON_PLAYER_IDLE_FOLLOWUP = "player_idle_followup"
@@ -165,6 +169,8 @@ MEDIA_ONLY_PLACEHOLDER = (
 DEPOSIT_SENT_ACK_COPY = (
     "Thank you! Credits will be added as soon as we receive the payment."
 )
+# Historical click prompt. Response audit still matches it; new crypto clicks
+# use DEPOSIT_SENT_ACK_COPY and ask for the hash at the 3-minute mark.
 DEPOSIT_SENT_ACK_COPY_CRYPTO = (
     "Thanks! Please send your transaction hash (TxID) here.\n"
     "\n"
@@ -173,14 +179,57 @@ DEPOSIT_SENT_ACK_COPY_CRYPTO = (
     "\n"
     "We'll add credits as soon as we verify it."
 )
+DEPOSIT_SENT_PLAYER_NUDGE_CRYPTO = (
+    "It looks like your crypto payment still hasn't come through on our end. "
+    "Please send the transaction hash so we can add the chips!"
+)
+DEPOSIT_SENT_PLAYER_NUDGE_ZELLE = (
+    "It looks like your Zelle payment still hasn’t shown up on our end. "
+    "Please send the name the Zelle payment was sent from so we can add the chips!"
+)
+_DELAYED_CHASE_TIMEOUT_HEADLINES = {
+    "crypto": (
+        "3 minutes have passed since the player said they sent a crypto payment — "
+        "it has not shown up."
+    ),
+    "zelle": (
+        "3 minutes have passed since the player said they sent a Zelle payment — "
+        "it has not shown up."
+    ),
+}
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
 
 
+def is_delayed_deposit_sent_chase(method_slug: str | None) -> bool:
+    """Crypto and Zelle wait 3 minutes with no Slack on the button tap."""
+    return (method_slug or "").strip().lower() in DELAYED_DEPOSIT_SENT_SLUGS
+
+
+def _set_delayed_deposit_hold(context: Any, holding: bool) -> None:
+    """Tell group activity to skip idle without a second database read."""
+    chat_data = getattr(context, "chat_data", None)
+    if not isinstance(chat_data, dict):
+        return
+    if holding:
+        chat_data["deposit_sent_delayed_hold"] = True
+    else:
+        chat_data.pop("deposit_sent_delayed_hold", None)
+
+
+def deposit_sent_player_nudge(method_slug: str | None) -> str | None:
+    """Player message at the 3-minute mark. None for other methods."""
+    slug = (method_slug or "").strip().lower()
+    if slug == "crypto":
+        return DEPOSIT_SENT_PLAYER_NUDGE_CRYPTO
+    if slug == "zelle":
+        return DEPOSIT_SENT_PLAYER_NUDGE_ZELLE
+    return None
+
+
 def deposit_sent_ack_copy(method_slug: str | None) -> str:
-    """Player ack after tapping 'I have sent the payment' (crypto asks for TxID)."""
-    if (method_slug or "").strip().lower() == "crypto":
-        return DEPOSIT_SENT_ACK_COPY_CRYPTO
+    """Player ack after tapping 'I have sent the payment'."""
+    del method_slug
     return DEPOSIT_SENT_ACK_COPY
 
 
@@ -239,6 +288,14 @@ def deposit_sent_wait_seconds() -> int:
     if is_test_bot_worker():
         return DEPOSIT_SENT_WAIT_SECONDS_TEST
     return DEPOSIT_SENT_WAIT_SECONDS
+
+
+def deposit_sent_wait_seconds_for(method_slug: str | None) -> int:
+    if is_delayed_deposit_sent_chase(method_slug):
+        if is_test_bot_worker():
+            return DEPOSIT_SENT_DELAYED_WAIT_SECONDS_TEST
+        return DEPOSIT_SENT_DELAYED_WAIT_SECONDS
+    return deposit_sent_wait_seconds()
 
 
 def awaiting_agent_debounce_seconds() -> int:
@@ -509,6 +566,12 @@ def format_escalation_slack_text(
     method_slug: str | None = None,
 ) -> str:
     headline = _HEADLINES.get(reason, reason)
+    if reason == REASON_DEPOSIT_SENT_TIMEOUT:
+        delayed = _DELAYED_CHASE_TIMEOUT_HEADLINES.get(
+            (method_slug or "").strip().lower()
+        )
+        if delayed:
+            headline = delayed
     if reason == REASON_DEPOSIT_SENT_UNBOUND:
         slug = (method_slug or "").strip().lower()
         if slug:
@@ -1808,6 +1871,30 @@ def _payment_seen_since_arm(chat_id: int, armed_at: datetime) -> bool:
         return False
 
 
+def _add_command_since_arm(chat_id: int, armed_at: datetime) -> bool:
+    """True if /add recorded a deposit activity in this group since arm."""
+    try:
+        from bot.handlers.deposit import _chat_has_deposit_activity_since
+
+        return bool(_chat_has_deposit_activity_since(int(chat_id), armed_at))
+    except Exception:
+        logger.debug(
+            "escalation: add-seen check failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return False
+
+
+def _delayed_chase_resolved_since_arm(chat_id: int, armed_at: datetime) -> bool:
+    """Crypto/Zelle: stop when /add landed.
+
+    "We have received your payment…" clears the armed watch itself, including
+    across dynos. A payment row bound from the dashboard does not.
+    """
+    return _add_command_since_arm(chat_id, armed_at)
+
+
 async def _deposit_sent_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
     job = context.job
     if job is None or not job.data:
@@ -1826,7 +1913,15 @@ async def _deposit_sent_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     armed_at = ga.deposit_sent_armed_at(chat_id)
-    if armed_at is not None and _payment_seen_since_arm(chat_id, armed_at):
+    slug = ga.deposit_method_slug(chat_id) or data.get("method_slug")
+    delayed = is_delayed_deposit_sent_chase(slug)
+    resolved = False
+    if armed_at is not None:
+        if delayed:
+            resolved = _delayed_chase_resolved_since_arm(chat_id, armed_at)
+        else:
+            resolved = _payment_seen_since_arm(chat_id, armed_at)
+    if resolved:
         logger.info(
             "escalation: deposit sent timeout skipped (payment seen) chat_id=%s",
             chat_id,
@@ -1837,11 +1932,24 @@ async def _deposit_sent_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     ga.clear_deposit_instructions_pending(chat_id)
+    if delayed:
+        nudge = deposit_sent_player_nudge(slug)
+        if nudge:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=nudge)
+            except Exception:
+                logger.warning(
+                    "escalation: deposit sent player nudge failed chat_id=%s slug=%s",
+                    chat_id,
+                    slug,
+                    exc_info=True,
+                )
     await notify_escalation_slack(
         REASON_DEPOSIT_SENT_TIMEOUT,
         club_id=int(club_id) if club_id is not None else None,
         chat_id=chat_id,
         title=title,
+        method_slug=slug,
     )
 
 
@@ -1853,8 +1961,9 @@ def schedule_deposit_sent_watch(
     title: str | None = None,
     armed_at: datetime | None = None,
     when: float | None = None,
+    method_slug: str | None = None,
 ) -> None:
-    """Start 5-minute wait after bound-method payment claim button."""
+    """Start the payment-claim wait. Crypto and Zelle use 3 minutes."""
     jq = None
     if context is not None:
         jq = getattr(context, "job_queue", None)
@@ -1874,8 +1983,12 @@ def schedule_deposit_sent_watch(
     except Exception:
         pass
 
+    slug = (method_slug or ga.deposit_method_slug(int(chat_id)) or "").strip().lower()
+    slug = slug or None
     ga.mark_deposit_sent_watch_armed(int(chat_id), armed_at=armed_at)
-    delay = float(when) if when is not None else float(deposit_sent_wait_seconds())
+    delay = (
+        float(when) if when is not None else float(deposit_sent_wait_seconds_for(slug))
+    )
     if delay < 0:
         delay = 0.0
     jq.run_once(
@@ -1885,6 +1998,7 @@ def schedule_deposit_sent_watch(
             "chat_id": int(chat_id),
             "club_id": int(club_id) if club_id is not None else None,
             "title": title,
+            "method_slug": slug,
         },
         name=name,
         job_kwargs={"misfire_grace_time": 60},
@@ -1902,16 +2016,21 @@ def restore_deposit_sent_watches(job_queue: Any | None = None) -> None:
     if jq is None:
         return
     now = datetime.now(timezone.utc)
-    wait = float(deposit_sent_wait_seconds())
     for chat_id, armed_at in ga.list_armed_deposit_sent_chats():
-        if _payment_seen_since_arm(chat_id, armed_at):
+        ga.reload_chat_activity_state(int(chat_id))
+        slug = ga.deposit_method_slug(int(chat_id))
+        if is_delayed_deposit_sent_chase(slug):
+            resolved = _delayed_chase_resolved_since_arm(chat_id, armed_at)
+        else:
+            resolved = _payment_seen_since_arm(chat_id, armed_at)
+        if resolved:
             cancel_deposit_sent_watch(chat_id, job_queue=jq)
             continue
+        wait = float(deposit_sent_wait_seconds_for(slug))
         elapsed = (now - armed_at).total_seconds()
         remaining = wait - elapsed
         club_id = get_club_for_chat(chat_id)
         title = get_group_name(chat_id)
-        ga.reload_chat_activity_state(int(chat_id))
         schedule_deposit_sent_watch(
             None,
             int(chat_id),
@@ -1919,6 +2038,7 @@ def restore_deposit_sent_watches(job_queue: Any | None = None) -> None:
             title=title,
             armed_at=armed_at,
             when=remaining,
+            method_slug=slug,
         )
 
 
@@ -1940,7 +2060,13 @@ async def handle_deposit_sent_player_followup(
 
     Returns True if consumed (caller should skip idle escalation).
     """
+    _set_delayed_deposit_hold(context, False)
     if not ga.deposit_sent_watch_armed(chat_id):
+        return False
+
+    # Crypto/Zelle keep the 3-minute watch. Player text does not Slack early.
+    if is_delayed_deposit_sent_chase(ga.deposit_method_slug(chat_id)):
+        _set_delayed_deposit_hold(context, True)
         return False
 
     if should_ignore_deposit_sent_followup(message):
@@ -2014,6 +2140,12 @@ async def handle_deposit_sent_claim(
         chat_id
     ):
         # Stale button after cancel; still acked above.
+        return
+
+    if is_delayed_deposit_sent_chase(slug):
+        schedule_deposit_sent_watch(
+            context, chat_id, club_id=club_id, title=title, method_slug=slug
+        )
         return
 
     await notify_escalation_slack(

@@ -401,6 +401,35 @@ class EscalationCopyTests(unittest.TestCase):
             text,
         )
 
+    def test_deposit_sent_timeout_headline_crypto_and_zelle(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            crypto = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_TIMEOUT,
+                club_id=1,
+                chat_id=-100,
+                title="RT / 12345 / Jane",
+                method_slug="crypto",
+            )
+            zelle = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_TIMEOUT,
+                club_id=1,
+                chat_id=-100,
+                title="RT / 12345 / Jane",
+                method_slug="zelle",
+            )
+        self.assertIn(
+            "*3 minutes have passed since the player said they sent a crypto "
+            "payment — it has not shown up.*",
+            crypto,
+        )
+        self.assertIn(
+            "*3 minutes have passed since the player said they sent a Zelle "
+            "payment — it has not shown up.*",
+            zelle,
+        )
+        self.assertIn("Club: Round Table", crypto)
+        self.assertIn("`RT / 12345 / Jane`", zelle)
+
     def test_deposit_incomplete_headline(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
             text = esc.format_escalation_slack_text(
@@ -1227,7 +1256,7 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
             ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
         ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.mark_deposit_instructions_pending(9, method_slug="zelle")
+                ga.mark_deposit_instructions_pending(9, method_slug="venmo")
                 query = AsyncMock()
                 query.data = esc.DEPOSIT_SENT_CALLBACK_PREFIX
                 query.message = SimpleNamespace(message_id=1)
@@ -1269,16 +1298,13 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                     esc.DEPOSIT_SENT_ACK_COPY,
                 )
 
-    def test_deposit_sent_ack_copy_crypto_only(self):
-        self.assertEqual(
-            esc.deposit_sent_ack_copy("crypto"),
-            esc.DEPOSIT_SENT_ACK_COPY_CRYPTO,
-        )
-        self.assertIn("transaction hash", esc.DEPOSIT_SENT_ACK_COPY_CRYPTO.lower())
+    def test_deposit_sent_ack_copy_is_generic(self):
+        self.assertEqual(esc.deposit_sent_ack_copy("crypto"), esc.DEPOSIT_SENT_ACK_COPY)
         self.assertEqual(esc.deposit_sent_ack_copy("zelle"), esc.DEPOSIT_SENT_ACK_COPY)
         self.assertEqual(esc.deposit_sent_ack_copy(None), esc.DEPOSIT_SENT_ACK_COPY)
-        self.assertEqual(
-            esc.deposit_sent_ack_copy("CRYPTO"), esc.DEPOSIT_SENT_ACK_COPY_CRYPTO
+        self.assertIn("transaction hash", esc.DEPOSIT_SENT_PLAYER_NUDGE_CRYPTO)
+        self.assertIn(
+            "Zelle payment was sent from", esc.DEPOSIT_SENT_PLAYER_NUDGE_ZELLE
         )
 
     async def test_claim_bound_schedules_watch(self):
@@ -1286,7 +1312,7 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
             ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
         ):
             with patch.object(ga, "_persist_activity_state"):
-                ga.mark_deposit_instructions_pending(11, method_slug="zelle")
+                ga.mark_deposit_instructions_pending(11, method_slug="venmo")
                 query = AsyncMock()
                 query.data = esc.DEPOSIT_SENT_CALLBACK_PREFIX
                 query.message = SimpleNamespace(message_id=1)
@@ -1371,14 +1397,15 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                                         await esc.handle_deposit_sent_claim(
                                             update, context
                                         )
-                notify.assert_awaited_once()
-                self.assertEqual(
-                    notify.await_args.args[0], esc.REASON_DEPOSIT_SENT_CLAIMED
-                )
+                notify.assert_not_awaited()
                 sched.assert_called_once()
                 self.assertEqual(
+                    sched.call_args.kwargs["method_slug"],
+                    "crypto",
+                )
+                self.assertEqual(
                     context.bot.send_message.await_args.kwargs["text"],
-                    esc.DEPOSIT_SENT_ACK_COPY_CRYPTO,
+                    esc.DEPOSIT_SENT_ACK_COPY,
                 )
 
     async def test_timeout_skips_when_payment_seen(self):
@@ -1400,6 +1427,67 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                             await esc._deposit_sent_timeout_callback(context)
                             cancel.assert_called_once()
                             notify.assert_not_awaited()
+
+    async def test_delayed_timeout_nudges_player_and_slacks(self):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
+            with patch.object(ga, "_persist_activity_state"):
+                armed = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+                ga.mark_deposit_instructions_pending(8, method_slug="crypto")
+                ga.mark_deposit_sent_watch_armed(8, armed_at=armed)
+                context = MagicMock()
+                context.bot.send_message = AsyncMock()
+                context.job = SimpleNamespace(
+                    data={
+                        "chat_id": 8,
+                        "club_id": 1,
+                        "title": "RT / 12345 / Jane",
+                        "method_slug": "crypto",
+                    }
+                )
+                with patch.object(esc, "_add_command_since_arm", return_value=False):
+                    with patch.object(
+                        esc, "notify_escalation_slack", new_callable=AsyncMock
+                    ) as notify:
+                        await esc._deposit_sent_timeout_callback(context)
+                context.bot.send_message.assert_awaited_once_with(
+                    chat_id=8,
+                    text=esc.DEPOSIT_SENT_PLAYER_NUDGE_CRYPTO,
+                )
+                notify.assert_awaited_once()
+                self.assertEqual(
+                    notify.await_args.args[0], esc.REASON_DEPOSIT_SENT_TIMEOUT
+                )
+                self.assertEqual(notify.await_args.kwargs["method_slug"], "crypto")
+
+    async def test_delayed_timeout_skips_when_add_ran(self):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
+            with patch.object(ga, "_persist_activity_state"):
+                armed = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+                ga.mark_deposit_instructions_pending(8, method_slug="zelle")
+                ga.mark_deposit_sent_watch_armed(8, armed_at=armed)
+                context = MagicMock()
+                context.bot.send_message = AsyncMock()
+                context.job = SimpleNamespace(
+                    data={
+                        "chat_id": 8,
+                        "club_id": 1,
+                        "title": "G",
+                        "method_slug": "zelle",
+                    }
+                )
+                with patch.object(esc, "_add_command_since_arm", return_value=True):
+                    with patch.object(
+                        esc, "notify_escalation_slack", new_callable=AsyncMock
+                    ) as notify:
+                        with patch.object(esc, "cancel_deposit_sent_watch") as cancel:
+                            await esc._deposit_sent_timeout_callback(context)
+                            cancel.assert_called_once()
+                            notify.assert_not_awaited()
+                            context.bot.send_message.assert_not_awaited()
 
     async def test_offer_button_allows_stripe(self):
         bot = MagicMock()

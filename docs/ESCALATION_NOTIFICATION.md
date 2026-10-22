@@ -70,10 +70,14 @@ After deposit **instructions** are posted (including first-time setup and Stripe
 On tap:
 
 1. Remove the button and reply:
-   > Thank you! Chips will be added as soon as we receive the payment.
-2. Slack `deposit_sent_claimed` immediately (*The player claims to have sent the payment already please check.*).
-3. If the group has **no** binding for the **selected** method → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/Zelle/…) check `group_payment_method_bindings`; **crypto** checks any `crypto_wallet_bindings` row for this chat (so auto-add wallets are not false-alarmed as unbound).
-4. If **bound** → arm a durable 5-minute wait:
+   > Thank you! Credits will be added as soon as we receive the payment.
+2. **Crypto and Zelle** do not Slack on the tap. They arm a durable 3-minute wait whether or not the group already has a binding. Player messages during the wait do not Slack and do not open an idle episode. At 3 minutes, if the group has not been sent “We have received your payment…” and nobody has run `/add`:
+   - Crypto Slack: *3 minutes have passed since the player said they sent a crypto payment — it has not shown up.* Player: *It looks like your crypto payment still hasn't come through on our end. Please send the transaction hash so we can add the chips!*
+   - Zelle Slack: *3 minutes have passed since the player said they sent a Zelle payment — it has not shown up.* Player: *It looks like your Zelle payment still hasn’t shown up on our end. Please send the name the Zelle payment was sent from so we can add the chips!*
+   Either “We have received your payment…” or `/add` cancels the wait, and admins are not notified. A dashboard bind alone does not cancel it. The player “received” message clears the watch in Postgres, so the API dyno cancels a worker timer.
+3. **Other methods:** Slack `deposit_sent_claimed` immediately (*The player claims to have sent the payment already please check.*).
+4. If the group has **no** binding for the **selected** method (not crypto/Zelle) → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/…) check `group_payment_method_bindings`.
+5. If **bound** (not crypto/Zelle) → arm a durable 5-minute wait:
    - No payment/`/add` in 5 minutes → Slack `deposit_sent_timeout` (*5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat.*) (**re-checks DB** so API payment notify cancels correctly across dynos).
    - Player message containing `sent` / `done` (case-insensitive) **or any media** → ignore for follow-up Slack (wait stays armed). Does **not** open/feed an idle episode.
    - Any other player text before payment → Slack `deposit_sent_followup` **with the player message body**, cancel the wait, and open/feed the idle episode (no second Slack).
@@ -111,7 +115,7 @@ When escalation is on, **immediate** Slack (`deposit_player_message`, no 5m sile
 | Text/caption containing `sent` / `done` (case-insensitive) | No — same ignore as armed chase; deposit flow unchanged |
 | Media (any attachment) | No — same ignore as armed chase |
 
-Does not cancel the bot conversation / timeout. Those Slacks also open/feed the idle episode. After the button arms the 5m wait, sent/done/media handling stays on the follow-up path above.
+Does not cancel the bot conversation / timeout. Those Slacks also open/feed the idle episode. After the button arms the wait (3 minutes for crypto and Zelle, 5 minutes otherwise), sent/done/media handling stays on the follow-up path above. Crypto and Zelle hold every player message until that mark.
 
 The **10-minute deposit reminder** clears `deposit_instructions_pending` when it runs (unless the payment-sent watch is still armed). Abandoned deposits no longer stay “open” overnight and block deposit-chase attribution.
 
@@ -212,7 +216,7 @@ Copy (no user id, no chat id):
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_claimed` | The player claims to have sent the payment already please check. | No |
-| `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. | No |
+| `deposit_sent_timeout` | 5 minutes have passed since the player said they sent the payment — please look out for a payment in this group chat. Crypto and Zelle use a 3-minute headline that names the method instead. | No |
 | `deposit_sent_followup` | Player sent a message after confirming they sent the payment. | Yes |
 | `deposit_sent_unbound` | Manual deposit request — no {method} binding for this group. | No |
 | `deposit_player_message` | Player messaged during deposit. | Yes |
