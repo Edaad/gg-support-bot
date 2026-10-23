@@ -170,6 +170,11 @@ def validate_bind_alert_scope(
     )
 
 
+def sender_is_exchange(from_entity_name: str | None) -> bool:
+    """Arkham labeled the sender, so this deposit is a shared exchange wallet."""
+    return bool((from_entity_name or "").strip())
+
+
 def normalize_from_address(address: str) -> str:
     """Normalize wallet address for binding lookup (EVM addresses are case-insensitive)."""
     return (address or "").strip().lower()
@@ -413,30 +418,33 @@ async def ingest_crypto_payment(
                 created=False,
             )
 
-        from bot.services.payment_bind_candidates import candidates_for_payment
-        from notification.payment_bind_helpers import auto_bind_from_candidates
-
-        ambiguous_candidates = candidates_for_payment(
-            session,
-            payment,
-            "crypto",
-            filter_alert_scope=alert_scope,
-        )
-        single = auto_bind_from_candidates(ambiguous_candidates)
-        if single is not None:
-            auto_bound = True
-            group_title = single.group_title
-            _apply_binding_to_payment(
-                payment,
-                telegram_chat_id=int(single.telegram_chat_id),
-                club_id=int(single.club_id),
-                bound_group_title_at_bind=single.group_title,
-                auto_bound=True,
-            )
-        elif len(ambiguous_candidates) > 1:
-            ambiguous_candidates = list(ambiguous_candidates)
-        else:
+        if sender_is_exchange(from_entity_name):
             ambiguous_candidates = []
+        else:
+            from bot.services.payment_bind_candidates import candidates_for_payment
+            from notification.payment_bind_helpers import auto_bind_from_candidates
+
+            ambiguous_candidates = candidates_for_payment(
+                session,
+                payment,
+                "crypto",
+                filter_alert_scope=alert_scope,
+            )
+            single = auto_bind_from_candidates(ambiguous_candidates)
+            if single is not None:
+                auto_bound = True
+                group_title = single.group_title
+                _apply_binding_to_payment(
+                    payment,
+                    telegram_chat_id=int(single.telegram_chat_id),
+                    club_id=int(single.club_id),
+                    bound_group_title_at_bind=single.group_title,
+                    auto_bound=True,
+                )
+            elif len(ambiguous_candidates) > 1:
+                ambiguous_candidates = list(ambiguous_candidates)
+            else:
+                ambiguous_candidates = []
 
         payment_id = int(payment.id)
         session.flush()
@@ -633,15 +641,16 @@ async def bind_crypto_payment_by_id(
             auto_bound=False,
             bound_by_telegram_user_id=bound_by_telegram_user_id,
         )
-        _upsert_wallet_binding(
-            session,
-            from_address=payment.from_address,
-            alert_scope=payment.alert_scope,
-            telegram_chat_id=group.telegram_chat_id,
-            club_id=group.club_id,
-            bound_group_title_at_bind=group.group_title,
-            bound_by_telegram_user_id=bound_by_telegram_user_id,
-        )
+        if not sender_is_exchange(payment.from_entity_name):
+            _upsert_wallet_binding(
+                session,
+                from_address=payment.from_address,
+                alert_scope=payment.alert_scope,
+                telegram_chat_id=group.telegram_chat_id,
+                club_id=group.club_id,
+                bound_group_title_at_bind=group.group_title,
+                bound_by_telegram_user_id=bound_by_telegram_user_id,
+            )
 
         live_title = (
             resolve_display_group_title(group.telegram_chat_id) or group.group_title

@@ -2155,6 +2155,27 @@ class CryptoWalletBinding(Base):
     club = relationship("Club")
 
 
+class UnboundPaymentReminder(Base):
+    """Slack nag for a payment ingested unbound. Old payments have no row."""
+
+    __tablename__ = "unbound_payment_reminders"
+    __table_args__ = (
+        Index(
+            "uq_unbound_reminders_pay",
+            "payment_method_slug",
+            "payment_id",
+            unique=True,
+        ),
+        Index("ix_unbound_reminders_due", "created_at", "last_reminded_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    payment_method_slug = Column(String(32), nullable=False)
+    payment_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    last_reminded_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class ZellePayerBinding(Base):
     """Remember bind candidates: normalized payer name + support group (any shared Zelle)."""
 

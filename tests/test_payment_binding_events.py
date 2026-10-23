@@ -55,8 +55,9 @@ class TestPaymentBindingEvents(IsolatedAsyncioTestCase):
         self.assertEqual(added.event_type, EVENT_PAYMENT_BOUND)
         self.assertEqual(added.payment_id, 81)
 
+    @patch("bot.services.unbound_payment_reminders.clear_unbound_payment_reminder")
     @patch("bot.services.payment_binding_events.record_binding_event")
-    def test_track_ingest_notification_auto_bound(self, mock_record):
+    def test_track_ingest_notification_auto_bound(self, mock_record, _clear):
         track_ingest_notification(
             payment_method_slug="zelle",
             payment_id=10,
@@ -75,8 +76,9 @@ class TestPaymentBindingEvents(IsolatedAsyncioTestCase):
         self.assertEqual(first.event_type, EVENT_PAYMENT_AUTO_BOUND)
         self.assertEqual(second.event_type, EVENT_NOTIFICATION_SENT)
 
+    @patch("bot.services.unbound_payment_reminders.arm_unbound_payment_reminder")
     @patch("bot.services.payment_binding_events.record_binding_event")
-    def test_track_ingest_notification_unbound(self, mock_record):
+    def test_track_ingest_notification_unbound(self, mock_record, mock_arm):
         track_ingest_notification(
             payment_method_slug="zelle",
             payment_id=11,
@@ -90,6 +92,10 @@ class TestPaymentBindingEvents(IsolatedAsyncioTestCase):
         mock_record.assert_called_once()
         self.assertEqual(
             mock_record.call_args[0][0].event_type, EVENT_NOTIFICATION_SENT
+        )
+        mock_arm.assert_called_once_with(
+            payment_method_slug="zelle",
+            payment_id=11,
         )
 
     @patch(

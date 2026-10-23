@@ -356,6 +356,85 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.auto_bound)
         self.assertEqual(result.status, "unbound")
 
+    async def test_ingest_exchange_sender_stays_unbound(self):
+        candidate = CandidateGroup(
+            telegram_chat_id=CHAT_ID,
+            club_id=CLUB_ID,
+            group_title=GROUP_TITLE,
+        )
+        payment_obj = CryptoPayment(
+            id=101,
+            amount_cents=50000,
+            token_symbol="USDC",
+            chain="ethereum",
+            from_address=FROM_ADDRESS,
+            from_entity_name="Coinbase",
+            to_address="0x7063760294b901CF56b34BEB6275A641B5178CDa",
+            transaction_hash="0xtx-exchange",
+            alert_name=ALERT_NAME_RT_AT_CC,
+            alert_scope=ALERT_SCOPE_RT_AT_CC,
+        )
+
+        def _query(model):
+            q = MagicMock()
+            if model is CryptoPayment:
+                q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            if isinstance(obj, CryptoPayment) and obj.id is None:
+                obj.id = 101
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+        candidates = MagicMock(return_value=[candidate])
+
+        with (
+            patch("bot.services.crypto_payments.get_db") as mock_get_db,
+            patch(
+                "notification.payment_notification_delivery.deliver_payment_notification",
+                new=AsyncMock(return_value=[(NOTIF_CHAT_ID, NOTIF_MSG_ID)]),
+            ) as deliver_mock,
+            patch(
+                "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "bot.services.payment_bind_candidates.candidates_for_payment",
+                candidates,
+            ),
+            patch(
+                "notification.payment_bind_helpers.auto_bind_from_candidates",
+                return_value=candidate,
+            ),
+            patch("bot.services.crypto_payments.track_ingest_notification"),
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await ingest_crypto_payment(
+                amount="500.00",
+                token_symbol="USDC",
+                chain="ethereum",
+                from_address=FROM_ADDRESS,
+                from_entity_name="Coinbase",
+                to_address="0x7063760294b901CF56b34BEB6275A641B5178CDa",
+                transaction_hash="0xtx-exchange",
+                alert_name=ALERT_NAME_RT_AT_CC,
+                method_owner="round-table",
+            )
+
+        self.assertFalse(result.auto_bound)
+        self.assertEqual(result.status, "unbound")
+        candidates.assert_not_called()
+        text = deliver_mock.await_args.args[0]
+        self.assertIn("Group Chat: Unbound", text)
+        self.assertNotIn("select group below", text)
+        self.assertIsNone(deliver_mock.await_args.kwargs.get("reply_markup"))
+
 
 class CryptoManualBindUpsertTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_manual_bind_upserts_wallet_binding(self):
@@ -442,6 +521,86 @@ class CryptoManualBindUpsertTestCase(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(wallet_row.alert_scope, ALERT_SCOPE_CLUBGTO)
         self.assertEqual(wallet_row.telegram_chat_id, CHAT_ID)
+
+    async def test_manual_bind_exchange_does_not_save_wallet(self):
+        payment = CryptoPayment(
+            id=8,
+            amount_cents=50000,
+            token_symbol="USDC",
+            chain="ethereum",
+            from_address=FROM_ADDRESS,
+            from_entity_name="Coinbase",
+            to_address="0xdef",
+            transaction_hash="0xtx",
+            alert_name=ALERT_NAME_RT_AT_CC,
+            alert_scope=ALERT_SCOPE_RT_AT_CC,
+            notification_chat_id=NOTIF_CHAT_ID,
+            notification_message_id=NOTIF_MSG_ID,
+        )
+        wallet_row = None
+
+        def _query(model):
+            q = MagicMock()
+            if model is CryptoPayment:
+                q.filter_by.return_value.one_or_none.return_value = payment
+            elif model is CryptoWalletBinding:
+                q.filter_by.return_value.one_or_none.return_value = wallet_row
+            return q
+
+        mock_session = MagicMock()
+        mock_session.query.side_effect = _query
+
+        def _add(obj):
+            nonlocal wallet_row
+            if isinstance(obj, CryptoWalletBinding):
+                wallet_row = obj
+
+        mock_session.add.side_effect = _add
+        mock_session.flush = MagicMock()
+
+        with (
+            patch("bot.services.crypto_payments.get_db") as mock_get_db,
+            patch(
+                "bot.services.crypto_payments.resolve_bound_group",
+                return_value=BindResult(
+                    ok=True,
+                    bound_group=BoundGroup(
+                        telegram_chat_id=CHAT_ID,
+                        club_id=CLUB_ID,
+                        group_title=GROUP_TITLE,
+                    ),
+                ),
+            ),
+            patch(
+                "bot.services.crypto_payments.resolve_display_group_title",
+                return_value=GROUP_TITLE,
+            ),
+            patch(
+                "bot.services.crypto_payments.resolve_group_chat_url_for_payment",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "bot.services.crypto_payments.sync_payment_notification_edit",
+                new=AsyncMock(),
+            ),
+            patch(
+                "bot.services.crypto_payments.validate_bind_alert_scope",
+                return_value=None,
+            ),
+            patch("bot.services.crypto_payments.record_payment_bound"),
+        ):
+            mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
+            mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await bind_crypto_payment_by_id(
+                payment_id=8,
+                group_title_input=GROUP_TITLE,
+                bound_by_telegram_user_id=493310710,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertIsNone(wallet_row)
+        self.assertEqual(payment.telegram_chat_id, CHAT_ID)
 
 
 class FormatCryptoNotificationTestCase(unittest.TestCase):

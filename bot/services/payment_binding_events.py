@@ -117,6 +117,21 @@ def record_payment_bound(
             previous_telegram_chat_id=previous_telegram_chat_id,
         )
     )
+    try:
+        from bot.services.unbound_payment_reminders import (
+            clear_unbound_payment_reminder,
+        )
+
+        clear_unbound_payment_reminder(
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+        )
+    except Exception:
+        logger.warning(
+            "record_payment_bound: clear unbound reminder failed payment_id=%s",
+            payment_id,
+            exc_info=True,
+        )
     if not auto_bound:
         try:
             from bot.services.deposit_funnel_events import (
@@ -201,6 +216,22 @@ def track_ingest_notification(
         auto_bound=auto_bound,
         bound_via=bound_via if auto_bound and bind_attempt_id is not None else None,
     )
+    if telegram_chat_id is None:
+        try:
+            from bot.services.unbound_payment_reminders import (
+                arm_unbound_payment_reminder,
+            )
+
+            arm_unbound_payment_reminder(
+                payment_method_slug=payment_method_slug,
+                payment_id=payment_id,
+            )
+        except Exception:
+            logger.warning(
+                "track_ingest_notification: arm unbound reminder failed payment_id=%s",
+                payment_id,
+                exc_info=True,
+            )
 
 
 def record_notification_sent(
