@@ -115,10 +115,7 @@ def format_unbound_payment_reminder(
         f"Method: {_METHOD_LABELS.get(slug, slug)}",
     ]
     if slug == "crypto":
-        from bot.services.crypto_payments import (
-            format_from_label,
-            sender_is_exchange,
-        )
+        from bot.services.crypto_payments import format_from_label
         from bot.services.venmo_payments import (
             format_amount_display,
             format_paid_at_display,
@@ -140,10 +137,6 @@ def format_unbound_payment_reminder(
         paid_at = (getattr(payment, "paid_at", None) or "").strip()
         if paid_at:
             lines.append(f"Paid: {format_paid_at_display(paid_at)}")
-        if sender_is_exchange(getattr(payment, "from_entity_name", None)):
-            titles: list[str] = []
-        else:
-            titles = list(candidate_titles or [])
     else:
         from bot.services.venmo_payments import format_amount_display
 
@@ -159,9 +152,8 @@ def format_unbound_payment_reminder(
         handle = _handle_line(slug, payment)
         if handle:
             lines.append(handle)
-        titles = list(candidate_titles or [])
 
-    titles = [title for title in titles if (title or "").strip()]
+    titles = [title for title in (candidate_titles or []) if (title or "").strip()]
     if titles:
         lines.append("")
         lines.append("Possible groups:")
@@ -211,13 +203,8 @@ def clear_unbound_payment_reminder(
 
 
 def _candidate_titles(session, payment: object, slug: str) -> list[str]:
-    from bot.services.crypto_payments import sender_is_exchange
     from bot.services.payment_bind_candidates import candidates_for_payment
 
-    if slug == "crypto" and sender_is_exchange(
-        getattr(payment, "from_entity_name", None)
-    ):
-        return []
     candidates = candidates_for_payment(session, payment, slug)
     return [c.group_title for c in candidates if (c.group_title or "").strip()]
 

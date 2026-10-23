@@ -375,10 +375,13 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
             alert_scope=ALERT_SCOPE_RT_AT_CC,
         )
 
+        added: dict[str, CryptoPayment] = {}
+
         def _query(model):
             q = MagicMock()
             if model is CryptoPayment:
                 q.filter_by.return_value.one_or_none.side_effect = [None, payment_obj]
+                q.filter_by.return_value.one.side_effect = lambda: added["payment"]
             return q
 
         mock_session = MagicMock()
@@ -387,6 +390,7 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
         def _add(obj):
             if isinstance(obj, CryptoPayment) and obj.id is None:
                 obj.id = 101
+                added["payment"] = obj
 
         mock_session.add.side_effect = _add
         mock_session.flush = MagicMock()
@@ -407,10 +411,10 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
                 candidates,
             ),
             patch(
-                "notification.payment_bind_helpers.auto_bind_from_candidates",
-                return_value=candidate,
-            ),
-            patch("bot.services.crypto_payments.track_ingest_notification"),
+                "bot.services.crypto_payments.maybe_notify_player_on_auto_bound",
+                new=AsyncMock(),
+            ) as player_notify,
+            patch("bot.services.crypto_payments.track_ingest_notification") as track,
         ):
             mock_get_db.return_value.__enter__ = MagicMock(return_value=mock_session)
             mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
@@ -429,11 +433,19 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.auto_bound)
         self.assertEqual(result.status, "unbound")
-        candidates.assert_not_called()
+        candidates.assert_called_once()
         text = deliver_mock.await_args.args[0]
-        self.assertIn("Group Chat: Unbound", text)
-        self.assertNotIn("select group below", text)
-        self.assertIsNone(deliver_mock.await_args.kwargs.get("reply_markup"))
+        self.assertIn("select group below", text)
+        self.assertIn(GROUP_TITLE, text)
+        markup = deliver_mock.await_args.kwargs.get("reply_markup")
+        self.assertIsNotNone(markup)
+        buttons = [
+            button["text"] for row in markup["inline_keyboard"] for button in row
+        ]
+        self.assertIn(GROUP_TITLE, buttons)
+        player_notify.assert_awaited_once()
+        self.assertFalse(player_notify.await_args.kwargs["auto_bound"])
+        self.assertIsNone(track.call_args.kwargs["telegram_chat_id"])
 
 
 class CryptoManualBindUpsertTestCase(unittest.IsolatedAsyncioTestCase):

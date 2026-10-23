@@ -418,18 +418,20 @@ async def ingest_crypto_payment(
                 created=False,
             )
 
-        if sender_is_exchange(from_entity_name):
-            ambiguous_candidates = []
-        else:
-            from bot.services.payment_bind_candidates import candidates_for_payment
-            from notification.payment_bind_helpers import auto_bind_from_candidates
+        from bot.services.payment_bind_candidates import candidates_for_payment
+        from notification.payment_bind_helpers import auto_bind_from_candidates
 
-            ambiguous_candidates = candidates_for_payment(
-                session,
-                payment,
-                "crypto",
-                filter_alert_scope=alert_scope,
-            )
+        ambiguous_candidates = candidates_for_payment(
+            session,
+            payment,
+            "crypto",
+            filter_alert_scope=alert_scope,
+        )
+        if sender_is_exchange(from_entity_name):
+            # A labeled sender is a shared exchange wallet. Show every known
+            # group, including a single match, and wait for a staff tap.
+            ambiguous_candidates = list(ambiguous_candidates)
+        else:
             single = auto_bind_from_candidates(ambiguous_candidates)
             if single is not None:
                 auto_bound = True
@@ -467,7 +469,7 @@ async def ingest_crypto_payment(
     )
 
     notif_markup: dict | None = None
-    if ambiguous_candidates and len(ambiguous_candidates) > 1 and not auto_bound:
+    if ambiguous_candidates and not auto_bound:
         notif_markup = candidate_picker_markup(
             "crypto", int(payment.id), ambiguous_candidates
         )

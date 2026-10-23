@@ -115,7 +115,7 @@ def format_payment_notification(
         group_title=group_title,
         group_chat_url=group_chat_url,
     )
-    if ambiguous_candidates and len(ambiguous_candidates) > 1 and not group_title:
+    if ambiguous_candidates and not group_title:
         text = inject_ambiguous_group_chat_line(text, ambiguous_candidates)
     from bot.services.payment_auto_deposit import append_creator_club_staff_footer
     from bot.services.payment_refund_gate import (

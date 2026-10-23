@@ -80,6 +80,9 @@ class ReminderFormatTestCase(unittest.TestCase):
                     "From: Coinbase (0xa9d1…3e43)",
                     "Tx: 0xabc123def456",
                     "Paid: Oct 22, 2026 09:15 PM EST",
+                    "",
+                    "Possible groups:",
+                    "`RT / 7657-1318 / Yoter Cat`",
                 ]
             ),
         )
