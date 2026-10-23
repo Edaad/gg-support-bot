@@ -399,6 +399,9 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 pad, "_send_add_confirmation", new_callable=AsyncMock
             ) as mock_confirm,
+            patch.object(
+                pad, "_send_auto_deposit_delay_notice", new_callable=AsyncMock
+            ) as mock_delay,
         ):
             await pad.maybe_auto_deposit_from_payment(
                 club_id=CLUB_ID_CREATOR,
@@ -412,10 +415,42 @@ class MaybeAutoDepositSuccessTestCase(unittest.IsolatedAsyncioTestCase):
 
         mock_record.assert_not_called()
         mock_confirm.assert_not_awaited()
+        mock_delay.assert_awaited_once_with(telegram_chat_id=CHAT_ID)
         mock_record_event.assert_called_once()
         event_kwargs = mock_record_event.call_args.kwargs
         self.assertEqual(event_kwargs["status"], "failed")
         self.assertEqual(event_kwargs["skip_reason"], "chip_add_failed")
+
+    async def test_unstarted_chip_add_does_not_send_delay_notice(self) -> None:
+        with (
+            patch.object(pad, "get_auto_deposit_on_payment_enabled", return_value=True),
+            patch.object(pad, "has_recent_deposit_command_in_chat", return_value=True),
+            patch.object(pad, "has_recent_add_command_in_chat", return_value=False),
+            patch.object(
+                pad,
+                "run_auto_chip_add",
+                new_callable=AsyncMock,
+                return_value=(False, "config_missing"),
+            ),
+            patch.object(
+                pad, "_run_payment_chip_match_after_attempt", new_callable=AsyncMock
+            ),
+            patch.object(pad, "record_auto_deposit_event"),
+            patch.object(
+                pad, "_send_auto_deposit_delay_notice", new_callable=AsyncMock
+            ) as mock_delay,
+        ):
+            await pad.maybe_auto_deposit_from_payment(
+                club_id=CLUB_ID_CREATOR,
+                telegram_chat_id=CHAT_ID,
+                amount_cents=5000,
+                auto_bound=True,
+                payment_method_slug="zelle",
+                payment_id=3,
+                group_title="CC / 1234-5678 / Player",
+            )
+
+        mock_delay.assert_not_awaited()
 
 
 class RecordAutoDepositEventOnSkipTestCase(unittest.IsolatedAsyncioTestCase):
@@ -515,6 +550,21 @@ class SendAddConfirmationTestCase(unittest.IsolatedAsyncioTestCase):
         mock_bot.send_message.assert_awaited_once_with(
             chat_id=CHAT_ID,
             text="Added 50 credits, good luck!!",
+        )
+
+
+class SendAutoDepositDelayNoticeTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_bot_sends_delay_notice(self) -> None:
+        mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
+        with (
+            patch.object(pad, "support_bot_tokens_to_try", return_value=["token"]),
+            patch.object(pad, "Bot", return_value=mock_bot),
+        ):
+            await pad._send_auto_deposit_delay_notice(telegram_chat_id=CHAT_ID)
+        mock_bot.send_message.assert_awaited_once_with(
+            chat_id=CHAT_ID,
+            text=pad.AUTO_DEPOSIT_DELAY_NOTICE,
         )
 
 

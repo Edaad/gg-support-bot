@@ -38,6 +38,20 @@ logger = logging.getLogger(__name__)
 
 DEPOSIT_COMMAND_WINDOW_MINUTES = 10
 
+AUTO_DEPOSIT_DELAY_NOTICE = (
+    "Seems like your credits are taking a second to add. "
+    "You will see them in your account in just a second!"
+)
+
+# Chip-add never started, so there is nothing for the player to wait on.
+_NO_DELAY_NOTICE_STATUSES = frozenset(
+    {
+        "config_missing",
+        "request_claim_failed",
+        "no_transactions",
+    }
+)
+
 CREATOR_STAFF_FOOTER_AUTO = (
     "<b>Auto-add:</b> Fully automatic — chips will load and the player will be "
     "notified. No action needed unless you receive an error alert; then /add manually."
@@ -258,6 +272,33 @@ async def _send_add_confirmation(
         "payment_auto_deposit: all confirmation sends failed chat_id=%s club_id=%s",
         telegram_chat_id,
         club_id,
+    )
+
+
+async def _send_auto_deposit_delay_notice(*, telegram_chat_id: int) -> None:
+    """Tell the player chips are still landing when auto chip-add did not succeed."""
+    tokens = support_bot_tokens_to_try(is_test=False)
+    for token in tokens:
+        try:
+            bot = Bot(token=token)
+            await bot.send_message(
+                chat_id=int(telegram_chat_id),
+                text=AUTO_DEPOSIT_DELAY_NOTICE,
+            )
+            logger.info(
+                "payment_auto_deposit: delay notice sent chat_id=%s",
+                telegram_chat_id,
+            )
+            return
+        except Exception:
+            logger.warning(
+                "payment_auto_deposit: delay notice bot send failed chat_id=%s",
+                telegram_chat_id,
+                exc_info=True,
+            )
+    logger.error(
+        "payment_auto_deposit: delay notice not sent chat_id=%s",
+        telegram_chat_id,
     )
 
 
@@ -501,6 +542,10 @@ async def maybe_auto_deposit_from_payment(
             skip_reason="chip_add_failed",
             chip_add_status="unexpected_error",
         )
+        if telegram_chat_id is not None:
+            await _send_auto_deposit_delay_notice(
+                telegram_chat_id=int(telegram_chat_id)
+            )
         return
 
     # Best-effort payment↔chip-add match (independent of RPA outcome).
@@ -538,6 +583,13 @@ async def maybe_auto_deposit_from_payment(
             skip_reason="chip_add_failed",
             chip_add_status=chip_status,
         )
+        if (
+            telegram_chat_id is not None
+            and chip_status not in _NO_DELAY_NOTICE_STATUSES
+        ):
+            await _send_auto_deposit_delay_notice(
+                telegram_chat_id=int(telegram_chat_id)
+            )
         return
 
     try:
