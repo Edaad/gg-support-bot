@@ -245,6 +245,11 @@ class TestChipAddUnionOverride(unittest.IsolatedAsyncioTestCase):
             ) as mock_resolve,
             patch.object(api, "_send_alert", AsyncMock()),
             patch.object(api, "_maybe_notify_rpa_deposit_failed", AsyncMock()),
+            patch("bot.services.clubgg_rpa_events.enqueue_pending_chip_add"),
+            patch(
+                "bot.services.clubgg_rpa_events.claim_pending_chip_add",
+                return_value="claimed",
+            ),
         ):
             ok, status = await api.run_auto_chip_add(
                 club_id=2,
@@ -645,6 +650,11 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
             patch.object(api, "_maybe_notify_rpa_deposit_failed", AsyncMock()),
             patch.object(api, "_maybe_notify_rpa_deposit_problem", AsyncMock()),
             patch.object(api.httpx, "AsyncClient", return_value=client),
+            patch("bot.services.clubgg_rpa_events.enqueue_pending_chip_add"),
+            patch(
+                "bot.services.clubgg_rpa_events.claim_pending_chip_add",
+                return_value="claimed",
+            ),
         ):
             return await api.run_auto_chip_add(
                 club_id=2,
