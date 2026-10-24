@@ -41,6 +41,8 @@ CHIP_ADD_SWEEP_GRACE = timedelta(seconds=5)
 STATUS_PENDING = "pending"
 STATUS_SENDING = "sending"
 STATUS_EXPIRED = "expired"
+# Staff /add inserts the command lock as "started" before the chip-add runs.
+CHIP_ADD_CLAIMABLE = (STATUS_PENDING, "started")
 CHIP_ADD_TTL_DETAIL = "chip-add ttl elapsed"
 
 
@@ -296,8 +298,9 @@ def enqueue_pending_chip_add(
 
 
 def claim_pending_chip_add(request_id: str, *, now: datetime | None = None) -> str:
-    """Take a pending chip-add. claimed, owned, expired, completed, failed, or missing.
+    """Take a chip-add that has not been sent. claimed, owned, expired, completed, failed, or missing.
 
+    A staff /add command lock is status ``started`` and is claimable. ``sending`` is already owned.
     missing means the row could not be read; the caller may still send.
     """
     current = _aware(now) or datetime.now(timezone.utc)
@@ -307,7 +310,7 @@ def claim_pending_chip_add(request_id: str, *, now: datetime | None = None) -> s
                 update(ClubggRpaEvent)
                 .where(
                     ClubggRpaEvent.request_id == request_id,
-                    ClubggRpaEvent.status == STATUS_PENDING,
+                    ClubggRpaEvent.status.in_(CHIP_ADD_CLAIMABLE),
                     or_(
                         ClubggRpaEvent.expires_at.is_(None),
                         ClubggRpaEvent.expires_at > current,

@@ -9,6 +9,7 @@ from bot.services import clubgg_deposit_api as api
 from bot.services import payment_auto_deposit as pad
 from bot.services.chip_add_recovery import payment_from_request_id
 from bot.services.clubgg_rpa_events import (
+    CHIP_ADD_CLAIMABLE,
     CHIP_ADD_SWEEP_GRACE,
     chip_add_expired,
     pending_chip_add_due,
@@ -52,6 +53,12 @@ class TestChipAddTtl(unittest.TestCase):
                 now=now,
             )
         )
+
+
+class TestStaffAddClaim(unittest.TestCase):
+    def test_command_lock_can_be_claimed_for_the_send(self) -> None:
+        self.assertIn("started", CHIP_ADD_CLAIMABLE)
+        self.assertNotIn("sending", CHIP_ADD_CLAIMABLE)
 
 
 class TestPaymentRequestId(unittest.TestCase):
