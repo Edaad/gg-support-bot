@@ -120,6 +120,10 @@ async def _post_init_dm_gc_listener(app, *, test_mode: bool = False):
 
         schedule_unbound_payment_reminder_job(app)
 
+        from bot.services.chip_add_recovery import schedule_chip_add_recovery_job
+
+        schedule_chip_add_recovery_job(app)
+
         from bot.services.group_chat_transcript_cron import (
             schedule_group_chat_transcript_job,
         )

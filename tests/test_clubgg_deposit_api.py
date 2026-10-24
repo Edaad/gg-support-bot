@@ -632,7 +632,7 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
             alert_on_success=False,
         )
 
-    async def _run(self, client, **kwargs):
+    async def _run(self, client, *, health=(True, "ok"), **kwargs):
         with (
             patch.object(api, "load_config", return_value=self._cfg()),
             patch.object(api, "_claim_request", return_value=True),
@@ -640,15 +640,17 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
                 api, "get_club_by_id", return_value=SimpleNamespace(name="Round Table")
             ),
             patch.object(api, "get_last_deposit_union", return_value=(None, None)),
-            patch.object(api, "_health_ok", AsyncMock(return_value=(True, "ok"))),
+            patch.object(api, "_health_ok", AsyncMock(return_value=health)),
             patch.object(api, "_send_alert", AsyncMock()),
+            patch.object(api, "_maybe_notify_rpa_deposit_failed", AsyncMock()),
+            patch.object(api, "_maybe_notify_rpa_deposit_problem", AsyncMock()),
             patch.object(api.httpx, "AsyncClient", return_value=client),
         ):
             return await api.run_auto_chip_add(
                 club_id=2,
                 chat_id=-100,
                 amount=kwargs.pop("amount", Decimal("500")),
-                request_id="add-1",
+                request_id=kwargs.pop("request_id", "add-1"),
                 group_title="RT / 8272-5942 / Player",
                 **kwargs,
             )
@@ -672,6 +674,26 @@ class TestChipAddPostsLabels(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         self.assertEqual(status, "success")
         self.assertEqual(client.posts[0][1]["label"], "Early Feeback")
+
+    async def test_queue_rejection_stores_the_server_error(self) -> None:
+        client = _FakeAsyncClient(post_response=_FakeResponse(502, {}))
+        with patch("bot.services.clubgg_rpa_events.record_clubgg_result") as record:
+            ok, status = await self._run(client, request_id="payment-zelle-4712")
+        self.assertFalse(ok)
+        self.assertEqual(status, "queue_failed")
+        self.assertEqual(record.call_args.kwargs["rpa_status"], "queue_failed")
+        self.assertEqual(record.call_args.kwargs["detail"], "HTTP 502")
+        self.assertEqual(record.call_args.kwargs["request_id"], "payment-zelle-4712")
+
+    async def test_health_failure_stores_the_preflight_error(self) -> None:
+        client = _CapturingClient()
+        with patch("bot.services.clubgg_rpa_events.record_clubgg_result") as record:
+            ok, status = await self._run(
+                client, health=(False, "health returned HTTP 530")
+            )
+        self.assertFalse(ok)
+        self.assertEqual(status, "health_failed")
+        self.assertEqual(record.call_args.kwargs["detail"], "health returned HTTP 530")
 
 
 class TestClaimPostsCashoutLabel(unittest.IsolatedAsyncioTestCase):

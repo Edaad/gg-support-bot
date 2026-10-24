@@ -556,10 +556,11 @@ async def _run_auto_chip_add_body(
     union_shorthand: Optional[str] = None,
     ptb_bot: Any | None = None,
     label: Optional[str] = None,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str]:
     """Submit chip-add to ClubGG and poll to terminal.
 
-    Returns (ok, status) where ok is True on success/dry_run/skipped. Never raises.
+    Returns (ok, status, reason). ok is True on success/dry_run/skipped. ``reason``
+    is the deposit-server or preflight error and is empty on success. Never raises.
     Caller must claim ``request_id`` via ``_claim_request`` when idempotency matters.
 
     ``union_shorthand`` pins the destination union (``/transfer`` needs to add to a
@@ -570,15 +571,15 @@ async def _run_auto_chip_add_body(
     """
     cfg = load_config()
     if cfg is None:
-        return False, "config_missing"
+        return False, "config_missing", "deposit API is not configured"
 
     if not _claim_request(request_id):
-        return False, "request_claim_failed"
+        return False, "request_claim_failed", ""
 
     deposit_label = (label or "").strip() or LABEL_DEPOSIT
     transactions = _deposit_transactions(amount, bonus, deposit_label=deposit_label)
     if not transactions:
-        return False, "no_transactions"
+        return False, "no_transactions", "no chip amount"
 
     title = group_title
     if not title:
@@ -594,7 +595,11 @@ async def _run_auto_chip_add_body(
         await _maybe_notify_rpa_deposit_failed(
             club_id=club_id, chat_id=chat_id, title=title
         )
-        return False, "no_player_id"
+        return (
+            False,
+            "no_player_id",
+            "could not read a player id from the group title",
+        )
 
     club = await asyncio.to_thread(get_club_by_id, int(club_id))
     club_name = club.name if club else None
@@ -660,7 +665,11 @@ async def _run_auto_chip_add_body(
         await _maybe_notify_rpa_deposit_failed(
             club_id=club_id, chat_id=chat_id, title=title
         )
-        return False, "club_mapping_failed"
+        return (
+            False,
+            "club_mapping_failed",
+            f"could not map club {club_name!r}/union {union_shorthand!r}",
+        )
 
     timeout = httpx.Timeout(cfg.timeout_sec)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -678,7 +687,7 @@ async def _run_auto_chip_add_body(
             await _maybe_notify_rpa_deposit_failed(
                 club_id=club_id, chat_id=chat_id, title=title
             )
-            return False, "health_failed"
+            return False, "health_failed", detail
 
         all_ok = True
         last_status = "failed"
@@ -735,7 +744,7 @@ async def _run_auto_chip_add_body(
                 status=last_status,
                 detail=last_reason or None,
             )
-        return all_ok, last_status
+        return all_ok, last_status, "" if all_ok else last_reason
 
 
 async def run_auto_chip_add(
@@ -750,7 +759,31 @@ async def run_auto_chip_add(
     ptb_bot: Any | None = None,
     label: Optional[str] = None,
 ) -> tuple[bool, str]:
-    ok, status = await _run_auto_chip_add_body(
+    from bot.services.clubgg_rpa_events import (
+        OP_DEPOSIT,
+        claim_pending_chip_add,
+        enqueue_pending_chip_add,
+        record_clubgg_result,
+    )
+
+    enqueue_pending_chip_add(
+        request_id=request_id,
+        club_id=club_id,
+        telegram_chat_id=chat_id,
+        amount=amount,
+        group_title=group_title,
+    )
+    gate = claim_pending_chip_add(request_id)
+    if gate == "completed":
+        return True, "success"
+    if gate == "owned":
+        return False, "owned"
+    if gate == "expired":
+        return False, "expired"
+    if gate == "failed":
+        return False, "failed"
+
+    ok, status, reason = await _run_auto_chip_add_body(
         club_id=club_id,
         chat_id=chat_id,
         amount=amount,
@@ -761,8 +794,15 @@ async def run_auto_chip_add(
         ptb_bot=ptb_bot,
         label=label,
     )
-    from bot.services.clubgg_rpa_events import OP_DEPOSIT, record_clubgg_result
-
+    detail = None if ok else ((reason or "").strip() or status)
+    if not ok and status != "request_claim_failed":
+        logger.warning(
+            "auto_chip_add: failed request_id=%s status=%s detail=%s chat_id=%s",
+            request_id,
+            status,
+            detail,
+            chat_id,
+        )
     record_clubgg_result(
         request_id=request_id,
         operation=OP_DEPOSIT,
@@ -772,7 +812,7 @@ async def run_auto_chip_add(
         telegram_chat_id=chat_id,
         amount=amount,
         group_title=group_title,
-        detail=None if ok else status,
+        detail=detail,
     )
     return ok, status
 

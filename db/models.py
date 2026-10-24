@@ -2258,6 +2258,7 @@ class ClubggRpaEvent(Base):
         UniqueConstraint("request_id", name="uq_clubgg_rpa_request_id"),
         Index("ix_clubgg_rpa_started_at", "started_at"),
         Index("ix_clubgg_rpa_status", "status"),
+        Index("ix_clubgg_rpa_expires", "status", "expires_at"),
         Index(
             "uq_clubgg_rpa_command",
             "telegram_chat_id",
@@ -2290,6 +2291,8 @@ class ClubggRpaEvent(Base):
     path = Column(String(32), nullable=True)
     rpa_status = Column(String(32), nullable=True)
     detail = Column(Text, nullable=True)
+    # Set when a chip-add is saved before the ClubGG call. Null on older rows.
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
     club = relationship("Club")
 

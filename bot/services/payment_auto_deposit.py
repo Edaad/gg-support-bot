@@ -49,6 +49,8 @@ _NO_DELAY_NOTICE_STATUSES = frozenset(
         "config_missing",
         "request_claim_failed",
         "no_transactions",
+        "owned",
+        "expired",
     }
 )
 
@@ -335,10 +337,27 @@ def schedule_auto_deposit_from_payment(
             exc_info=True,
         )
     try:
+        _persist_payment_chip_add(
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            amount_cents=amount_cents,
+            auto_bound=auto_bound,
+            payment_method_slug=payment_method_slug,
+            payment_id=payment_id,
+            group_title=group_title,
+            goods_or_services=goods_or_services,
+            requires_refund=requires_refund,
+        )
+    except Exception:
+        logger.exception(
+            "payment_auto_deposit: persist chip-add failed payment_id=%s",
+            payment_id,
+        )
+    try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         logger.warning(
-            "payment_auto_deposit: no running loop; skipping payment_id=%s",
+            "payment_auto_deposit: no running loop; chip-add left pending payment_id=%s",
             payment_id,
         )
         return
@@ -357,6 +376,64 @@ def schedule_auto_deposit_from_payment(
             stripe_checkout_session_id=stripe_checkout_session_id,
         ),
         name=f"payment-auto-deposit-{payment_method_slug}-{payment_id}",
+    )
+
+
+def _persist_payment_chip_add(
+    *,
+    club_id: int | None,
+    telegram_chat_id: int | None,
+    amount_cents: int,
+    auto_bound: bool,
+    payment_method_slug: str,
+    payment_id: int,
+    group_title: str | None,
+    goods_or_services: bool,
+    requires_refund: bool,
+) -> None:
+    """Write the chip-add before the in-memory task starts. The worker can finish it."""
+    from bot.services.clubgg_rpa_events import enqueue_pending_chip_add
+
+    title = (group_title or "").strip() or None
+    if not title and telegram_chat_id is not None:
+        try:
+            title, _ = get_group_title_for_chat(int(telegram_chat_id))
+            title = (title or "").strip() or None
+        except Exception:
+            logger.debug(
+                "payment_auto_deposit: title lookup failed payment_id=%s",
+                payment_id,
+                exc_info=True,
+            )
+    if (
+        auto_deposit_ineligible_reason(
+            club_id=club_id,
+            telegram_chat_id=telegram_chat_id,
+            auto_bound=auto_bound,
+            goods_or_services=goods_or_services,
+            requires_refund=requires_refund,
+            group_title=title,
+        )
+        is not None
+    ):
+        return
+    enqueue_pending_chip_add(
+        request_id=request_id_for_payment(payment_method_slug, payment_id),
+        club_id=club_id,
+        telegram_chat_id=telegram_chat_id,
+        amount=_amount_from_cents(amount_cents),
+        group_title=title,
+    )
+
+
+def _close_unsent_chip_add(
+    payment_method_slug: str, payment_id: int, detail: str
+) -> None:
+    from bot.services.clubgg_rpa_events import fail_pending_chip_add
+
+    fail_pending_chip_add(
+        request_id_for_payment(payment_method_slug, payment_id),
+        detail=detail,
     )
 
 
@@ -423,52 +500,27 @@ async def maybe_auto_deposit_from_payment(
     requires_refund: bool = False,
     bind_attempt_id: int | None = None,
     stripe_checkout_session_id: str | None = None,
+    already_queued: bool = False,
 ) -> None:
-    """Auto chip-add on auto-bound payment when club e2e toggle is on."""
-    if club_id is not None and not get_auto_deposit_on_payment_enabled(int(club_id)):
+    """Auto chip-add on auto-bound payment when club e2e toggle is on.
+
+    ``already_queued`` is the worker finishing a row saved before the ttl. The
+    eligibility checks already passed when that row was written.
+    """
+    if (
+        not already_queued
+        and club_id is not None
+        and not get_auto_deposit_on_payment_enabled(int(club_id))
+    ):
+        _close_unsent_chip_add(
+            payment_method_slug, payment_id, "auto_deposit_on_payment_disabled"
+        )
         return
 
     title = (group_title or "").strip() or None
 
-    pre_reason = auto_deposit_ineligible_reason(
-        club_id=club_id,
-        telegram_chat_id=telegram_chat_id,
-        auto_bound=auto_bound,
-        goods_or_services=goods_or_services,
-        requires_refund=requires_refund,
-        group_title=title,
-    )
-    if pre_reason is not None:
-        logger.info(
-            "payment_auto_deposit: skipped method=%s payment_id=%s "
-            "chat_id=%s club_id=%s auto_bound=%s reason=%s",
-            payment_method_slug,
-            payment_id,
-            telegram_chat_id,
-            club_id,
-            auto_bound,
-            pre_reason,
-        )
-        _record_skip_event(
-            payment_method_slug=payment_method_slug,
-            payment_id=payment_id,
-            club_id=club_id,
-            telegram_chat_id=telegram_chat_id,
-            amount_cents=amount_cents,
-            auto_bound=auto_bound,
-            goods_or_services=goods_or_services,
-            group_title=title,
-            skip_reason=pre_reason,
-        )
-        return
-
-    if not title:
-        title, _ = await asyncio.to_thread(
-            get_group_title_for_chat, int(telegram_chat_id)
-        )
-        title = (title or "").strip() or None
-
-        skip_reason = auto_deposit_ineligible_reason(
+    if not already_queued:
+        pre_reason = auto_deposit_ineligible_reason(
             club_id=club_id,
             telegram_chat_id=telegram_chat_id,
             auto_bound=auto_bound,
@@ -476,7 +528,7 @@ async def maybe_auto_deposit_from_payment(
             requires_refund=requires_refund,
             group_title=title,
         )
-        if skip_reason is not None:
+        if pre_reason is not None:
             logger.info(
                 "payment_auto_deposit: skipped method=%s payment_id=%s "
                 "chat_id=%s club_id=%s auto_bound=%s reason=%s",
@@ -485,8 +537,9 @@ async def maybe_auto_deposit_from_payment(
                 telegram_chat_id,
                 club_id,
                 auto_bound,
-                skip_reason,
+                pre_reason,
             )
+            _close_unsent_chip_add(payment_method_slug, payment_id, pre_reason)
             _record_skip_event(
                 payment_method_slug=payment_method_slug,
                 payment_id=payment_id,
@@ -496,9 +549,52 @@ async def maybe_auto_deposit_from_payment(
                 auto_bound=auto_bound,
                 goods_or_services=goods_or_services,
                 group_title=title,
-                skip_reason=skip_reason,
+                skip_reason=pre_reason,
             )
             return
+
+        if not title and telegram_chat_id is not None:
+            title, _ = await asyncio.to_thread(
+                get_group_title_for_chat, int(telegram_chat_id)
+            )
+            title = (title or "").strip() or None
+            skip_reason = auto_deposit_ineligible_reason(
+                club_id=club_id,
+                telegram_chat_id=telegram_chat_id,
+                auto_bound=auto_bound,
+                goods_or_services=goods_or_services,
+                requires_refund=requires_refund,
+                group_title=title,
+            )
+            if skip_reason is not None:
+                logger.info(
+                    "payment_auto_deposit: skipped method=%s payment_id=%s "
+                    "chat_id=%s club_id=%s auto_bound=%s reason=%s",
+                    payment_method_slug,
+                    payment_id,
+                    telegram_chat_id,
+                    club_id,
+                    auto_bound,
+                    skip_reason,
+                )
+                _close_unsent_chip_add(payment_method_slug, payment_id, skip_reason)
+                _record_skip_event(
+                    payment_method_slug=payment_method_slug,
+                    payment_id=payment_id,
+                    club_id=club_id,
+                    telegram_chat_id=telegram_chat_id,
+                    amount_cents=amount_cents,
+                    auto_bound=auto_bound,
+                    goods_or_services=goods_or_services,
+                    group_title=title,
+                    skip_reason=skip_reason,
+                )
+                return
+    elif not title and telegram_chat_id is not None:
+        title, _ = await asyncio.to_thread(
+            get_group_title_for_chat, int(telegram_chat_id)
+        )
+        title = (title or "").strip() or None
 
     amount = _amount_from_cents(amount_cents)
     request_id = request_id_for_payment(payment_method_slug, payment_id)
@@ -523,6 +619,8 @@ async def maybe_auto_deposit_from_payment(
             group_title=title,
             ptb_bot=None,
         )
+        if chip_status == "owned":
+            return
     except Exception:
         logger.exception(
             "payment_auto_deposit: unexpected error payment_id=%s chat_id=%s",
