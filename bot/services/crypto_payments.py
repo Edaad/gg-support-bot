@@ -187,6 +187,9 @@ def shorten_address(address: str) -> str:
     return f"{raw[:6]}…{raw[-4:]}"
 
 
+EXCHANGE_WALLET_LINE = "Wallet: Exchange — verify which group this payment came from"
+
+
 def format_from_label(payment: CryptoPayment) -> str:
     entity = (payment.from_entity_name or "").strip()
     addr = shorten_address(payment.from_address)
@@ -235,6 +238,8 @@ def format_notification_text(
             f"From: {escape_notification_html(format_from_label(payment))}",
         ]
     )
+    if sender_is_exchange(payment.from_entity_name):
+        lines.append(EXCHANGE_WALLET_LINE)
     tx_hash = (payment.transaction_hash or "").strip()
     if tx_hash:
         lines.append(f"Tx: <code>{escape_notification_html(tx_hash)}</code>")

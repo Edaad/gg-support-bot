@@ -436,6 +436,10 @@ class CryptoIngestAutoBindTestCase(unittest.IsolatedAsyncioTestCase):
         candidates.assert_called_once()
         text = deliver_mock.await_args.args[0]
         self.assertIn("select group below", text)
+        self.assertIn(
+            "Wallet: Exchange — verify which group this payment came from",
+            text,
+        )
         self.assertIn(GROUP_TITLE, text)
         markup = deliver_mock.await_args.kwargs.get("reply_markup")
         self.assertIsNotNone(markup)
@@ -641,7 +645,12 @@ class FormatCryptoNotificationTestCase(unittest.TestCase):
             text.index("Group Chat:"),
         )
         self.assertNotIn("Alert Name:", text)
-        self.assertLess(text.index("From:"), text.index("Tx:"))
+        self.assertIn(
+            "Wallet: Exchange — verify which group this payment came from",
+            text,
+        )
+        self.assertLess(text.index("From:"), text.index("Wallet:"))
+        self.assertLess(text.index("Wallet:"), text.index("Tx:"))
         self.assertLess(text.index("Tx:"), text.index("Paid:"))
 
 

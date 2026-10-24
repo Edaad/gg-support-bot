@@ -106,10 +106,19 @@ def format_unbound_payment_reminder(
 ) -> str:
     """Slack body for one still-unbound payment."""
     slug = (method_slug or "").strip().lower()
+    exchange = False
+    if slug == "crypto":
+        from bot.services.crypto_payments import sender_is_exchange
+
+        exchange = sender_is_exchange(getattr(payment, "from_entity_name", None))
+    if exchange:
+        action = "exchange wallet, verify which group it came from."
+    else:
+        action = "match it to a group."
     lines = [
         (
             f"*{waiting_minutes_value} minutes have passed and this payment "
-            "is still unbound — match it to a group.*"
+            f"is still unbound — {action}*"
         ),
         "",
         f"Method: {_METHOD_LABELS.get(slug, slug)}",

@@ -71,7 +71,7 @@ class ReminderFormatTestCase(unittest.TestCase):
             text,
             "\n".join(
                 [
-                    "*5 minutes have passed and this payment is still unbound — match it to a group.*",
+                    "*5 minutes have passed and this payment is still unbound — exchange wallet, verify which group it came from.*",
                     "",
                     "Method: Crypto",
                     "Alert: RT/AT/CC Crypto Payment",
