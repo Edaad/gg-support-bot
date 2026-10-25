@@ -15,13 +15,14 @@ export default function Settings({
   const [testToken, setTestToken] = useState('')
   const testTokenId = useId()
   const isAdmin = role === 'admin'
+  const canUseTelegramLogin = isAdmin || role === 'account_manager'
 
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold text-balance">Settings</h1>
 
       <div className="space-y-6">
-        {isAdmin && <TelegramLogin token={token} />}
+        {canUseTelegramLogin && <TelegramLogin token={token} />}
 
         <section className="panel">
           <h2 className="mb-2 text-lg font-semibold text-ink">Appearance</h2>
