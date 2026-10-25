@@ -9,17 +9,78 @@ from bot.services.mtproto_club_health import STATUS_CONNECTED, STATUS_DISCONNECT
 from bot.services.mtproto_track_contact import (
     _mtproto_disconnect_last_notify,
     clear_mtproto_disconnect_notify_cooldown,
+    format_mtproto_disconnect_slack_text,
     notify_club_gc_mtproto_disconnected,
     set_contact_save_notify_bot,
 )
+
+_SETTINGS = "https://gg-support-bot-2025-6f96168018cf.herokuapp.com/settings"
+
+
+class TestFormatMtprotoDisconnectSlack(unittest.TestCase):
+    def test_includes_qr_login_code_and_cloud_password(self) -> None:
+        text = format_mtproto_disconnect_slack_text(
+            "Round Table",
+            settings_url=_SETTINGS,
+        )
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "*Telegram session disconnected.*",
+                    "Club: Round Table",
+                    "",
+                    (
+                        "/add, /cash, and new groups from player DMs will not work "
+                        "until this account is signed in again."
+                    ),
+                    "",
+                    "1. Open GG Dashboard → Settings → Telegram login.",
+                    "2. Select Round Table.",
+                    "3. Sign in either way:",
+                    (
+                        "   • Login with QR code. On the club phone: Telegram → "
+                        "Settings → Devices → Link Desktop Device, then scan the QR."
+                    ),
+                    (
+                        "   • Send login code. Enter the code Telegram sends, then tap "
+                        "Sign in with code."
+                    ),
+                    (
+                        "4. If it asks for a cloud password, enter that on the "
+                        "dashboard too."
+                    ),
+                    "",
+                    f"<{_SETTINGS}|Open Settings>",
+                ]
+            ),
+        )
+
+    def test_omits_link_without_settings_url(self) -> None:
+        text = format_mtproto_disconnect_slack_text("ClubGTO")
+        self.assertNotIn("Open Settings", text)
+        self.assertIn("Club: ClubGTO", text)
+        self.assertIn("2. Select ClubGTO.", text)
 
 
 class TestNotifyClubGcMtprotoDisconnected(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         _mtproto_disconnect_last_notify.clear()
         set_contact_save_notify_bot(MagicMock(send_message=AsyncMock()))
+        self.slack_patch = patch(
+            "bot.services.slack_ops_notify.notify_slack_escalation",
+            new_callable=AsyncMock,
+        )
+        self.mock_slack = self.slack_patch.start()
+        self.url_patch = patch(
+            "bot.services.mtproto_track_contact._mtproto_disconnect_settings_url",
+            return_value=_SETTINGS,
+        )
+        self.url_patch.start()
 
     def tearDown(self) -> None:
+        self.url_patch.stop()
+        self.slack_patch.stop()
         set_contact_save_notify_bot(None)
         _mtproto_disconnect_last_notify.clear()
 
@@ -47,6 +108,13 @@ class TestNotifyClubGcMtprotoDisconnected(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/cash", text)
         self.assertIn("automatic /gc", text)
         self.assertIn("Telethon client disconnected on worker.", text)
+        self.mock_slack.assert_awaited_once_with(
+            format_mtproto_disconnect_slack_text(
+                "Round Table",
+                settings_url=_SETTINGS,
+            ),
+            source="mtproto_session_disconnected",
+        )
 
     async def test_cooldown_skips_repeat_within_window(self) -> None:
         cfg = MagicMock(
@@ -61,6 +129,7 @@ class TestNotifyClubGcMtprotoDisconnected(unittest.IsolatedAsyncioTestCase):
         await notify_club_gc_mtproto_disconnected(cfg, status_detail="second")
 
         bot.send_message.assert_awaited_once()
+        self.mock_slack.assert_awaited_once()
 
     async def test_clear_cooldown_allows_repeat_after_reconnect(self) -> None:
         cfg = MagicMock(
@@ -76,6 +145,7 @@ class TestNotifyClubGcMtprotoDisconnected(unittest.IsolatedAsyncioTestCase):
         await notify_club_gc_mtproto_disconnected(cfg, status_detail="second")
 
         self.assertEqual(bot.send_message.await_count, 2)
+        self.assertEqual(self.mock_slack.await_count, 2)
 
 
 class TestReportClubHealthDisconnectNotify(unittest.IsolatedAsyncioTestCase):

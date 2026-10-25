@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 from telegram import Bot
@@ -145,12 +146,65 @@ async def notify_club_gc_channels_too_much(
     await notify_club_gc_admin_dm(cfg, "\n".join(lines))
 
 
+def format_mtproto_disconnect_slack_text(
+    club_display_name: str,
+    *,
+    settings_url: str | None = None,
+) -> str:
+    """Account-manager Slack when a club Telethon session drops."""
+
+    club = (club_display_name or "").strip() or "this club"
+    lines = [
+        "*Telegram session disconnected.*",
+        f"Club: {club}",
+        "",
+        (
+            "/add, /cash, and new groups from player DMs will not work "
+            "until this account is signed in again."
+        ),
+        "",
+        "1. Open GG Dashboard → Settings → Telegram login.",
+        f"2. Select {club}.",
+        "3. Sign in either way:",
+        (
+            "   • Login with QR code. On the club phone: Telegram → "
+            "Settings → Devices → Link Desktop Device, then scan the QR."
+        ),
+        (
+            "   • Send login code. Enter the code Telegram sends, then tap "
+            "Sign in with code."
+        ),
+        "4. If it asks for a cloud password, enter that on the dashboard too.",
+    ]
+    url = (settings_url or "").strip()
+    if url:
+        lines.extend(["", f"<{url}|Open Settings>"])
+    return "\n".join(lines)
+
+
+def _mtproto_disconnect_settings_url() -> str | None:
+    raw = (os.getenv("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/")
+    if not raw:
+        return None
+    return f"{raw}/settings"
+
+
+async def _post_mtproto_disconnect_slack(cfg: ClubGcConfig) -> None:
+    from bot.services.slack_ops_notify import notify_slack_escalation
+
+    text = format_mtproto_disconnect_slack_text(
+        cfg.club_display_name,
+        settings_url=_mtproto_disconnect_settings_url(),
+    )
+    await notify_slack_escalation(text, source="mtproto_session_disconnected")
+
+
 async def notify_club_gc_mtproto_disconnected(
     cfg: ClubGcConfig,
     *,
     status_detail: str | None = None,
 ) -> None:
-    """DM club GC admin when the worker loses this club's MTProto session."""
+    """DM the club GC admin and Slack account managers when MTProto drops."""
 
     now = time.monotonic()
     last = _mtproto_disconnect_last_notify.get(cfg.club_key)
@@ -170,10 +224,11 @@ async def notify_club_gc_mtproto_disconnected(
     if detail:
         lines.extend(["", f"Detail: {detail}"])
     await notify_club_gc_admin_dm(cfg, "\n".join(lines))
+    await _post_mtproto_disconnect_slack(cfg)
 
 
 def clear_mtproto_disconnect_notify_cooldown(club_key: str) -> None:
-    """Allow a fresh disconnect DM after the club session reconnects."""
+    """Allow a fresh disconnect alert after the club session reconnects."""
 
     _mtproto_disconnect_last_notify.pop(club_key, None)
 
