@@ -197,12 +197,17 @@ _DELAYED_CHASE_TIMEOUT_HEADLINES = {
         "it has not shown up."
     ),
 }
+# Instant Slack when crypto or Zelle taps "I have sent the payment".
+_DEPOSIT_SENT_CLAIM_HEADLINES = {
+    "crypto": "The player says they sent a crypto payment — please check.",
+    "zelle": "The player says they sent a Zelle payment — please check.",
+}
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
 
 
 def is_delayed_deposit_sent_chase(method_slug: str | None) -> bool:
-    """Crypto and Zelle wait 3 minutes with no Slack on the button tap."""
+    """Crypto and Zelle. New taps Slack immediately; an already-armed watch still waits."""
     return (method_slug or "").strip().lower() in DELAYED_DEPOSIT_SENT_SLUGS
 
 
@@ -566,14 +571,16 @@ def format_escalation_slack_text(
     method_slug: str | None = None,
 ) -> str:
     headline = _HEADLINES.get(reason, reason)
+    slug = (method_slug or "").strip().lower()
+    if reason == REASON_DEPOSIT_SENT_CLAIMED:
+        claimed = _DEPOSIT_SENT_CLAIM_HEADLINES.get(slug)
+        if claimed:
+            headline = claimed
     if reason == REASON_DEPOSIT_SENT_TIMEOUT:
-        delayed = _DELAYED_CHASE_TIMEOUT_HEADLINES.get(
-            (method_slug or "").strip().lower()
-        )
+        delayed = _DELAYED_CHASE_TIMEOUT_HEADLINES.get(slug)
         if delayed:
             headline = delayed
     if reason == REASON_DEPOSIT_SENT_UNBOUND:
-        slug = (method_slug or "").strip().lower()
         if slug:
             headline = f"Manual deposit request — no {slug} binding for this group."
         else:
@@ -2143,8 +2150,15 @@ async def handle_deposit_sent_claim(
         return
 
     if is_delayed_deposit_sent_chase(slug):
-        schedule_deposit_sent_watch(
-            context, chat_id, club_id=club_id, title=title, method_slug=slug
+        await notify_escalation_slack(
+            REASON_DEPOSIT_SENT_CLAIMED,
+            club_id=club_id,
+            chat_id=chat_id,
+            title=title,
+            method_slug=slug,
+        )
+        cancel_deposit_sent_watch(
+            chat_id, job_queue=getattr(context, "job_queue", None)
         )
         return
 

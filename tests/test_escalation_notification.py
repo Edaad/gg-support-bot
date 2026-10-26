@@ -387,6 +387,34 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("`RT / Zelle / Jordan`", text)
         self.assertEqual(len(text.split("\n")), 3)
 
+    def test_deposit_sent_claimed_headline_crypto_and_zelle(self):
+        with patch.object(esc, "_club_display_name", return_value="Round Table"):
+            crypto = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_CLAIMED,
+                club_id=1,
+                chat_id=-100,
+                title="RT / 12345 / Jane",
+                method_slug="crypto",
+            )
+            zelle = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_CLAIMED,
+                club_id=1,
+                chat_id=-100,
+                title="RT / 12345 / Jane",
+                method_slug="zelle",
+            )
+        self.assertIn(
+            "*The player says they sent a crypto payment — please check.*",
+            crypto,
+        )
+        self.assertIn(
+            "*The player says they sent a Zelle payment — please check.*",
+            zelle,
+        )
+        self.assertIn("Club: Round Table", crypto)
+        self.assertIn("`RT / 12345 / Jane`", zelle)
+        self.assertEqual(len(crypto.split("\n")), 3)
+
     def test_deposit_sent_timeout_headline(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
             text = esc.format_escalation_slack_text(
@@ -1354,36 +1382,34 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                     esc.DEPOSIT_SENT_ACK_COPY,
                 )
 
-    async def test_claim_crypto_wallet_binding_schedules_watch(self):
-        """Crypto bound via crypto_wallet_bindings must not Slack unbound."""
-        with patch.object(
-            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
-        ):
-            with patch.object(ga, "_persist_activity_state"):
-                ga.mark_deposit_instructions_pending(12, method_slug="crypto")
-                query = AsyncMock()
-                query.data = esc.DEPOSIT_SENT_CALLBACK_PREFIX
-                query.message = SimpleNamespace(message_id=1)
-                query.answer = AsyncMock()
-                query.edit_message_reply_markup = AsyncMock()
-                update = SimpleNamespace(
-                    callback_query=query,
-                    effective_chat=SimpleNamespace(id=12, title="G"),
-                )
-                context = MagicMock()
-                context.bot.send_message = AsyncMock()
-                context.job_queue = MagicMock()
+    async def test_claim_crypto_and_zelle_slack_immediately(self):
+        """Crypto and Zelle Slack on the tap and do not arm a wait."""
+        for chat_id, slug in ((12, "crypto"), (13, "zelle")):
+            with self.subTest(slug=slug):
+                with patch.object(
+                    ga,
+                    "fetch_support_group_chat_by_telegram_chat_id",
+                    return_value=None,
+                ):
+                    with patch.object(ga, "_persist_activity_state"):
+                        ga.mark_deposit_instructions_pending(chat_id, method_slug=slug)
+                        query = AsyncMock()
+                        query.data = esc.DEPOSIT_SENT_CALLBACK_PREFIX
+                        query.message = SimpleNamespace(message_id=1)
+                        query.answer = AsyncMock()
+                        query.edit_message_reply_markup = AsyncMock()
+                        update = SimpleNamespace(
+                            callback_query=query,
+                            effective_chat=SimpleNamespace(id=chat_id, title="G"),
+                        )
+                        context = MagicMock()
+                        context.bot.send_message = AsyncMock()
+                        context.job_queue.get_jobs_by_name.return_value = []
 
-                with patch.object(esc, "get_club_for_chat", return_value=1):
-                    with patch.object(
-                        esc, "escalation_notification_eligible", return_value=True
-                    ):
-                        with patch(
-                            "bot.services.payment_method_binding.get_chat_binding",
-                            return_value=None,
-                        ):
-                            with patch(
-                                "bot.services.payment_method_binding.chat_has_crypto_wallet_binding",
+                        with patch.object(esc, "get_club_for_chat", return_value=1):
+                            with patch.object(
+                                esc,
+                                "escalation_notification_eligible",
                                 return_value=True,
                             ):
                                 with patch.object(
@@ -1397,16 +1423,19 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                                         await esc.handle_deposit_sent_claim(
                                             update, context
                                         )
-                notify.assert_not_awaited()
-                sched.assert_called_once()
-                self.assertEqual(
-                    sched.call_args.kwargs["method_slug"],
-                    "crypto",
-                )
-                self.assertEqual(
-                    context.bot.send_message.await_args.kwargs["text"],
-                    esc.DEPOSIT_SENT_ACK_COPY,
-                )
+                        notify.assert_awaited_once()
+                        self.assertEqual(
+                            notify.await_args.args[0],
+                            esc.REASON_DEPOSIT_SENT_CLAIMED,
+                        )
+                        self.assertEqual(notify.await_args.kwargs["method_slug"], slug)
+                        sched.assert_not_called()
+                        self.assertEqual(
+                            context.bot.send_message.await_args.kwargs["text"],
+                            esc.DEPOSIT_SENT_ACK_COPY,
+                        )
+                        self.assertFalse(ga.deposit_instructions_pending(chat_id))
+                        self.assertFalse(ga.deposit_sent_watch_armed(chat_id))
 
     async def test_timeout_skips_when_payment_seen(self):
         with patch.object(
