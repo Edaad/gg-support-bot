@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from 'react'
 import {
   listAccountBalances,
   listBlockingSends,
+  listLiveBalances,
   updateAccountBalanceSettings,
   type AccountBalanceCardT,
   type AccountBalanceListT,
@@ -51,12 +52,62 @@ function inputToCents(raw: string): number | null {
   return Math.round(n * 100)
 }
 
+type LiveRow = { status: 'ok' | 'unavailable'; cents: number | null }
+
+function addressKey(address: string): string {
+  const text = address.trim()
+  if (text.toLowerCase().startsWith('0x')) return text.toLowerCase()
+  return text
+}
+
+function liveCents(
+  card: AccountBalanceCardT,
+  live: Record<string, LiveRow>,
+  ready: boolean,
+): number | null {
+  if (!ready || card.method !== 'crypto') return null
+  const row = live[card.tag]
+  if (!row || row.status !== 'ok' || row.cents == null) return null
+  return row.cents
+}
+
+function cardFigure(
+  card: AccountBalanceCardT,
+  live: Record<string, LiveRow>,
+  ready: boolean,
+): string {
+  if (card.method !== 'crypto') return fmtMoney(card.balance_cents)
+  if (!ready) return '…'
+  const cents = liveCents(card, live, true)
+  if (cents == null) return 'unavailable'
+  return fmtMoney(cents)
+}
+
+function sortCrypto(
+  cards: AccountBalanceCardT[],
+  live: Record<string, LiveRow>,
+  ready: boolean,
+): AccountBalanceCardT[] {
+  if (!ready) return cards
+  return [...cards].sort((a, b) => {
+    const left = liveCents(a, live, true)
+    const right = liveCents(b, live, true)
+    if (left == null && right == null) return a.tag.localeCompare(b.tag)
+    if (left == null) return 1
+    if (right == null) return -1
+    if (right !== left) return right - left
+    return a.tag.localeCompare(b.tag)
+  })
+}
+
 function BalanceCard({
   card,
+  figure,
   onOpen,
   onGear,
 }: {
   card: AccountBalanceCardT
+  figure: string
   onOpen: (card: AccountBalanceCardT) => void
   onGear: (card: AccountBalanceCardT) => void
 }) {
@@ -127,7 +178,7 @@ function BalanceCard({
       </div>
 
       <p className="mt-2 text-lg font-semibold tabular-nums leading-none text-ink">
-        {fmtMoney(card.balance_cents)}
+        {figure}
       </p>
 
       <dl className="mt-2 space-y-1 text-xs">
@@ -155,7 +206,10 @@ function BalanceCard({
 
 export default function Balances({ token }: { token: string }) {
   const [rows, setRows] = useState<AccountBalanceListT | null>(null)
+  const [liveByTag, setLiveByTag] = useState<Record<string, LiveRow>>({})
+  const [liveReady, setLiveReady] = useState(false)
   const [loading, setLoading] = useState(true)
+  const liveRequest = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -177,12 +231,33 @@ export default function Balances({ token }: { token: string }) {
   const labelFieldId = useId()
 
   const reload = useCallback(() => {
+    const requestId = ++liveRequest.current
     setError(null)
     setLoading(true)
+    setLiveReady(false)
     listAccountBalances(token)
       .then(setRows)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
+    listLiveBalances(token)
+      .then((res) => {
+        if (requestId !== liveRequest.current) return
+        const next: Record<string, LiveRow> = {}
+        for (const wallet of res.wallets) {
+          next[addressKey(wallet.address)] = {
+            status: wallet.status === 'ok' ? 'ok' : 'unavailable',
+            cents: wallet.balance_cents,
+          }
+        }
+        setLiveByTag(next)
+      })
+      .catch(() => {
+        if (requestId !== liveRequest.current) return
+        setLiveByTag({})
+      })
+      .finally(() => {
+        if (requestId === liveRequest.current) setLiveReady(true)
+      })
   }, [token])
 
   useEffect(() => {
@@ -211,7 +286,8 @@ export default function Balances({ token }: { token: string }) {
 
   const onSave = async () => {
     if (!settingsCard) return
-    const balanceCents = inputToCents(balance)
+    const balanceCents =
+      settingsCard.method === 'crypto' ? settingsCard.balance_cents : inputToCents(balance)
     const ceilingCents = inputToCents(ceiling)
     const inflowCents = inputToCents(inflowMax)
     if (balanceCents == null || ceilingCents == null || inflowCents == null) {
@@ -257,7 +333,9 @@ export default function Balances({ token }: { token: string }) {
       ) : (
         <div className="space-y-8">
           {SECTIONS.map((section) => {
-            const cards = rows?.[section.method] ?? []
+            const loaded = rows?.[section.method] ?? []
+            const cards =
+              section.method === 'crypto' ? sortCrypto(loaded, liveByTag, liveReady) : loaded
             return (
               <section key={section.method} className="space-y-3">
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -272,6 +350,7 @@ export default function Balances({ token }: { token: string }) {
                       <BalanceCard
                         key={`${card.method}:${card.tag}`}
                         card={card}
+                        figure={cardFigure(card, liveByTag, liveReady)}
                         onOpen={openDetail}
                         onGear={openSettings}
                       />
@@ -308,19 +387,21 @@ export default function Balances({ token }: { token: string }) {
               className="input-field-sm w-full"
             />
           </div>
-          <div>
-            <label className="label-field-xs" htmlFor={balanceId}>
-              Current balance
-            </label>
-            <input
-              id={balanceId}
-              type="number"
-              step="0.01"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              className="input-field-sm w-full"
-            />
-          </div>
+          {settingsCard != null && settingsCard.method !== 'crypto' && (
+            <div>
+              <label className="label-field-xs" htmlFor={balanceId}>
+                Current balance
+              </label>
+              <input
+                id={balanceId}
+                type="number"
+                step="0.01"
+                value={balance}
+                onChange={(e) => setBalance(e.target.value)}
+                className="input-field-sm w-full"
+              />
+            </div>
+          )}
           <div>
             <label className="label-field-xs" htmlFor={ceilingId}>
               Sending ceiling
@@ -368,7 +449,7 @@ export default function Balances({ token }: { token: string }) {
             <div>
               <p className="text-xs text-ink-muted">Balance</p>
               <p className="text-2xl font-semibold tabular-nums text-ink">
-                {fmtMoney(detailCard.balance_cents)}
+                {cardFigure(detailCard, liveByTag, liveReady)}
               </p>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

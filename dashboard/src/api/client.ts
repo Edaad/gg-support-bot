@@ -503,6 +503,36 @@ function accountBalancePath(method: string, tag: string): string {
 export const listAccountBalances = (token: string) =>
   request<AccountBalanceListT>('/account-balances', {}, token)
 
+export type LiveWalletT = {
+  address: string
+  status: 'ok' | 'unavailable'
+  balance_cents: number | null
+}
+
+export type LiveBalanceListT = {
+  wallets: LiveWalletT[]
+}
+
+/** xrp-listener live totals. VITE_LISTENER_BASE_URL, or the Vite `/listener` proxy. */
+function listenerBase(): string {
+  const raw = import.meta.env.VITE_LISTENER_BASE_URL as string | undefined
+  if (raw && String(raw).trim()) return String(raw).replace(/\/$/, '')
+  return '/listener'
+}
+
+export async function listLiveBalances(token: string): Promise<LiveBalanceListT> {
+  const res = await fetch(`${listenerBase()}/balances`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 401) {
+    clearAuthSession()
+    window.location.href = '/'
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) throw new Error('Failed to load live balances')
+  return res.json() as Promise<LiveBalanceListT>
+}
+
 export const listBlockingSends = (token: string, method: string, tag: string) =>
   request<BlockingSendT[]>(`${accountBalancePath(method, tag)}/sends`, {}, token)
 

@@ -13,6 +13,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/weekly-stats/, ''),
       },
+      // xrp-listener web. Run it with PORT=8001. Set VITE_LISTENER_BASE_URL to override.
+      '/listener': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/listener/, ''),
+      },
     },
   },
 })
