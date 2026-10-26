@@ -146,18 +146,12 @@ async def notify_club_gc_channels_too_much(
     await notify_club_gc_admin_dm(cfg, "\n".join(lines))
 
 
-def format_mtproto_disconnect_slack_text(
-    club_display_name: str,
-    *,
-    settings_url: str | None = None,
-) -> str:
-    """Account-manager Slack when a club Telethon session drops."""
+def _mtproto_disconnect_club_name(club_display_name: str) -> str:
+    return (club_display_name or "").strip() or "this club"
 
-    club = (club_display_name or "").strip() or "this club"
-    lines = [
-        "*Telegram session disconnected.*",
-        f"Club: {club}",
-        "",
+
+def _mtproto_disconnect_steps(club: str) -> list[str]:
+    return [
         (
             "/add, /cash, and new groups from player DMs will not work "
             "until this account is signed in again."
@@ -176,9 +170,45 @@ def format_mtproto_disconnect_slack_text(
         ),
         "4. If it asks for a cloud password, enter that on the dashboard too.",
     ]
+
+
+def format_mtproto_disconnect_slack_text(
+    club_display_name: str,
+    *,
+    settings_url: str | None = None,
+) -> str:
+    """Account-manager Slack when a club Telethon session drops."""
+
+    club = _mtproto_disconnect_club_name(club_display_name)
+    lines = [
+        "*Telegram session disconnected.*",
+        f"Club: {club}",
+        "",
+        *_mtproto_disconnect_steps(club),
+    ]
     url = (settings_url or "").strip()
     if url:
         lines.extend(["", f"<{url}|Open Settings>"])
+    return "\n".join(lines)
+
+
+def format_mtproto_disconnect_telegram_text(
+    club_display_name: str,
+    *,
+    settings_url: str | None = None,
+) -> str:
+    """Account-manager Telegram DM when a club Telethon session drops."""
+
+    club = _mtproto_disconnect_club_name(club_display_name)
+    lines = [
+        "Telegram session disconnected.",
+        f"Club: {club}",
+        "",
+        *_mtproto_disconnect_steps(club),
+    ]
+    url = (settings_url or "").strip()
+    if url:
+        lines.extend(["", url])
     return "\n".join(lines)
 
 
@@ -212,18 +242,21 @@ async def notify_club_gc_mtproto_disconnected(
         return
     _mtproto_disconnect_last_notify[cfg.club_key] = now
 
-    lines = [
-        f"⚠️ {cfg.club_display_name}: MTProto is not connected on the support bot server.",
-        "",
-        "There is an issue with the server — please inform a head admin or engineer.",
-        "",
-        "Until this is resolved, /add, /cash, and automatic /gc (when a player DMs "
-        "the club account) will not work.",
-    ]
     detail = (status_detail or "").strip()
     if detail:
-        lines.extend(["", f"Detail: {detail}"])
-    await notify_club_gc_admin_dm(cfg, "\n".join(lines))
+        logger.info(
+            "mtproto disconnect notify club=%s detail=%s",
+            cfg.club_key,
+            detail,
+        )
+    settings_url = _mtproto_disconnect_settings_url()
+    await notify_club_gc_admin_dm(
+        cfg,
+        format_mtproto_disconnect_telegram_text(
+            cfg.club_display_name,
+            settings_url=settings_url,
+        ),
+    )
     await _post_mtproto_disconnect_slack(cfg)
 
 

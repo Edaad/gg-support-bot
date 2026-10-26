@@ -10,6 +10,7 @@ from bot.services.mtproto_track_contact import (
     _mtproto_disconnect_last_notify,
     clear_mtproto_disconnect_notify_cooldown,
     format_mtproto_disconnect_slack_text,
+    format_mtproto_disconnect_telegram_text,
     notify_club_gc_mtproto_disconnected,
     set_contact_save_notify_bot,
 )
@@ -63,6 +64,54 @@ class TestFormatMtprotoDisconnectSlack(unittest.TestCase):
         self.assertIn("2. Select ClubGTO.", text)
 
 
+class TestFormatMtprotoDisconnectTelegram(unittest.TestCase):
+    def test_matches_slack_steps_with_plain_settings_url(self) -> None:
+        text = format_mtproto_disconnect_telegram_text(
+            "Round Table",
+            settings_url=_SETTINGS,
+        )
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "Telegram session disconnected.",
+                    "Club: Round Table",
+                    "",
+                    (
+                        "/add, /cash, and new groups from player DMs will not work "
+                        "until this account is signed in again."
+                    ),
+                    "",
+                    "1. Open GG Dashboard → Settings → Telegram login.",
+                    "2. Select Round Table.",
+                    "3. Sign in either way:",
+                    (
+                        "   • Login with QR code. On the club phone: Telegram → "
+                        "Settings → Devices → Link Desktop Device, then scan the QR."
+                    ),
+                    (
+                        "   • Send login code. Enter the code Telegram sends, then tap "
+                        "Sign in with code."
+                    ),
+                    (
+                        "4. If it asks for a cloud password, enter that on the "
+                        "dashboard too."
+                    ),
+                    "",
+                    _SETTINGS,
+                ]
+            ),
+        )
+
+    def test_omits_url_when_missing(self) -> None:
+        text = format_mtproto_disconnect_telegram_text("ClubGTO")
+        self.assertNotIn("http", text)
+        self.assertIn("2. Select ClubGTO.", text)
+        self.assertIn("Login with QR code", text)
+        self.assertIn("Send login code", text)
+        self.assertIn("cloud password", text)
+
+
 class TestNotifyClubGcMtprotoDisconnected(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         _mtproto_disconnect_last_notify.clear()
@@ -101,13 +150,14 @@ class TestNotifyClubGcMtprotoDisconnected(unittest.IsolatedAsyncioTestCase):
         bot.send_message.assert_awaited_once()
         kwargs = bot.send_message.await_args.kwargs
         self.assertEqual(kwargs["chat_id"], 6713100304)
-        text = kwargs["text"]
-        self.assertIn("MTProto is not connected", text)
-        self.assertIn("head admin or engineer", text)
-        self.assertIn("/add", text)
-        self.assertIn("/cash", text)
-        self.assertIn("automatic /gc", text)
-        self.assertIn("Telethon client disconnected on worker.", text)
+        self.assertEqual(
+            kwargs["text"],
+            format_mtproto_disconnect_telegram_text(
+                "Round Table",
+                settings_url=_SETTINGS,
+            ),
+        )
+        self.assertNotIn("head admin or engineer", kwargs["text"])
         self.mock_slack.assert_awaited_once_with(
             format_mtproto_disconnect_slack_text(
                 "Round Table",
