@@ -40,6 +40,27 @@ class ReminderScheduleTestCase(unittest.TestCase):
             reminder_is_due(created_at=created, last_reminded_at=last, now=NOW)
         )
 
+    def test_third_ping_at_fifteen_minutes(self):
+        created = NOW - timedelta(minutes=15)
+        last = NOW - timedelta(minutes=5)
+        self.assertTrue(
+            reminder_is_due(created_at=created, last_reminded_at=last, now=NOW)
+        )
+
+    def test_late_third_ping_still_due_before_twenty_minutes(self):
+        created = NOW - timedelta(minutes=19, seconds=59)
+        last = NOW - timedelta(minutes=5)
+        self.assertTrue(
+            reminder_is_due(created_at=created, last_reminded_at=last, now=NOW)
+        )
+
+    def test_stops_at_twenty_minutes(self):
+        created = NOW - timedelta(minutes=20)
+        last = NOW - timedelta(minutes=5)
+        self.assertFalse(
+            reminder_is_due(created_at=created, last_reminded_at=last, now=NOW)
+        )
+
     def test_waiting_minutes_follow_elapsed_time(self):
         created = NOW - timedelta(minutes=5)
         self.assertEqual(waiting_minutes(created, NOW), 5)

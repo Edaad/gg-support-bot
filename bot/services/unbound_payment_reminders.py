@@ -1,4 +1,7 @@
-"""Slack reminders for payments that are still unbound 5 minutes after ingest."""
+"""Slack reminders for payments still unbound after ingest.
+
+Three pings, five minutes apart: at 5, 10, and 15 minutes. Then stop.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 REMINDER_INTERVAL = timedelta(minutes=5)
 JOB_POLL_INTERVAL = timedelta(seconds=30)
+MAX_REMINDERS = 3
+# Fourth ping would land at 20 minutes. Stay eligible until just before that
+# so a slightly late 15-minute ping still goes out.
+REMINDER_WINDOW = REMINDER_INTERVAL * MAX_REMINDERS
 SLACK_SOURCE = "unbound_payment_reminder"
 
 _PAYMENT_MODELS = {
@@ -52,11 +59,15 @@ def reminder_is_due(
     last_reminded_at: datetime | None,
     now: datetime,
     interval: timedelta = REMINDER_INTERVAL,
+    max_reminders: int = MAX_REMINDERS,
 ) -> bool:
-    """First ping once the payment is 5 minutes old, then every 5 minutes."""
+    """Ping at 5, 10, and 15 minutes. Nothing from 20 minutes on."""
     created = _aware(created_at)
     current = _aware(now)
-    if created > current - interval:
+    age = current - created
+    if age < interval:
+        return False
+    if age >= interval * (max_reminders + 1):
         return False
     if last_reminded_at is None:
         return True
@@ -221,17 +232,20 @@ def _candidate_titles(session, payment: object, slug: str) -> list[str]:
 def list_due_reminders(now: datetime | None = None) -> list[UnboundPaymentReminder]:
     current = _aware(now or datetime.now(timezone.utc))
     cutoff = current - REMINDER_INTERVAL
+    # age >= 20 minutes is past the third ping; leave those rows for bind cleanup.
+    oldest = current - (REMINDER_INTERVAL * (MAX_REMINDERS + 1))
     with get_db() as session:
         rows = (
             session.query(UnboundPaymentReminder)
             .filter(
+                UnboundPaymentReminder.created_at > oldest,
                 or_(
                     and_(
                         UnboundPaymentReminder.last_reminded_at.is_(None),
                         UnboundPaymentReminder.created_at <= cutoff,
                     ),
                     UnboundPaymentReminder.last_reminded_at <= cutoff,
-                )
+                ),
             )
             .all()
         )
@@ -246,6 +260,12 @@ async def send_due_unbound_reminders(now: datetime | None = None) -> int:
     current = _aware(now or datetime.now(timezone.utc))
     sent = 0
     for row in list_due_reminders(current):
+        if not reminder_is_due(
+            created_at=row.created_at,
+            last_reminded_at=row.last_reminded_at,
+            now=current,
+        ):
+            continue
         slug = row.payment_method_slug
         model = _PAYMENT_MODELS.get(slug)
         if model is None:
@@ -296,10 +316,16 @@ async def send_due_unbound_reminders(now: datetime | None = None) -> int:
                 row.payment_id,
             )
             continue
-        with get_db() as session:
-            reminder = session.get(UnboundPaymentReminder, int(row.id))
-            if reminder is not None:
-                reminder.last_reminded_at = current
+        # The 15-minute ping is the last one. Drop the row so it cannot fire again.
+        if current - _aware(row.created_at) >= REMINDER_WINDOW:
+            clear_unbound_payment_reminder(
+                payment_method_slug=slug, payment_id=row.payment_id
+            )
+        else:
+            with get_db() as session:
+                reminder = session.get(UnboundPaymentReminder, int(row.id))
+                if reminder is not None:
+                    reminder.last_reminded_at = current
         sent += 1
         logger.info(
             "unbound_payment_reminder: sent method=%s payment_id=%s",
