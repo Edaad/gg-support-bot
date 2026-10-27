@@ -29,7 +29,10 @@ METHODS = ("venmo", "cashapp", "paypal", "crypto")
 VARIANT_METHODS = ("venmo", "cashapp")
 NAMED_METHODS = ("paypal", "crypto")
 METHOD_OWNER = "round-table"
-PAYPAL_BALANCE_EMAIL = "aiden@concordconsulting.com"
+PAYPAL_BALANCE_EMAIL = "aiden@concordconsultinginc.com"
+# Ingests before the address was corrected omitted "inc".
+_PAYPAL_LEGACY_EMAIL = "aiden@concordconsulting.com"
+_PAYPAL_BALANCE_EMAILS = frozenset({PAYPAL_BALANCE_EMAIL, _PAYPAL_LEGACY_EMAIL})
 EXCLUDED_HANDLES = frozenset({"janseashells", "creatorclub"})
 WINDOW = timedelta(hours=168)
 DEFAULT_OFFSET_CENTS = 0
@@ -259,6 +262,14 @@ def _settings_by_key(db: Session) -> dict[tuple[str, str], AccountBalanceSetting
     return {(row.method, row.tag): row for row in rows}
 
 
+def _paypal_balance_settings(
+    settings: dict[tuple[str, str], AccountBalanceSettings],
+) -> AccountBalanceSettings | None:
+    return settings.get(("paypal", PAYPAL_BALANCE_EMAIL)) or settings.get(
+        ("paypal", _PAYPAL_LEGACY_EMAIL)
+    )
+
+
 def _limits(method: str, row: AccountBalanceSettings | None) -> tuple[int, int, int]:
     if row is None:
         return (
@@ -324,7 +335,7 @@ def _paypal_payments(db: Session) -> list[_Money]:
         .filter(
             PayPalPayment.method_owner == METHOD_OWNER,
             PayPalPayment.is_test.is_(False),
-            func.lower(PayPalPayment.paypal_email) == PAYPAL_BALANCE_EMAIL,
+            func.lower(PayPalPayment.paypal_email).in_(_PAYPAL_BALANCE_EMAILS),
         )
         .all()
     )
@@ -522,7 +533,7 @@ def list_account_balances(
                 PAYPAL_BALANCE_EMAIL,
                 default_label=PAYPAL_BALANCE_EMAIL,
                 detail=None,
-                settings=settings.get(("paypal", PAYPAL_BALANCE_EMAIL)),
+                settings=_paypal_balance_settings(settings),
                 variant_names=names,
                 payments=payments[("paypal", PAYPAL_BALANCE_EMAIL)],
                 sends=sends.get(("paypal", PAYPAL_BALANCE_EMAIL), []),

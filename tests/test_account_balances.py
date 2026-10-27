@@ -23,6 +23,7 @@ from api.account_balances import (
 from api.auth import create_token
 from api.routes.account_balances import router
 from db.models import (
+    AccountBalanceSettings,
     Base,
     CashAppPayment,
     Club,
@@ -330,23 +331,42 @@ class AccountBalanceServiceTestCase(unittest.TestCase):
         )
 
     def test_paypal_card_is_only_the_aiden_email(self):
-        self._paypal("Aiden@ConcordConsulting.com", 200_000)
+        self._paypal("Aiden@ConcordConsultingInc.com", 200_000)
+        self._paypal("aiden@concordconsulting.com", 40_000)
         self._paypal("payments@clubgto.com", 900_000)
-        self._paypal("aiden@concordconsulting.com", 50_000, is_test=True)
-        self._paypal("aiden@concordconsulting.com", 10_000, method_owner="vaughn")
+        self._paypal("aiden@concordconsultinginc.com", 50_000, is_test=True)
+        self._paypal("aiden@concordconsultinginc.com", 10_000, method_owner="vaughn")
         self.session.commit()
 
         cards = list_account_balances(self.session, now=NOW)
         self.assertEqual(len(cards["paypal"]), 1)
         card = cards["paypal"][0]
-        self.assertEqual(card.tag, "aiden@concordconsulting.com")
-        self.assertEqual(card.label, "aiden@concordconsulting.com")
+        self.assertEqual(card.tag, "aiden@concordconsultinginc.com")
+        self.assertEqual(card.label, "aiden@concordconsultinginc.com")
         self.assertIsNone(card.detail)
         self.assertIsNone(card.custom_label)
-        self.assertEqual(card.balance_cents, 200_000)
+        self.assertEqual(card.balance_cents, 240_000)
         self.assertEqual(card.sending_ceiling_cents, 500_000)
         self.assertEqual(card.inflow_max_cents, 500_000)
         self.assertEqual(card.sending_remaining_cents, 500_000)
+
+    def test_paypal_card_keeps_settings_stored_under_the_old_email(self):
+        self._paypal("aiden@concordconsultinginc.com", 200_000)
+        self.session.add(
+            AccountBalanceSettings(
+                method="paypal",
+                tag="aiden@concordconsulting.com",
+                offset_cents=-50_000,
+                sending_ceiling_cents=500_000,
+                inflow_max_cents=500_000,
+            )
+        )
+        self.session.commit()
+
+        card = list_account_balances(self.session, now=NOW)["paypal"][0]
+        self.assertEqual(card.tag, "aiden@concordconsultinginc.com")
+        self.assertEqual(card.offset_cents, -50_000)
+        self.assertEqual(card.balance_cents, 150_000)
 
     def test_crypto_collapses_chains_and_numbers_solana_by_first_deposit(self):
         evm = "0xc50b01cAa68EcB657807b198E1C3360fAC3CBA96"
