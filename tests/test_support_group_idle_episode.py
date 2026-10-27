@@ -724,7 +724,7 @@ class StaffUnansweredFormatTests(unittest.TestCase):
             title="JohnDoe | 123 | RT",
             message_text="still waiting",
         )
-        self.assertIn("*⚠️ 5 minutes have passed since follow-up.*", text)
+        self.assertIn("*⚠️ 2 minutes have passed since follow-up.*", text)
         self.assertIn("`JohnDoe | 123 | RT`", text)
         self.assertIn("still waiting", text)
 

@@ -1,6 +1,6 @@
 """Listen-only escalation for env-allowlisted non-support Telegram groups.
 
-Episodes reuse awaiting-agent timings (1m debounce / 10m episode). State is
+Episodes reuse awaiting-agent timings (30s debounce / 10m episode). State is
 durable in ``watched_group_escalation_state``; one head-admin Slack post per
 episode.
 """

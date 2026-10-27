@@ -1,8 +1,8 @@
 """Durable idle episodes for support groups.
 
 Open on player free text (or deposit Slack feed): immediate Slack (unless already
-sent), no-op menu hook, then 1m quiet burst for follow-ups. After a successful
-follow-up Slack, arm a 5m staff-unanswered timer (escalation channel, once).
+sent), no-op menu hook, then 30s quiet burst for follow-ups. After a successful
+follow-up Slack, arm a 2m staff-unanswered timer (escalation channel, once).
 That timer does not fire when the admin unread tracker says the latest
 message in the group is from a bot.
 Player gratitude closers (thanks/ty/…) do not reset the 5m silence clock.
@@ -522,7 +522,7 @@ def arm_staff_unanswered_after_followup(
     job_queue: Any | None = None,
     now: datetime | None = None,
 ) -> bool:
-    """Arm 5m staff-unanswered after successful follow-up Slack. No-op if fired."""
+    """Arm 2m staff-unanswered after successful follow-up Slack. No-op if fired."""
     cid = int(chat_id)
     ts = _as_utc(now) or _now()
     body = (message_text or "").strip() or None
@@ -637,7 +637,7 @@ def _persist_open_or_feed(
             row.history_episode_id = history_id
             row.episode_started_at = ts
             # Opening Slack already covers this message; burst starts empty so the
-            # 1m debounce only fires for *follow-up* player messages.
+            # 30s debounce only fires for *follow-up* player messages.
             row.burst_json = [entry] if (feed_burst and entry) else []
             burst = list(row.burst_json)
             return True, burst, history_id
@@ -727,7 +727,7 @@ async def on_player_reach_out(
         _schedule_silence(cid, job_queue=jq)
         if slack_already_sent and burst:
             _schedule_debounce(cid, job_queue=jq, club_id=club_id, title=title)
-        # Same 5m staff-unanswered latch as follow-up (skip gratitude-only).
+        # Same 2m staff-unanswered latch as follow-up (skip gratitude-only).
         if slack_ok and not gratitude and body:
             arm_staff_unanswered_after_followup(
                 cid,
@@ -799,7 +799,7 @@ def on_staff_human(
     now: datetime | None = None,
     title: str | None = None,
 ) -> None:
-    """Staff message: clear burst, cancel 1m debounce, bump last_human, keep open."""
+    """Staff message: clear burst, cancel 30s debounce, bump last_human, keep open."""
     cid = int(chat_id)
     state = load_episode_state(cid)
     if state is None:

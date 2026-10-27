@@ -80,7 +80,7 @@ _ET = ZoneInfo("America/New_York")
 _HEADLINES = {
     REASON_PLAYER_IDLE: "A player just reached out.",
     REASON_PLAYER_IDLE_FOLLOWUP: "Player follow-up.",
-    REASON_PLAYER_IDLE_STAFF_UNANSWERED: ("⚠️ 5 minutes have passed since follow-up."),
+    REASON_PLAYER_IDLE_STAFF_UNANSWERED: ("⚠️ 2 minutes have passed since follow-up."),
     REASON_CASHOUT_STARTED: "Cash out initiated.",
     REASON_DEPOSIT_SENT_TIMEOUT: (
         "5 minutes have passed since the player said they sent the payment — "
@@ -150,12 +150,12 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
     }
 )
 
-AWAITING_AGENT_DEBOUNCE_SECONDS = 60
+AWAITING_AGENT_DEBOUNCE_SECONDS = 30
 AWAITING_AGENT_DEBOUNCE_SECONDS_TEST = 5
 AWAITING_AGENT_EPISODE_SECONDS = 600  # 10 minutes
 AWAITING_AGENT_EPISODE_SECONDS_TEST = 60
 
-STAFF_UNANSWERED_SECONDS = 300  # 5 minutes after follow-up Slack
+STAFF_UNANSWERED_SECONDS = 120  # 2 minutes after follow-up Slack
 STAFF_UNANSWERED_SECONDS_TEST = 30
 STAFF_UNANSWERED_SLACK_DELETE_SECONDS = 600  # delete the issue-report post
 STAFF_UNANSWERED_SLACK_DELETE_SECONDS_TEST = 60

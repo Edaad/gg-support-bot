@@ -23,16 +23,16 @@ Durable state: table `support_group_idle_episode_state` ([`bot/services/support_
 | Timer | Value |
 |-------|--------|
 | Open Slack | Immediate `player_idle` (*A player just reached out.*) with the player message |
-| Follow-up burst | After **1 minute** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
-| Staff unanswered | After a **successful** open Slack (`player_idle` / deposit open) **or** follow-up Slack whose text/burst is **not** gratitude-only, if no staff reply for **5 minutes** → one-time `player_idle_staff_unanswered` to the **escalation** Slack channel (not an open `/reports` ticket). Right before that post, if the admin unread tracker says the group's latest message is from a bot, the ping is dropped. That post is deleted **10 minutes** after it is sent when it went out through the bot API (the Slack timestamp is stored on the escalation event, so a worker restart still deletes it). Gratitude/ack-only messages (`thanks`, `ty`, `sounds good`, …) do **not** arm this ping. |
+| Follow-up burst | After **30 seconds** of quiet with a non-empty burst → `player_idle_followup` (*Player follow-up.*) |
+| Staff unanswered | After a **successful** open Slack (`player_idle` / deposit open) **or** follow-up Slack whose text/burst is **not** gratitude-only, if no staff reply for **2 minutes** → one-time `player_idle_staff_unanswered` to the **escalation** Slack channel (not an open `/reports` ticket). Right before that post, if the admin unread tracker says the group's latest message is from a bot, the ping is dropped. That post is deleted **10 minutes** after it is sent when it went out through the bot API (the Slack timestamp is stored on the escalation event, so a worker restart still deletes it). Gratitude/ack-only messages (`thanks`, `ty`, `sounds good`, …) do **not** arm this ping. |
 | Silence end | **5 minutes** with no human (player or staff) → close episode (**deferred** while staff-unanswered is still armed) |
 | Hard cap | **30 minutes** from episode open → close episode |
 
 Behavior:
 
 1. First player free text (not a flow command, not expected wizard input) **opens** an episode: Slack `player_idle`, call no-op in-group menu hook (`offer_idle_help_prompt` → false for now), arm silence + hard-cap timers, and arm durable staff-unanswered **unless the open text is gratitude/ack-only**.
-2. Further player messages while open **feed** the burst and reset the 1m debounce + 5m silence. **Exception (player only):** short gratitude/ack closers (`thanks`, `ty`, `thank you`, `sounds good`, …) still feed/Slack but do **not** reset the 5m silence clock.
-3. Staff/AM message while open: clear burst, cancel 1m debounce, clear staff-unanswered latch, bump `last_human_at`, reschedule 5m silence; episode stays open.
+2. Further player messages while open **feed** the burst and reset the 30s debounce + 5m silence. **Exception (player only):** short gratitude/ack closers (`thanks`, `ty`, `thank you`, `sounds good`, …) still feed/Slack but do **not** reset the 5m silence clock.
+3. Staff/AM message while open: clear burst, cancel 30s debounce, clear staff-unanswered latch, bump `last_human_at`, reschedule 5m silence; episode stays open.
 4. After successful follow-up Slack: re-arm durable staff-unanswered **unless the burst is gratitude-only** (player messages do not reset it; another follow-up re-arms only if not yet fired). Fire once to the escalation channel, then latch until staff replies. Right before the post, drop it when the admin unread tracker says the latest message is from a bot (the latch clears, and silence can close). Silence close is deferred until that ping fires or is dropped (or staff clears the latch); after the ping, close if the chat is still quiet.
 5. Flow end (deposit/cashout success, cancel, timeout): quietly `close_episode`; next free text opens a fresh episode.
 6. Denied `/cashout` / `/earlyrb`: no special arm — next free text opens a normal episode (no 5m silence gate).
@@ -168,7 +168,7 @@ Behavior:
 
 1. Allowlisted chat that is **not** a `support_group_chats` row.
 2. Any non-bot human text/media/caption/command opens or feeds a durable episode (table `watched_group_escalation_state`). `@rtaccountant` and `@widget_stick` are ignored (union automation accounts).
-3. Reuses awaiting-agent timings (1 minute quiet debounce, 10 minute episode).
+3. Reuses awaiting-agent timings (30 second quiet debounce, 10 minute episode).
 4. On debounce: one Slack post to head-admin, then quiet until the episode ends.
 5. No bot reply in the group; commands are swallowed. Allowlisted chats skip club auto-link/welcome.
 6. Club welcome/link on join runs for ops titles (e.g. `Round Table Support & GG Support`) as well as GC titles. No admin DM is sent when the bot joins a non-support group.
@@ -211,8 +211,8 @@ Copy (no user id, no chat id):
 | Reason | Headline | Player message body? |
 |--------|----------|----------------------|
 | `player_idle` | A player just reached out. | Yes (the player's message that triggered idle) |
-| `player_idle_followup` | Player follow-up. | Yes (burst body after 1m quiet) |
-| `player_idle_staff_unanswered` | ⚠️ 5 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to the **escalation** channel, then deleted after 10 minutes |
+| `player_idle_followup` | Player follow-up. | Yes (burst body after 30s quiet) |
+| `player_idle_staff_unanswered` | ⚠️ 2 minutes have passed since follow-up. | Yes (snapshot of last follow-up body); posts to the **escalation** channel, then deleted after 10 minutes |
 | `cashout_started` | Cash out initiated. | No |
 | `earlyrb_requested` | Early rakeback requested. | No |
 | `deposit_sent_claimed` | The player claims to have sent the payment already please check. | No |
