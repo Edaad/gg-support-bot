@@ -55,7 +55,7 @@ def _claim_failure_note(outcome) -> str:
         )
     if outcome.status == "no_machine":
         return (
-            f"\u26a0\ufe0f Auto-claim skipped: no deposit machine online ({outcome.reason}). "
+            f"\u26a0\ufe0f Auto-claim skipped: {outcome.reason}. "
             f"Claim the chips manually on ClubGG, then continue."
         )
     if outcome.status == "unmapped":

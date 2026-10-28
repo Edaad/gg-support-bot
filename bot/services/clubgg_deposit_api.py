@@ -78,6 +78,11 @@ _TERMINAL_STATUSES = frozenset(
 )
 _PROBLEM_STATUSES = frozenset({"fail", "uncertain", "error", "cancelled"})
 
+# The deposit machine's API shares a process with the RPA worker, so /health can
+# stall for seconds while a job is running OCR. One retry rides out those stalls.
+_HEALTH_ATTEMPTS = 2
+_HEALTH_RETRY_DELAY_SEC = 2.0
+
 # Sent as POST /deposit and POST /claim ``label`` so RPA notifications read
 # "<label> success" instead of the API defaults Add / Claim.
 LABEL_DEPOSIT = "Deposit"
@@ -258,12 +263,33 @@ async def _health_ok(cfg: _Config, client: httpx.AsyncClient) -> tuple[bool, str
         params["expected_host"] = cfg.expected_host
     if cfg.expected_profile:
         params["expected_profile"] = cfg.expected_profile
-    try:
-        resp = await client.get(
-            f"{cfg.base_url}/health", headers=_auth_headers(cfg), params=params or None
-        )
-    except Exception as exc:
-        return False, f"no deposit machine online ({type(exc).__name__})"
+    resp = None
+    for attempt in range(1, _HEALTH_ATTEMPTS + 1):
+        try:
+            resp = await client.get(
+                f"{cfg.base_url}/health",
+                headers=_auth_headers(cfg),
+                params=params or None,
+            )
+            break
+        except Exception as exc:
+            logger.warning(
+                "auto_chip_add: health attempt %d/%d failed: %s",
+                attempt,
+                _HEALTH_ATTEMPTS,
+                type(exc).__name__,
+            )
+            if attempt < _HEALTH_ATTEMPTS:
+                await asyncio.sleep(_HEALTH_RETRY_DELAY_SEC)
+                continue
+            # A read timeout means the tunnel connected and the machine is up but
+            # did not answer in time (busy with a job), not that it is offline.
+            if isinstance(exc, httpx.ReadTimeout):
+                return False, (
+                    f"deposit machine busy (no reply in {cfg.timeout_sec:g}s, "
+                    f"{_HEALTH_ATTEMPTS} tries)"
+                )
+            return False, f"no deposit machine online ({type(exc).__name__})"
     if resp.status_code != 200:
         return False, f"health returned HTTP {resp.status_code}"
     try:
