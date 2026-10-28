@@ -3,6 +3,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
+
 from bot.services import clubgg_deposit_api as api
 from bot.services.clubgg_deposit_api import (
     _resolve_round_table_union_for_auto_chip_add,
@@ -743,3 +745,58 @@ class TestClaimPostsCashoutLabel(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _HealthClient:
+    """httpx stand-in whose GETs raise or answer from a script, in order."""
+
+    def __init__(self, *outcomes) -> None:
+        self._outcomes = list(outcomes)
+        self.calls = 0
+
+    async def get(self, url, **_kwargs):
+        self.calls += 1
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class TestHealthPreflight(unittest.IsolatedAsyncioTestCase):
+    def _cfg(self):
+        return SimpleNamespace(
+            base_url="https://tunnel.test",
+            token="tok",
+            expected_host=None,
+            expected_profile=None,
+            timeout_sec=30.0,
+        )
+
+    async def _check(self, client):
+        with patch.object(api, "_HEALTH_RETRY_DELAY_SEC", 0):
+            return await api._health_ok(self._cfg(), client)
+
+    async def test_retry_recovers_from_one_timeout(self) -> None:
+        client = _HealthClient(
+            httpx.ReadTimeout("slow"), _FakeResponse(200, {"ok": True})
+        )
+        self.assertEqual(await self._check(client), (True, "ok"))
+        self.assertEqual(client.calls, 2)
+
+    async def test_repeated_read_timeout_reports_busy(self) -> None:
+        client = _HealthClient(httpx.ReadTimeout("slow"), httpx.ReadTimeout("slow"))
+        ok, detail = await self._check(client)
+        self.assertFalse(ok)
+        self.assertEqual(detail, "deposit machine busy (no reply in 30s, 2 tries)")
+        self.assertEqual(client.calls, 2)
+
+    async def test_repeated_connect_error_reports_offline(self) -> None:
+        client = _HealthClient(httpx.ConnectError("down"), httpx.ConnectError("down"))
+        ok, detail = await self._check(client)
+        self.assertFalse(ok)
+        self.assertEqual(detail, "no deposit machine online (ConnectError)")
+
+    async def test_http_error_is_not_retried(self) -> None:
+        client = _HealthClient(_FakeResponse(503, {}))
+        self.assertEqual(await self._check(client), (False, "health returned HTTP 503"))
+        self.assertEqual(client.calls, 1)
