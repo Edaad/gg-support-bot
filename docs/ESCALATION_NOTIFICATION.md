@@ -127,7 +127,7 @@ When escalation is on and RPA was **attempted** but needs manual follow-up:
 
 | Event | Headline |
 |--------|----------|
-| Auto chip-add fail / manual skip (`/add` or payment auto-deposit) | RPA deposit failed — add chips manually. |
+| Auto chip-add fail / manual skip (`/add` or payment auto-deposit) | RPA deposit failed — add chips manually. + machine reason |
 | Auto chip-add UNCERTAIN (OCR mismatch / unknown outcome) | Deposit UNCERTAIN — verify on ClubGG (do not retry). + machine reason |
 | Auto-claim fail on `/cash` | RPA cashout failed — claim chips manually. |
 | Auto-claim UNCERTAIN on `/cash` | Cashout UNCERTAIN — verify on ClubGG (do not re-claim). + machine reason |
@@ -222,7 +222,7 @@ Copy (no user id, no chat id):
 | `deposit_player_message` | Player messaged during deposit. | Yes |
 | `new_player_onboarded` | Welcome the new player who just joined the group chat. | No |
 | `player_dm_reached_out` | A player reached out in DM. | No |
-| `rpa_deposit_failed` | RPA deposit failed — add chips manually. | No |
+| `rpa_deposit_failed` | RPA deposit failed — add chips manually. | Yes (deposit-server or preflight reason; omitted when empty) |
 | `rpa_cashout_failed` | RPA cashout failed — claim chips manually. | No |
 | `rpa_deposit_uncertain` | Deposit UNCERTAIN — verify on ClubGG (do not retry). | Yes (OCR/reason detail) |
 | `rpa_cashout_uncertain` | Cashout UNCERTAIN — verify on ClubGG (do not re-claim). | Yes (OCR/reason detail) |

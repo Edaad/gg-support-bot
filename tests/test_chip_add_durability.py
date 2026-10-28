@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from bot.services import clubgg_deposit_api as api
 from bot.services import payment_auto_deposit as pad
-from bot.services.chip_add_recovery import payment_from_request_id
+from bot.services.chip_add_recovery import (
+    payment_from_request_id,
+    resume_due_chip_adds,
+)
 from bot.services.clubgg_rpa_events import (
     CHIP_ADD_CLAIMABLE,
     CHIP_ADD_SWEEP_GRACE,
@@ -59,6 +62,40 @@ class TestStaffAddClaim(unittest.TestCase):
     def test_command_lock_can_be_claimed_for_the_send(self) -> None:
         self.assertIn("started", CHIP_ADD_CLAIMABLE)
         self.assertNotIn("sending", CHIP_ADD_CLAIMABLE)
+
+
+class TestExpiredChipAddAlert(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_chip_add_includes_reason(self) -> None:
+        expired = [
+            {
+                "request_id": "payment-zelle-1",
+                "club_id": 4,
+                "telegram_chat_id": -99,
+                "group_title": "GTO / 1 / Nick",
+            }
+        ]
+        with (
+            patch(
+                "bot.services.chip_add_recovery.expire_elapsed_chip_adds",
+                return_value=expired,
+            ),
+            patch(
+                "bot.services.chip_add_recovery.due_pending_chip_adds",
+                return_value=[],
+            ),
+            patch(
+                "bot.services.escalation_notification.notify_rpa_deposit_failed",
+                new_callable=AsyncMock,
+            ) as notify,
+        ):
+            resumed = await resume_due_chip_adds(_now())
+        self.assertEqual(resumed, 0)
+        notify.assert_awaited_once_with(
+            club_id=4,
+            chat_id=-99,
+            title="GTO / 1 / Nick",
+            detail="chip add expired before it could run",
+        )
 
 
 class TestPaymentRequestId(unittest.TestCase):

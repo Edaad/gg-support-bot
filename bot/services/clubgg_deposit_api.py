@@ -495,6 +495,7 @@ async def _maybe_notify_rpa_deposit_failed(
     club_id: int,
     chat_id: int,
     title: str | None,
+    detail: str | None = None,
 ) -> None:
     try:
         from bot.services.escalation_notification import notify_rpa_deposit_failed
@@ -503,6 +504,7 @@ async def _maybe_notify_rpa_deposit_failed(
             club_id=int(club_id),
             chat_id=int(chat_id),
             title=title,
+            detail=detail,
         )
     except Exception:
         logger.debug(
@@ -541,7 +543,7 @@ async def _maybe_notify_rpa_deposit_problem(
             )
         return
     await _maybe_notify_rpa_deposit_failed(
-        club_id=club_id, chat_id=chat_id, title=title
+        club_id=club_id, chat_id=chat_id, title=title, detail=detail
     )
 
 
@@ -586,20 +588,16 @@ async def _run_auto_chip_add_body(
         title, _cid = await asyncio.to_thread(get_group_title_for_chat, int(chat_id))
     player_id = gg_player_id_from_title(title)
     if not player_id:
+        reason = "could not read a player id from the group title"
         await _send_alert(
             cfg,
             ptb_bot,
-            f"Auto chip-add skipped (chat {chat_id}): could not read a player id "
-            f"from the group title. Add chips manually.",
+            f"Auto chip-add skipped (chat {chat_id}): {reason}. Add chips manually.",
         )
         await _maybe_notify_rpa_deposit_failed(
-            club_id=club_id, chat_id=chat_id, title=title
+            club_id=club_id, chat_id=chat_id, title=title, detail=reason
         )
-        return (
-            False,
-            "no_player_id",
-            "could not read a player id from the group title",
-        )
+        return False, "no_player_id", reason
 
     club = await asyncio.to_thread(get_club_by_id, int(club_id))
     club_name = club.name if club else None
@@ -655,21 +653,17 @@ async def _run_auto_chip_add_body(
 
     clubgg_club = resolve_clubgg_club_name(club_name, union_shorthand)
     if not clubgg_club:
+        reason = f"could not map club {club_name!r}/union {union_shorthand!r}"
         await _send_alert(
             cfg,
             ptb_bot,
             f"Auto chip-add skipped for player {player_id} (chat {chat_id}): "
-            f"could not map club {club_name!r}/union {union_shorthand!r} to a "
-            f"ClubGG club. Add chips manually.",
+            f"{reason} to a ClubGG club. Add chips manually.",
         )
         await _maybe_notify_rpa_deposit_failed(
-            club_id=club_id, chat_id=chat_id, title=title
+            club_id=club_id, chat_id=chat_id, title=title, detail=reason
         )
-        return (
-            False,
-            "club_mapping_failed",
-            f"could not map club {club_name!r}/union {union_shorthand!r}",
-        )
+        return False, "club_mapping_failed", reason
 
     timeout = httpx.Timeout(cfg.timeout_sec)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -685,7 +679,7 @@ async def _run_auto_chip_add_body(
                 f"({parts} chips): {detail}. Add chips manually.",
             )
             await _maybe_notify_rpa_deposit_failed(
-                club_id=club_id, chat_id=chat_id, title=title
+                club_id=club_id, chat_id=chat_id, title=title, detail=detail
             )
             return False, "health_failed", detail
 

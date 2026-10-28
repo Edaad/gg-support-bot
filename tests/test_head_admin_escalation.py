@@ -254,6 +254,22 @@ class RpaGateTests(unittest.IsolatedAsyncioTestCase):
         notify.assert_awaited_once()
         self.assertEqual(notify.await_args.args[0], esc.REASON_RPA_DEPOSIT_FAILED)
 
+    async def test_rpa_deposit_failed_includes_detail(self) -> None:
+        with patch.object(esc, "escalation_notification_enabled", return_value=True):
+            with patch.object(
+                esc, "notify_escalation_slack", new_callable=AsyncMock
+            ) as notify:
+                await esc.notify_rpa_deposit_failed(
+                    club_id=1,
+                    chat_id=99,
+                    title="GTO / 1 / Nick",
+                    detail="player not found in club",
+                )
+        self.assertEqual(
+            notify.await_args.kwargs["message_text"],
+            "player not found in club",
+        )
+
     async def test_rpa_deposit_uncertain_skipped_when_club_toggle_off(self) -> None:
         with patch.object(esc, "escalation_notification_enabled", return_value=False):
             with patch.object(

@@ -49,6 +49,7 @@ async def resume_due_chip_adds(now: datetime | None = None) -> int:
                 club_id=row.get("club_id"),
                 chat_id=int(chat_id),
                 title=row.get("group_title"),
+                detail="chip add expired before it could run",
             )
         except Exception:
             logger.exception(

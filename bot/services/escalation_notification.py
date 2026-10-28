@@ -132,7 +132,7 @@ _HEADLINES = {
 }
 
 # Free-text / media escalations include the triggering player message body.
-# RPA uncertain includes the machine OCR/reason detail the same way.
+# RPA deposit failure and uncertain include the machine reason the same way.
 _REASONS_WITH_MESSAGE_BODY = frozenset(
     {
         REASON_PLAYER_IDLE,
@@ -140,6 +140,7 @@ _REASONS_WITH_MESSAGE_BODY = frozenset(
         REASON_PLAYER_IDLE_STAFF_UNANSWERED,
         REASON_DEPOSIT_SENT_FOLLOWUP,
         REASON_DEPOSIT_PLAYER_MESSAGE,
+        REASON_RPA_DEPOSIT_FAILED,
         REASON_RPA_DEPOSIT_UNCERTAIN,
         REASON_RPA_CASHOUT_UNCERTAIN,
         REASON_AUTO_CASHOUT_ESCALATION,
@@ -1378,8 +1379,12 @@ async def notify_rpa_deposit_failed(
     club_id: int | None,
     chat_id: int,
     title: str | None = None,
+    detail: str | None = None,
 ) -> None:
-    """Slack when ClubGG auto chip-add fails and chips need manual add."""
+    """Slack when ClubGG auto chip-add fails and chips need manual add.
+
+    ``detail`` is the deposit-server or preflight reason. Empty text is omitted.
+    """
     if not escalation_notification_enabled(club_id):
         return
     await notify_escalation_slack(
@@ -1387,6 +1392,7 @@ async def notify_rpa_deposit_failed(
         club_id=club_id,
         chat_id=int(chat_id),
         title=title,
+        message_text=detail,
     )
 
 

@@ -545,6 +545,36 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("*Early rakeback requested.*", early)
         self.assertIn("*RPA deposit failed — add chips manually.*", dep)
         self.assertIn("*RPA cashout failed — claim chips manually.*", cash)
+        self.assertEqual(dep.count("\n"), 2)
+
+    def test_rpa_deposit_failed_includes_reason(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_RPA_DEPOSIT_FAILED,
+                club_id=1,
+                chat_id=-1,
+                title="GTO / 1 / Nick",
+                message_text="player not found in club",
+            )
+            blank = esc.format_escalation_slack_text(
+                esc.REASON_RPA_DEPOSIT_FAILED,
+                club_id=1,
+                chat_id=-1,
+                title="GTO / 1 / Nick",
+                message_text="  ",
+            )
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "*RPA deposit failed — add chips manually.*",
+                    "Club: ClubGTO",
+                    "`GTO / 1 / Nick`",
+                    "player not found in club",
+                ]
+            ),
+        )
+        self.assertEqual(blank.count("\n"), 2)
 
     def test_union_deposit_first_copy(self):
         with patch.object(esc, "_club_display_name", return_value="Round Table"):

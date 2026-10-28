@@ -957,9 +957,17 @@ class Ra2CashoutReasonTests(unittest.IsolatedAsyncioTestCase):
             ) as cashout_failed,
         ):
             await api._maybe_notify_rpa_deposit_problem(
-                club_id=4, chat_id=CHAT, title="GTO / 7554-3195 / Ldog67", status="fail"
+                club_id=4,
+                chat_id=CHAT,
+                title="GTO / 7554-3195 / Ldog67",
+                status="fail",
+                detail="player not found in club",
             )
         deposit_failed.assert_awaited_once()
+        self.assertEqual(
+            deposit_failed.await_args.kwargs["detail"],
+            "player not found in club",
+        )
         cashout_failed.assert_not_awaited()
 
     async def test_cashout_source_is_stored_on_the_event(self):
