@@ -1,8 +1,14 @@
+import contextlib
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 from bot.services import deposit_incomplete_watch as diw
+from db.models import DepositIncompleteWatch
 
 
 class DepositIncompleteWatchTests(unittest.TestCase):
@@ -83,6 +89,63 @@ class DepositIncompleteWatchTests(unittest.TestCase):
         kwargs = schedule_mock.call_args.kwargs
         self.assertEqual(kwargs["chat_id"], -100)
         self.assertEqual(kwargs["club_id"], 2)
+        self.assertAlmostEqual(kwargs["when"], 420.0, delta=5.0)
+
+
+class DepositIncompleteWatchDbTests(unittest.TestCase):
+    """Real session: get_db() commits and closes before restore reads the rows."""
+
+    def setUp(self) -> None:
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        DepositIncompleteWatch.__table__.create(engine)
+        self.Session = sessionmaker(bind=engine)
+
+        @contextlib.contextmanager
+        def fake_get_db():
+            session = self.Session()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+        p = patch("bot.services.deposit_incomplete_watch.get_db", fake_get_db)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_restore_reschedules_rows_loaded_from_closed_session(self):
+        armed_at = datetime.now(timezone.utc) - timedelta(minutes=3)
+        with self.Session() as session:
+            session.add(
+                DepositIncompleteWatch(
+                    telegram_chat_id=-100,
+                    club_id=2,
+                    group_title="GTO / 1 / Nick",
+                    armed_at=armed_at,
+                )
+            )
+            session.commit()
+
+        job_queue = MagicMock()
+        with (
+            patch.object(diw, "payment_or_chips_seen_since_arm", return_value=False),
+            patch.object(diw, "_deposit_reminder_seconds", return_value=600),
+            patch.object(diw, "_schedule_deposit_reminder_job") as schedule_mock,
+        ):
+            diw.restore_deposit_incomplete_watches(job_queue)
+
+        schedule_mock.assert_called_once()
+        kwargs = schedule_mock.call_args.kwargs
+        self.assertEqual(kwargs["chat_id"], -100)
+        self.assertEqual(kwargs["club_id"], 2)
+        self.assertEqual(kwargs["group_title"], "GTO / 1 / Nick")
         self.assertAlmostEqual(kwargs["when"], 420.0, delta=5.0)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -34,9 +35,28 @@ def _resolve_job_queue(job_queue: Any | None = None) -> Any | None:
     return esc_resolve(None)
 
 
-def list_armed_deposit_incomplete_watches() -> list[DepositIncompleteWatch]:
+@dataclass(frozen=True)
+class ArmedDepositIncompleteWatch:
+    """Plain snapshot of one watch row, safe to read after the session closes."""
+
+    telegram_chat_id: int
+    club_id: int | None
+    group_title: str | None
+    armed_at: datetime | None
+
+
+def list_armed_deposit_incomplete_watches() -> list[ArmedDepositIncompleteWatch]:
+    # get_db() commits on exit, which expires ORM rows; copy the values inside the session.
     with get_db() as session:
-        return session.query(DepositIncompleteWatch).all()
+        return [
+            ArmedDepositIncompleteWatch(
+                telegram_chat_id=int(row.telegram_chat_id),
+                club_id=row.club_id,
+                group_title=row.group_title,
+                armed_at=row.armed_at,
+            )
+            for row in session.query(DepositIncompleteWatch).all()
+        ]
 
 
 def arm_deposit_incomplete_watch(

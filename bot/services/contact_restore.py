@@ -794,7 +794,7 @@ def schedule_contact_restore_tick() -> None:
     asyncio.run_coroutine_threadsafe(tick_async(), loop)
 
 
-def contact_restore_job_callback(context) -> None:
+async def contact_restore_job_callback(context) -> None:
     schedule_contact_restore_tick()
 
 

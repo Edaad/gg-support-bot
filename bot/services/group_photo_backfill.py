@@ -419,7 +419,7 @@ def schedule_group_photo_backfill_tick() -> None:
     asyncio.run_coroutine_threadsafe(tick_async(), loop)
 
 
-def group_photo_backfill_job_callback(context) -> None:
+async def group_photo_backfill_job_callback(context) -> None:
     schedule_group_photo_backfill_tick()
 
 
