@@ -36,6 +36,10 @@ def _configure_worker_logging() -> None:
     level_name = (os.getenv("LOG_LEVEL") or "INFO").strip().upper()
     level = getattr(logging, level_name, logging.INFO)
 
+    # httpx logs every request URL at INFO, and Telegram API URLs contain the bot token.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     if root.handlers:
         # Something else configured handlers; still widen level so INFO propagates from app loggers.
         root.setLevel(level)

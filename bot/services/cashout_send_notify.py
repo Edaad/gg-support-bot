@@ -320,7 +320,7 @@ async def tick_async() -> dict[str, Any]:
         return out
 
 
-def cashout_send_notify_job_callback(context) -> None:
+async def cashout_send_notify_job_callback(context) -> None:
     from bot.services.mtproto_dm_gc_listener import _loop_holder
 
     loop = _loop_holder.get("loop")
