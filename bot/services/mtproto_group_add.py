@@ -244,6 +244,9 @@ async def _gate_outgoing_deposit(
     message = event.message
     message_id = int(message.id) if message is not None else None
     chat_id = int(event.chat_id) if event.chat_id is not None else None
+    sent = (
+        message_sent_at(getattr(message, "date", None)) if message is not None else None
+    )
     if message_id is None or chat_id is None:
         await _delete_add_command_message(
             event,
@@ -259,6 +262,7 @@ async def _gate_outgoing_deposit(
                 title=None,
                 amount=amount,
                 bonus=bonus,
+                message_sent_at_value=sent,
             )
         return False
 
@@ -273,7 +277,7 @@ async def _gate_outgoing_deposit(
         group_title=None,
         amount=amount,
         bonus=bonus,
-        message_sent_at_value=message_sent_at(getattr(message, "date", None)),
+        message_sent_at_value=sent,
         path=PATH_TELETHON,
     )
     if outcome == OUTCOME_OWNED:
@@ -292,6 +296,7 @@ async def _gate_outgoing_deposit(
             title=None,
             amount=amount,
             bonus=bonus,
+            message_sent_at_value=sent,
         )
         return False
     return True

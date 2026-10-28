@@ -153,6 +153,62 @@ class StaleSlackTests(unittest.TestCase):
             ),
         )
 
+    def test_late_add_names_the_delay(self) -> None:
+        text = self._text(
+            command="add",
+            amount=Decimal("500"),
+            bonus=Decimal("50"),
+            age_seconds=90,
+        )
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "*/add didn't run — the server picked it up 90s late (limit 10s).*",
+                    "Club: Round Table",
+                    "`Jacob / 88421`",
+                    "Amount: $500",
+                    "Bonus: $50",
+                    "Add the chips manually, or send /add again.",
+                ]
+            ),
+        )
+
+    def test_late_bonus_names_the_delay(self) -> None:
+        text = self._text(command="bonus", amount=Decimal("25"), age_seconds=89.8)
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "*/bonus didn't run — the server picked it up 90s late (limit 10s).*",
+                    "Club: Round Table",
+                    "`Jacob / 88421`",
+                    "Amount: $25",
+                    "Add the chips manually, or send /bonus again.",
+                ]
+            ),
+        )
+        self.assertNotIn("Bonus:", text)
+
+    def test_late_cash_names_the_delay(self) -> None:
+        text = self._text(command="cash", amount=Decimal("500"), age_seconds=56.7)
+        self.assertEqual(
+            text,
+            "\n".join(
+                [
+                    "*/cash didn't run — the server picked it up 57s late (limit 10s).*",
+                    "Club: Round Table",
+                    "`Jacob / 88421`",
+                    "Amount: $500",
+                    "Claim the chips manually, or send /cash again.",
+                ]
+            ),
+        )
+
+    def test_just_over_the_limit_does_not_say_the_limit(self) -> None:
+        text = self._text(command="bonus", amount=Decimal("25"), age_seconds=10.2)
+        self.assertIn("picked it up 11s late (limit 10s)", text)
+
 
 if __name__ == "__main__":
     unittest.main()

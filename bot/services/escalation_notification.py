@@ -1315,6 +1315,21 @@ async def notify_earlyrb_requested(
     )
 
 
+def _late_pickup_seconds(age_seconds: float | None) -> int | None:
+    """Whole seconds late, once the command is past the staleness limit."""
+    from bot.services.clubgg_rpa_events import STALE_AFTER_SECONDS
+
+    if age_seconds is None or age_seconds <= STALE_AFTER_SECONDS:
+        return None
+    return max(STALE_AFTER_SECONDS + 1, int(round(age_seconds)))
+
+
+def _stale_command_label(command: str) -> str:
+    if command in ("cash", "bonus"):
+        return command
+    return "add"
+
+
 def format_stale_command_slack_text(
     *,
     command: str,
@@ -1323,9 +1338,19 @@ def format_stale_command_slack_text(
     title: str | None,
     amount,
     bonus=None,
+    age_seconds: float | None = None,
 ) -> str:
     """Slack body for a staff /add, /bonus, or /cash that started too late."""
-    if command == "cash":
+    from bot.services.clubgg_rpa_events import STALE_AFTER_SECONDS
+
+    late_seconds = _late_pickup_seconds(age_seconds)
+    label = _stale_command_label(command)
+    if late_seconds is not None:
+        headline = (
+            f"/{label} didn't run — the server picked it up {late_seconds}s late "
+            f"(limit {STALE_AFTER_SECONDS}s)."
+        )
+    elif command == "cash":
         headline = "/cash didn't work — server side issue. Claim chips manually."
     elif command == "bonus":
         headline = "/bonus didn't work — server side issue. Add chips manually."
@@ -1341,6 +1366,11 @@ def format_stale_command_slack_text(
     ]
     if command != "bonus" and bonus is not None and bonus > 0:
         lines.append(f"Bonus: {_union_deposit_amount_str(bonus)}")
+    if late_seconds is not None:
+        if command == "cash":
+            lines.append("Claim the chips manually, or send /cash again.")
+        else:
+            lines.append(f"Add the chips manually, or send /{label} again.")
     return "\n".join(lines)
 
 
@@ -1352,10 +1382,17 @@ async def notify_stale_command(
     title: str | None,
     amount,
     bonus=None,
+    message_sent_at_value: datetime | None = None,
 ) -> None:
     """Escalation when a staff /add, /bonus, or /cash is too old to move chips."""
+    from bot.services.clubgg_rpa_events import message_sent_at
+
     if not escalation_notification_enabled(club_id):
         return
+    sent = message_sent_at(message_sent_at_value)
+    age_seconds = None
+    if sent is not None:
+        age_seconds = (datetime.now(timezone.utc) - sent).total_seconds()
     reason = REASON_CASH_STALE if command == "cash" else REASON_ADD_STALE
     text = format_stale_command_slack_text(
         command=command,
@@ -1364,6 +1401,7 @@ async def notify_stale_command(
         title=title,
         amount=amount,
         bonus=bonus,
+        age_seconds=age_seconds,
     )
     await notify_escalation_slack(
         reason,

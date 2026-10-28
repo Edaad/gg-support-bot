@@ -214,6 +214,7 @@ async def _add_telethon_fallback(
             title=chat.title,
             amount=amount,
             bonus=bonus,
+            message_sent_at_value=update.message.date,
         )
         return
 
@@ -271,6 +272,7 @@ async def _escalate_blocked_command(
     title: str | None,
     amount: Decimal,
     bonus: Decimal | None,
+    message_sent_at_value=None,
 ) -> None:
     from bot.services.escalation_notification import notify_stale_command
 
@@ -281,6 +283,7 @@ async def _escalate_blocked_command(
         title=title,
         amount=amount,
         bonus=bonus,
+        message_sent_at_value=message_sent_at_value,
     )
 
 
@@ -380,6 +383,7 @@ async def _execute_add(
             title=chat.title,
             amount=amount,
             bonus=bonus,
+            message_sent_at_value=update.message.date,
         )
         return
 
@@ -552,6 +556,7 @@ async def _bonus_telethon_fallback(
             title=chat.title,
             amount=bonus_amount,
             bonus=None,
+            message_sent_at_value=update.message.date,
         )
         return
 
@@ -612,6 +617,7 @@ async def _execute_group_bonus(
             title=chat.title,
             amount=bonus_amount,
             bonus=None,
+            message_sent_at_value=update.message.date,
         )
         return
 

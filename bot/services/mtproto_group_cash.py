@@ -283,6 +283,9 @@ async def handle_group_cash_outgoing(
 
     message = event.message
     message_id = int(message.id) if message is not None else None
+    sent = (
+        message_sent_at(getattr(message, "date", None)) if message is not None else None
+    )
     if message_id is None:
         try:
             await event.delete()
@@ -299,6 +302,7 @@ async def handle_group_cash_outgoing(
             chat_id=chat_id,
             title=None,
             amount=amount,
+            message_sent_at_value=sent,
         )
         return
 
@@ -313,7 +317,7 @@ async def handle_group_cash_outgoing(
         group_title=None,
         amount=amount,
         bonus=None,
-        message_sent_at_value=message_sent_at(getattr(message, "date", None)),
+        message_sent_at_value=sent,
         path=PATH_TELETHON,
     )
     if outcome == OUTCOME_OWNED:
@@ -334,6 +338,7 @@ async def handle_group_cash_outgoing(
             chat_id=chat_id,
             title=None,
             amount=amount,
+            message_sent_at_value=sent,
         )
         return
 

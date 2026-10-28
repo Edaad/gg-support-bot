@@ -153,6 +153,7 @@ async def _cash_telethon_fallback(
             chat_id=chat.id,
             title=chat.title,
             amount=amount,
+            message_sent_at_value=update.message.date,
         )
         return
 
@@ -255,6 +256,7 @@ async def cash_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             chat_id=chat.id,
             title=chat.title,
             amount=amount,
+            message_sent_at_value=update.message.date,
         )
         return
 
