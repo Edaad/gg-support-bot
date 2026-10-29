@@ -1567,10 +1567,10 @@ def list_zelle_bound_display_names(telegram_chat_id: int) -> list[str]:
             .order_by(ZellePayment.created_at.desc(), ZellePayment.id.desc())
             .all()
         )
-    return resolve_zelle_bound_display_names(
-        [row.payer_name_normalized for row in bindings],
-        [row.payer_name for row in payments],
-    )
+        # Read before commit. get_db() expires rows on the way out.
+        normalized_names = [row.payer_name_normalized for row in bindings]
+        payment_names = [row.payer_name for row in payments]
+    return resolve_zelle_bound_display_names(normalized_names, payment_names)
 
 
 def get_last_bound_zelle_deposit_at(

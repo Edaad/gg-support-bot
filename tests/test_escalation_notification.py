@@ -1416,6 +1416,63 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resolve_zelle_bound_display_names([], ["Jane Doe"]), [])
 
+    def test_list_zelle_bound_display_names_reads_before_session_closes(self):
+        from contextlib import contextmanager
+
+        from sqlalchemy.orm.exc import DetachedInstanceError
+
+        from bot.services import payment_method_binding as pmb
+
+        class Row:
+            def __init__(self, **values):
+                self._values = values
+                self.live = True
+
+            def __getattr__(self, name):
+                if not self.live:
+                    raise DetachedInstanceError("detached")
+                try:
+                    return self._values[name]
+                except KeyError as exc:
+                    raise AttributeError(name) from exc
+
+        binding = Row(payer_name_normalized="daniel schools")
+        payment = Row(payer_name="DANIEL SCHOOLS")
+
+        class Query:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def filter_by(self, **kwargs):
+                return self
+
+            def filter(self, *args):
+                return self
+
+            def order_by(self, *args):
+                return self
+
+            def all(self):
+                return self._rows
+
+        class Session:
+            def query(self, model):
+                if model is pmb.ZellePayerBinding:
+                    return Query([binding])
+                return Query([payment])
+
+        @contextmanager
+        def fake_db():
+            yield Session()
+            binding.live = False
+            payment.live = False
+
+        with patch.object(pmb, "get_db", fake_db):
+            self.assertEqual(
+                pmb.list_zelle_bound_display_names(-1003949025100),
+                ["DANIEL SCHOOLS"],
+            )
+
     async def test_claim_bound_schedules_watch(self):
         with patch.object(
             ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
