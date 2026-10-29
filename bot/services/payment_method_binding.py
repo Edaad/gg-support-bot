@@ -1519,6 +1519,60 @@ def get_last_bound_deposit_at(
     return None
 
 
+def _title_payer_name(normalized: str) -> str:
+    return " ".join(part[:1].upper() + part[1:] for part in normalized.split() if part)
+
+
+def resolve_zelle_bound_display_names(
+    normalized_names: list[str],
+    payment_names_newest_first: list[str],
+) -> list[str]:
+    """Display names for bound Zelle payers, in binding order.
+
+    Uses the newest payment's original spelling when that chat has one.
+    """
+    display_by_norm: dict[str, str] = {}
+    for payer_name in payment_names_newest_first:
+        norm = _normalize_payer_name(payer_name)
+        shown = (payer_name or "").strip()
+        if norm and shown and norm not in display_by_norm:
+            display_by_norm[norm] = shown
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw in normalized_names:
+        norm = _normalize_payer_name(raw)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        names.append(display_by_norm.get(norm) or _title_payer_name(norm))
+    return names
+
+
+def list_zelle_bound_display_names(telegram_chat_id: int) -> list[str]:
+    """Payer names bound to this group, newest binding first."""
+    chat_id = int(telegram_chat_id)
+    with get_db() as session:
+        bindings = (
+            session.query(ZellePayerBinding)
+            .filter_by(telegram_chat_id=chat_id)
+            .order_by(
+                ZellePayerBinding.last_bound_at.desc(),
+                ZellePayerBinding.id.desc(),
+            )
+            .all()
+        )
+        payments = (
+            session.query(ZellePayment)
+            .filter(ZellePayment.telegram_chat_id == chat_id)
+            .order_by(ZellePayment.created_at.desc(), ZellePayment.id.desc())
+            .all()
+        )
+    return resolve_zelle_bound_display_names(
+        [row.payer_name_normalized for row in bindings],
+        [row.payer_name for row in payments],
+    )
+
+
 def get_last_bound_zelle_deposit_at(
     session,
     *,

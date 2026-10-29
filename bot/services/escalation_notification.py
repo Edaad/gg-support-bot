@@ -170,8 +170,7 @@ MEDIA_ONLY_PLACEHOLDER = (
 DEPOSIT_SENT_ACK_COPY = (
     "Thank you! Credits will be added as soon as we receive the payment."
 )
-# Historical click prompt. Response audit still matches it; new crypto clicks
-# use DEPOSIT_SENT_ACK_COPY and ask for the hash at the 3-minute mark.
+# Sent in the group the moment a crypto player taps "I have sent the payment".
 DEPOSIT_SENT_ACK_COPY_CRYPTO = (
     "Thanks! Please send your transaction hash (TxID) here.\n"
     "\n"
@@ -235,8 +234,21 @@ def deposit_sent_player_nudge(method_slug: str | None) -> str | None:
 
 def deposit_sent_ack_copy(method_slug: str | None) -> str:
     """Player ack after tapping 'I have sent the payment'."""
-    del method_slug
+    if (method_slug or "").strip().lower() == "crypto":
+        return DEPOSIT_SENT_ACK_COPY_CRYPTO
     return DEPOSIT_SENT_ACK_COPY
+
+
+def format_zelle_bound_names_body(names: list[str]) -> str:
+    """Slack body: every bound Zelle payer name, or (none)."""
+    shown: list[str] = []
+    for name in names:
+        text = " ".join((name or "").split())
+        if text:
+            shown.append(text)
+    lines = ["Names:"]
+    lines.extend(shown or ["(none)"])
+    return "\n".join(lines)
 
 
 # While the 5m wait is armed: ignore expected payment acks / proofs.
@@ -570,6 +582,7 @@ def format_escalation_slack_text(
     title: str | None = None,
     message_text: str | None = None,
     method_slug: str | None = None,
+    bound_names: list[str] | None = None,
 ) -> str:
     headline = _HEADLINES.get(reason, reason)
     slug = (method_slug or "").strip().lower()
@@ -596,6 +609,12 @@ def format_escalation_slack_text(
         body = format_player_message_for_slack(message_text)
         if body:
             lines.append(body)
+    if (
+        bound_names is not None
+        and slug == "zelle"
+        and reason in (REASON_DEPOSIT_SENT_CLAIMED, REASON_DEPOSIT_SENT_TIMEOUT)
+    ):
+        lines.append(format_zelle_bound_names_body(bound_names))
     return "\n".join(lines)
 
 
@@ -980,6 +999,31 @@ async def notify_union_deposit_request_slack(
     )
 
 
+def _zelle_bound_names_for_slack(
+    reason: str,
+    method_slug: str | None,
+    chat_id: int,
+) -> list[str] | None:
+    """Bound Zelle payer names for the claim and timeout Slacks. None otherwise."""
+    slug = (method_slug or "").strip().lower()
+    if slug != "zelle" or reason not in (
+        REASON_DEPOSIT_SENT_CLAIMED,
+        REASON_DEPOSIT_SENT_TIMEOUT,
+    ):
+        return None
+    try:
+        from bot.services.payment_method_binding import list_zelle_bound_display_names
+
+        return list_zelle_bound_display_names(int(chat_id))
+    except Exception:
+        logger.warning(
+            "escalation: zelle bound names lookup failed chat_id=%s",
+            chat_id,
+            exc_info=True,
+        )
+        return []
+
+
 async def notify_escalation_slack(
     reason: str,
     *,
@@ -1000,6 +1044,9 @@ async def notify_escalation_slack(
     )
     from bot.services.head_admin_escalation import HEAD_ADMIN_ESCALATION_REASONS
 
+    bound_names = None
+    if slack_text is None:
+        bound_names = _zelle_bound_names_for_slack(reason, method_slug, chat_id)
     text = slack_text or format_escalation_slack_text(
         reason,
         club_id=club_id,
@@ -1007,6 +1054,7 @@ async def notify_escalation_slack(
         title=title,
         message_text=message_text,
         method_slug=method_slug,
+        bound_names=bound_names,
     )
     text = with_chat_ref(text, chat_id)
     resolved_episode_id = episode_id

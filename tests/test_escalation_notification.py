@@ -414,6 +414,39 @@ class EscalationCopyTests(unittest.TestCase):
         self.assertIn("Club: Round Table", crypto)
         self.assertIn("`RT / 12345 / Jane`", zelle)
         self.assertEqual(len(crypto.split("\n")), 3)
+        self.assertNotIn("Names:", zelle)
+
+    def test_zelle_slack_includes_bound_names(self):
+        names = ["Jane Doe", "Jason R"]
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            claimed = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_CLAIMED,
+                club_id=4,
+                chat_id=-100,
+                title="GTO / 3627-5864 / Jason R",
+                method_slug="zelle",
+                bound_names=names,
+            )
+            timeout = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_TIMEOUT,
+                club_id=4,
+                chat_id=-100,
+                title="GTO / 3627-5864 / Jason R",
+                method_slug="zelle",
+                bound_names=names,
+            )
+            empty = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_CLAIMED,
+                club_id=4,
+                chat_id=-100,
+                title="GTO / 3627-5864 / Jason R",
+                method_slug="zelle",
+                bound_names=[],
+            )
+        for text in (claimed, timeout):
+            self.assertIn("Names:\nJane Doe\nJason R", text)
+        self.assertIn("(none)", empty)
+        self.assertNotIn("Jane Doe", empty)
 
     def test_deposit_sent_timeout_headline(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
@@ -1357,13 +1390,31 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     def test_deposit_sent_ack_copy_is_generic(self):
-        self.assertEqual(esc.deposit_sent_ack_copy("crypto"), esc.DEPOSIT_SENT_ACK_COPY)
+        self.assertEqual(
+            esc.deposit_sent_ack_copy("crypto"), esc.DEPOSIT_SENT_ACK_COPY_CRYPTO
+        )
         self.assertEqual(esc.deposit_sent_ack_copy("zelle"), esc.DEPOSIT_SENT_ACK_COPY)
         self.assertEqual(esc.deposit_sent_ack_copy(None), esc.DEPOSIT_SENT_ACK_COPY)
         self.assertIn("transaction hash", esc.DEPOSIT_SENT_PLAYER_NUDGE_CRYPTO)
         self.assertIn(
             "Zelle payment was sent from", esc.DEPOSIT_SENT_PLAYER_NUDGE_ZELLE
         )
+
+    def test_resolve_zelle_bound_display_names(self):
+        from bot.services.payment_method_binding import (
+            resolve_zelle_bound_display_names,
+        )
+
+        names = resolve_zelle_bound_display_names(
+            ["jason r", "jane doe", "jason r"],
+            ["Jason R", "JASON R", "Jane Doe"],
+        )
+        self.assertEqual(names, ["Jason R", "Jane Doe"])
+        self.assertEqual(
+            resolve_zelle_bound_display_names(["mary ann smith"], []),
+            ["Mary Ann Smith"],
+        )
+        self.assertEqual(resolve_zelle_bound_display_names([], ["Jane Doe"]), [])
 
     async def test_claim_bound_schedules_watch(self):
         with patch.object(
@@ -1460,9 +1511,14 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                         )
                         self.assertEqual(notify.await_args.kwargs["method_slug"], slug)
                         sched.assert_not_called()
+                        expected_ack = (
+                            esc.DEPOSIT_SENT_ACK_COPY_CRYPTO
+                            if slug == "crypto"
+                            else esc.DEPOSIT_SENT_ACK_COPY
+                        )
                         self.assertEqual(
                             context.bot.send_message.await_args.kwargs["text"],
-                            esc.DEPOSIT_SENT_ACK_COPY,
+                            expected_ack,
                         )
                         self.assertFalse(ga.deposit_instructions_pending(chat_id))
                         self.assertFalse(ga.deposit_sent_watch_armed(chat_id))
