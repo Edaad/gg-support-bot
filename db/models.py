@@ -1388,6 +1388,8 @@ class SupportGroupChat(Base):
         Boolean, nullable=False, server_default=text("false"), default=False
     )
     escalation_deposit_method_slug = Column(String(64), nullable=True)
+    # Zelle destination on the instructions for this deposit. Null for other methods.
+    escalation_deposit_zelle_recipient = Column(String(100), nullable=True)
     escalation_deposit_sent_armed_at = Column(DateTime(timezone=True), nullable=True)
     escalation_deposit_sent_button_message_id = Column(BigInteger, nullable=True)
     # After payment/chips-add: next player free text may idle without 5m silence.

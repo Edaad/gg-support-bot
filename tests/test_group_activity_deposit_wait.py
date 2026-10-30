@@ -37,6 +37,7 @@ class DepositWaitCacheSafetyTestCase(unittest.TestCase):
         self.assertNotIn("escalation_deposit_method_slug", kwargs)
         self.assertNotIn("escalation_deposit_sent_armed_at", kwargs)
         self.assertNotIn("escalation_deposit_sent_button_message_id", kwargs)
+        self.assertNotIn("escalation_deposit_zelle_recipient", kwargs)
 
     def test_deposit_instructions_pending_resyncs_from_db(self) -> None:
         """Stale worker memory must not win over a clear written by another dyno."""
@@ -80,6 +81,40 @@ class DepositWaitCacheSafetyTestCase(unittest.TestCase):
         kwargs = upd.call_args.kwargs
         self.assertTrue(kwargs["escalation_deposit_instructions_pending"])
         self.assertEqual(kwargs["escalation_deposit_method_slug"], "crypto")
+        self.assertIsNone(kwargs["escalation_deposit_zelle_recipient"])
+
+    def test_zelle_recipient_persists_and_reloads(self) -> None:
+        chat_id = -1004
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
+            state = ga.get_chat_activity_state(chat_id)
+            state.support_row_id = 12
+            with patch.object(
+                ga, "update_support_group_chat_row", return_value=(True, None)
+            ) as upd:
+                ga.mark_deposit_instructions_pending(
+                    chat_id,
+                    method_slug="zelle",
+                    zelle_recipient="coachingstarship@gmail.com",
+                )
+        self.assertEqual(
+            upd.call_args.kwargs["escalation_deposit_zelle_recipient"],
+            "coachingstarship@gmail.com",
+        )
+
+        db_row = SimpleNamespace(
+            id=12,
+            escalation_deposit_instructions_pending=True,
+            escalation_deposit_method_slug="zelle",
+            escalation_deposit_zelle_recipient="2133729202",
+            escalation_deposit_sent_armed_at=None,
+            escalation_deposit_sent_button_message_id=None,
+        )
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=db_row
+        ):
+            self.assertEqual(ga.deposit_zelle_recipient(chat_id), "2133729202")
 
 
 if __name__ == "__main__":

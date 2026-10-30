@@ -574,6 +574,16 @@ def _last_deposit_info_message_id(chat_id: int) -> int | None:
     return int(ids[-1]) if ids else None
 
 
+def _deposit_sent_zelle_recipient(
+    method_slug: str | None,
+    response_data: dict | None,
+) -> str | None:
+    """Zelle destination on the instructions just shown. None for other methods."""
+    if (method_slug or "").strip().lower() != "zelle" or not response_data:
+        return None
+    return _variant_destination_tag("zelle", response_data)
+
+
 async def _maybe_offer_deposit_sent_button(
     bot,
     chat_id: int,
@@ -582,6 +592,7 @@ async def _maybe_offer_deposit_sent_button(
     method_slug: str | None,
     title: str | None = None,
     attach: bool = True,
+    zelle_recipient: str | None = None,
 ) -> None:
     """Offer escalation 'I have sent the payment' button after deposit instructions."""
     if bot is None:
@@ -597,6 +608,7 @@ async def _maybe_offer_deposit_sent_button(
             method_slug=method_slug,
             title=title,
             attach_to_message_id=attach_id,
+            zelle_recipient=zelle_recipient,
         )
     except Exception:
         logger.debug(
@@ -1328,6 +1340,7 @@ async def _send_first_time_payment_destination(
             method_slug=method_slug,
             title=getattr(chat, "title", None),
             attach=True,
+            zelle_recipient=_deposit_sent_zelle_recipient(method_slug, response_data),
         )
     return True
 
@@ -3942,6 +3955,7 @@ async def _send_deposit_method_response(
             method_slug=slug,
             title=getattr(query.message.chat, "title", None) if query.message else None,
             attach=True,
+            zelle_recipient=_deposit_sent_zelle_recipient(slug, response_data),
         )
     return True
 

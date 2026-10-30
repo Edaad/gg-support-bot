@@ -239,6 +239,23 @@ def deposit_sent_ack_copy(method_slug: str | None) -> str:
     return DEPOSIT_SENT_ACK_COPY
 
 
+_ZELLE_CHECK_BY_RECIPIENT = {
+    "starship5vllc@gmail.com": "Citizens",
+    "coachingstarship@gmail.com": "PNC",
+    "2133729202": "Wells Fargo",
+}
+
+
+def zelle_check_label(recipient: str | None) -> str | None:
+    """Bank app for a Zelle destination. None when this deposit has no match."""
+    from bot.services.payment_method_binding import normalize_zelle_recipient
+
+    key = normalize_zelle_recipient(recipient or "")
+    if not key:
+        return None
+    return _ZELLE_CHECK_BY_RECIPIENT.get(key)
+
+
 def format_zelle_bound_names_body(names: list[str]) -> str:
     """Slack body: every bound Zelle payer name, or (none)."""
     shown: list[str] = []
@@ -583,6 +600,7 @@ def format_escalation_slack_text(
     message_text: str | None = None,
     method_slug: str | None = None,
     bound_names: list[str] | None = None,
+    zelle_bank: str | None = None,
 ) -> str:
     headline = _HEADLINES.get(reason, reason)
     slug = (method_slug or "").strip().lower()
@@ -609,6 +627,12 @@ def format_escalation_slack_text(
         body = format_player_message_for_slack(message_text)
         if body:
             lines.append(body)
+    if (
+        zelle_bank
+        and slug == "zelle"
+        and reason in (REASON_DEPOSIT_SENT_CLAIMED, REASON_DEPOSIT_SENT_TIMEOUT)
+    ):
+        lines.append(f"Check: {zelle_bank}")
     if (
         bound_names is not None
         and slug == "zelle"
@@ -999,6 +1023,21 @@ async def notify_union_deposit_request_slack(
     )
 
 
+def _zelle_bank_for_slack(
+    reason: str,
+    method_slug: str | None,
+    chat_id: int,
+) -> str | None:
+    """Bank app for this deposit's Zelle destination. None when it does not match."""
+    slug = (method_slug or "").strip().lower()
+    if slug != "zelle" or reason not in (
+        REASON_DEPOSIT_SENT_CLAIMED,
+        REASON_DEPOSIT_SENT_TIMEOUT,
+    ):
+        return None
+    return zelle_check_label(ga.deposit_zelle_recipient(int(chat_id)))
+
+
 def _zelle_bound_names_for_slack(
     reason: str,
     method_slug: str | None,
@@ -1045,8 +1084,10 @@ async def notify_escalation_slack(
     from bot.services.head_admin_escalation import HEAD_ADMIN_ESCALATION_REASONS
 
     bound_names = None
+    zelle_bank = None
     if slack_text is None:
         bound_names = _zelle_bound_names_for_slack(reason, method_slug, chat_id)
+        zelle_bank = _zelle_bank_for_slack(reason, method_slug, chat_id)
     text = slack_text or format_escalation_slack_text(
         reason,
         club_id=club_id,
@@ -1055,6 +1096,7 @@ async def notify_escalation_slack(
         message_text=message_text,
         method_slug=method_slug,
         bound_names=bound_names,
+        zelle_bank=zelle_bank,
     )
     text = with_chat_ref(text, chat_id)
     resolved_episode_id = episode_id
@@ -1852,9 +1894,14 @@ def on_deposit_instructions_sent(
     chat_id: int,
     *,
     method_slug: str | None = None,
+    zelle_recipient: str | None = None,
 ) -> None:
     """Mark instructions pending (button shown). Prefer offer_deposit_sent_button."""
-    ga.mark_deposit_instructions_pending(int(chat_id), method_slug=method_slug)
+    ga.mark_deposit_instructions_pending(
+        int(chat_id),
+        method_slug=method_slug,
+        zelle_recipient=zelle_recipient,
+    )
     logger.info(
         "escalation: deposit instructions pending chat_id=%s slug=%s",
         chat_id,
@@ -1870,6 +1917,7 @@ async def offer_deposit_sent_button(
     method_slug: str | None,
     title: str | None = None,
     attach_to_message_id: int | None = None,
+    zelle_recipient: str | None = None,
 ) -> bool:
     """Show inline 'I have sent the payment' when escalation is on.
 
@@ -1880,7 +1928,11 @@ async def offer_deposit_sent_button(
 
     slug = (method_slug or "").strip().lower() or None
 
-    on_deposit_instructions_sent(int(chat_id), method_slug=slug)
+    on_deposit_instructions_sent(
+        int(chat_id),
+        method_slug=slug,
+        zelle_recipient=zelle_recipient,
+    )
     markup = deposit_sent_button_markup()
 
     if attach_to_message_id is not None:

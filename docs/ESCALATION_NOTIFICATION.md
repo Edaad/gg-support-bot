@@ -78,8 +78,8 @@ On tap:
      > That's the long ID on your wallet/exchange for this transfer — open the completed payment → copy TxID / Hash → paste it in this chat.
      >
      > We'll add credits as soon as we verify it.
-   - Zelle: *The player says they sent a Zelle payment — please check.* Then `Names:` and every bound payer name for the group, or `(none)`. The group still gets the thank-you reply.
-   A watch armed before this change still waits 3 minutes, then Slacks the older “has not shown up” line (Zelle includes the same `Names:` body) and asks the player for a transaction hash (crypto) or Zelle sender name.
+   - Zelle: *The player says they sent a Zelle payment — please check.* Then `Check:` and the bank for the destination on these instructions (`Citizens`, `PNC`, or `Wells Fargo`). The line is left off when that destination is anything else. Then `Names:` and every bound payer name for the group, or `(none)`. The group still gets the thank-you reply.
+   A watch armed before this change still waits 3 minutes, then Slacks the older “has not shown up” line (Zelle includes the same `Check:` and `Names:` lines) and asks the player for a transaction hash (crypto) or Zelle sender name.
 3. **Other methods:** Slack `deposit_sent_claimed` immediately (*The player claims to have sent the payment already please check.*).
 4. If the group has **no** binding for the **selected** method (not crypto/Zelle) → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/…) check `group_payment_method_bindings`.
 5. If **bound** (not crypto/Zelle) → arm a durable 5-minute wait:

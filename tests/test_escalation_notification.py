@@ -445,8 +445,40 @@ class EscalationCopyTests(unittest.TestCase):
             )
         for text in (claimed, timeout):
             self.assertIn("Names:\nJane Doe\nJason R", text)
+            self.assertNotIn("Check:", text)
         self.assertIn("(none)", empty)
         self.assertNotIn("Jane Doe", empty)
+
+    def test_zelle_slack_check_line_sits_above_names(self):
+        with patch.object(esc, "_club_display_name", return_value="ClubGTO"):
+            text = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_CLAIMED,
+                club_id=4,
+                chat_id=-100,
+                title="GTO / 3851-7251 / BETABLUFF",
+                method_slug="zelle",
+                bound_names=["DANIEL SCHOOLS"],
+                zelle_bank="PNC",
+            )
+            timeout = esc.format_escalation_slack_text(
+                esc.REASON_DEPOSIT_SENT_TIMEOUT,
+                club_id=4,
+                chat_id=-100,
+                title="GTO / 3851-7251 / BETABLUFF",
+                method_slug="zelle",
+                bound_names=["DANIEL SCHOOLS"],
+                zelle_bank="Wells Fargo",
+            )
+        self.assertIn(
+            "`GTO / 3851-7251 / BETABLUFF`\nCheck: PNC\nNames:\nDANIEL SCHOOLS",
+            text,
+        )
+        self.assertIn("Check: Wells Fargo\nNames:\nDANIEL SCHOOLS", timeout)
+        self.assertEqual(esc.zelle_check_label("starship5vllc@gmail.com"), "Citizens")
+        self.assertEqual(esc.zelle_check_label("coachingstarship@gmail.com"), "PNC")
+        self.assertEqual(esc.zelle_check_label("213-372-9202"), "Wells Fargo")
+        self.assertIsNone(esc.zelle_check_label("janvenmo@gmail.com"))
+        self.assertIsNone(esc.zelle_check_label(None))
 
     def test_deposit_sent_timeout_headline(self):
         with patch.object(esc, "_club_display_name", return_value="ClubGTO"):

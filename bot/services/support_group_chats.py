@@ -313,6 +313,7 @@ def update_support_group_chat_row(
     escalation_idle_episode_fired: bool | None = None,
     escalation_deposit_instructions_pending: bool | None = None,
     escalation_deposit_method_slug: Any | None = ...,
+    escalation_deposit_zelle_recipient: Any | None = ...,
     escalation_deposit_sent_armed_at: Any | None = ...,
     escalation_deposit_sent_button_message_id: Any | None = ...,
     escalation_post_deposit_idle_pending: bool | None = None,
@@ -365,6 +366,10 @@ def update_support_group_chat_row(
                 )
             if escalation_deposit_method_slug is not ...:
                 row.escalation_deposit_method_slug = escalation_deposit_method_slug
+            if escalation_deposit_zelle_recipient is not ...:
+                row.escalation_deposit_zelle_recipient = (
+                    escalation_deposit_zelle_recipient
+                )
             if escalation_deposit_sent_armed_at is not ...:
                 row.escalation_deposit_sent_armed_at = escalation_deposit_sent_armed_at
             if escalation_deposit_sent_button_message_id is not ...:

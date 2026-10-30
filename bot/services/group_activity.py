@@ -32,6 +32,8 @@ class ChatActivityState:
     # Deposit instructions delivered; waiting for "I have sent the payment" button.
     deposit_instructions_pending: bool = False
     deposit_method_slug: str | None = None
+    # Zelle destination shown on this deposit's instructions.
+    deposit_zelle_recipient: str | None = None
     # After button (bound path): 5m payment wait armed.
     deposit_sent_watch_armed: bool = False
     deposit_sent_armed_at: datetime | None = None
@@ -107,6 +109,9 @@ def _state_from_row(row: object) -> ChatActivityState:
         deposit_method_slug=(
             getattr(row, "escalation_deposit_method_slug", None) or None
         ),
+        deposit_zelle_recipient=(
+            getattr(row, "escalation_deposit_zelle_recipient", None) or None
+        ),
         deposit_sent_watch_armed=armed_at is not None,
         deposit_sent_armed_at=armed_at,
         deposit_sent_button_message_id=(
@@ -174,6 +179,7 @@ def _persist_activity_state(
                     state.deposit_instructions_pending
                 ),
                 "escalation_deposit_method_slug": state.deposit_method_slug,
+                "escalation_deposit_zelle_recipient": state.deposit_zelle_recipient,
                 "escalation_deposit_sent_armed_at": state.deposit_sent_armed_at,
                 "escalation_deposit_sent_button_message_id": (
                     state.deposit_sent_button_message_id
@@ -210,6 +216,9 @@ def _sync_deposit_wait_from_db(chat_id: int, state: ChatActivityState) -> None:
     )
     state.deposit_method_slug = (
         getattr(row, "escalation_deposit_method_slug", None) or None
+    )
+    state.deposit_zelle_recipient = (
+        getattr(row, "escalation_deposit_zelle_recipient", None) or None
     )
     state.deposit_sent_watch_armed = armed_at is not None
     state.deposit_sent_armed_at = armed_at
@@ -357,10 +366,16 @@ def mark_deposit_instructions_pending(
     chat_id: int,
     *,
     method_slug: str | None = None,
+    zelle_recipient: str | None = None,
 ) -> None:
     state = get_chat_activity_state(chat_id)
     state.deposit_instructions_pending = True
-    state.deposit_method_slug = (method_slug or "").strip().lower() or None
+    slug = (method_slug or "").strip().lower() or None
+    state.deposit_method_slug = slug
+    if slug == "zelle":
+        state.deposit_zelle_recipient = (zelle_recipient or "").strip() or None
+    else:
+        state.deposit_zelle_recipient = None
     state.deposit_sent_watch_armed = False
     state.deposit_sent_armed_at = None
     state.deposit_sent_button_message_id = None
@@ -371,6 +386,7 @@ def clear_deposit_instructions_pending(chat_id: int) -> None:
     state = get_chat_activity_state(chat_id)
     state.deposit_instructions_pending = False
     state.deposit_method_slug = None
+    state.deposit_zelle_recipient = None
     state.deposit_sent_watch_armed = False
     state.deposit_sent_armed_at = None
     state.deposit_sent_button_message_id = None
@@ -430,6 +446,10 @@ def deposit_sent_armed_at(chat_id: int) -> datetime | None:
 
 def deposit_method_slug(chat_id: int) -> str | None:
     return _deposit_wait_state(chat_id).deposit_method_slug
+
+
+def deposit_zelle_recipient(chat_id: int) -> str | None:
+    return _deposit_wait_state(chat_id).deposit_zelle_recipient
 
 
 def list_armed_deposit_sent_chats() -> list[tuple[int, datetime]]:
