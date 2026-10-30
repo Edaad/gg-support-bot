@@ -263,8 +263,10 @@ def format_zelle_bound_names_body(names: list[str]) -> str:
         text = " ".join((name or "").split())
         if text:
             shown.append(text)
-    lines = ["Names:"]
-    lines.extend(shown or ["(none)"])
+    lines = ["*Names:*"]
+    lines.extend(f"*{text}*" for text in shown)
+    if len(lines) == 1:
+        lines.append("*(none)*")
     return "\n".join(lines)
 
 
@@ -435,6 +437,18 @@ def with_chat_ref(text: str, chat_id: int | None) -> str:
     if not line or line in (text or ""):
         return text
     return f"{(text or '').rstrip()}\n{line}"
+
+
+_ESCALATION_SLACK_RULE = "---------"
+
+
+def frame_escalation_slack(text: str) -> str:
+    """Put a rule above and below an escalation Slack post."""
+    body = (text or "").strip()
+    rule = _ESCALATION_SLACK_RULE
+    if body.startswith(f"{rule}\n") and body.endswith(f"\n{rule}"):
+        return body
+    return f"{rule}\n{body}\n{rule}"
 
 
 def format_player_message_for_slack(message_text: str | None) -> str | None:
@@ -632,7 +646,7 @@ def format_escalation_slack_text(
         and slug == "zelle"
         and reason in (REASON_DEPOSIT_SENT_CLAIMED, REASON_DEPOSIT_SENT_TIMEOUT)
     ):
-        lines.append(f"Check: {zelle_bank}")
+        lines.append(f"*Check: {zelle_bank}*")
     if (
         bound_names is not None
         and slug == "zelle"
@@ -1098,7 +1112,7 @@ async def notify_escalation_slack(
         bound_names=bound_names,
         zelle_bank=zelle_bank,
     )
-    text = with_chat_ref(text, chat_id)
+    text = frame_escalation_slack(text)
     resolved_episode_id = episode_id
     if resolved_episode_id is None:
         resolved_episode_id = live_history_episode_id(int(chat_id))
@@ -1277,15 +1291,14 @@ async def notify_staff_unanswered_issue_channel(
     )
 
     reason = REASON_PLAYER_IDLE_STAFF_UNANSWERED
-    text = with_chat_ref(
+    text = frame_escalation_slack(
         format_escalation_slack_text(
             reason,
             club_id=club_id,
             chat_id=chat_id,
             title=title,
             message_text=message_text,
-        ),
-        chat_id,
+        )
     )
     resolved_episode_id = episode_id
     if resolved_episode_id is None:

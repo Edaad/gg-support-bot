@@ -146,9 +146,10 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                         slack_text=expected,
                     )
         self.assertTrue(ok)
-        # Both channels get the same text, including the chat id line.
-        posted = esc.with_chat_ref(expected, 99)
-        self.assertIn("Chat: `99`", posted)
+        posted = esc.frame_escalation_slack(expected)
+        self.assertTrue(posted.startswith("---------\n"))
+        self.assertTrue(posted.endswith("\n---------"))
+        self.assertNotIn("Chat:", posted)
         normal.assert_awaited_once_with(posted, source=esc.REASON_UNION_DEPOSIT_FIRST)
         head.assert_awaited_once_with(posted, reason=esc.REASON_UNION_DEPOSIT_FIRST)
 
@@ -177,9 +178,10 @@ class NotifyEscalationSlackFanoutTests(unittest.IsolatedAsyncioTestCase):
                         title="CC / 1 / Nick",
                     )
         self.assertTrue(ok)
-        # Both channels get the same text, including the chat id line.
-        posted = esc.with_chat_ref(expected, 99)
-        self.assertIn("Chat: `99`", posted)
+        posted = esc.frame_escalation_slack(expected)
+        self.assertTrue(posted.startswith("---------\n"))
+        self.assertTrue(posted.endswith("\n---------"))
+        self.assertNotIn("Chat:", posted)
         normal.assert_awaited_once_with(posted, source=esc.REASON_RPA_DEPOSIT_FAILED)
         head.assert_awaited_once_with(posted, reason=esc.REASON_RPA_DEPOSIT_FAILED)
 

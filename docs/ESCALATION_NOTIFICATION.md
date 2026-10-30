@@ -78,7 +78,7 @@ On tap:
      > That's the long ID on your wallet/exchange for this transfer — open the completed payment → copy TxID / Hash → paste it in this chat.
      >
      > We'll add credits as soon as we verify it.
-   - Zelle: *The player says they sent a Zelle payment — please check.* Then `Check:` and the bank for the destination on these instructions (`Citizens`, `PNC`, or `Wells Fargo`). The line is left off when that destination is anything else. Then `Names:` and every bound payer name for the group, or `(none)`. The group still gets the thank-you reply.
+   - Zelle: *The player says they sent a Zelle payment — please check.* Then bold `Check:` and the bank for the destination on these instructions (`Citizens`, `PNC`, or `Wells Fargo`). The line is left off when that destination is anything else. Then bold `Names:` and every bound payer name for the group, or `(none)`. The group still gets the thank-you reply.
    A watch armed before this change still waits 3 minutes, then Slacks the older “has not shown up” line (Zelle includes the same `Check:` and `Names:` lines) and asks the player for a transaction hash (crypto) or Zelle sender name.
 3. **Other methods:** Slack `deposit_sent_claimed` immediately (*The player claims to have sent the payment already please check.*).
 4. If the group has **no** binding for the **selected** method (not crypto/Zelle) → Slack **Manual deposit request — no {method} binding for this group.** immediately. Handle methods (Venmo/…) check `group_payment_method_bindings`.
@@ -235,14 +235,15 @@ Copy (no user id, no chat id):
 Each post:
 
 ```
+---------
 {headline}
 Club: {club name}
 `{gc title or contact}`
 [{player message when included}]
-Chat: `{chat id}` [https://t.me/c/{id without -100}]
+---------
 ```
 
-GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses Slack bold `PLAYER SENT A SCREENSHOT, WHICH MIGHT POSSIBLY BE A PAYMENT CONFIRMATION, PLEASE RESPOND TO THEM ASAP`. The `Chat:` line is appended by `notify_escalation_slack` (and the staff-unanswered escalation post) to every support-group escalation, including union deposit and RPA posts; the `t.me/c` link is added for supergroups (`-100…` ids) only.
+GC title / contact is a Slack code span (tap-to-copy on mobile). Free-text bodies are truncated (~500 chars); media with no caption uses Slack bold `PLAYER SENT A SCREENSHOT, WHICH MIGHT POSSIBLY BE A PAYMENT CONFIRMATION, PLEASE RESPOND TO THEM ASAP`. `notify_escalation_slack` and the staff-unanswered escalation post wrap every support-group escalation in `---------`, including union deposit and RPA posts. Zelle claim and timeout bold `Check:` and each bound name.
 
 A payment notification with a *Manual action required* footer for a payment tied to a support group also logs an `escalation_events` row (`payment_manual_action`) for the [response audit](RESPONSE_AUDIT.md); its Slack post is unchanged.
 

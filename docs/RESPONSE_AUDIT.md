@@ -137,7 +137,7 @@ A club whose MTProto setup raises during the nightly fetch has its chats marked 
 
 ## Related changes
 
-- Escalation Slack posts (`notify_escalation_slack` and the staff-unanswered escalation post) end with `Chat: \`-100…\` https://t.me/c/…`. Basic groups get the id only.
+- Escalation Slack posts (`notify_escalation_slack` and the staff-unanswered escalation post) are wrapped in `---------` and do not include a chat id or Telegram link.
 - A payment notification with a *Manual action required* footer, for a payment tied to a support group, now logs an `escalation_events` row with reason `payment_manual_action` (Slack is unchanged).
 
 ## Tables (Alembic `0012_response_audit`, `0013_audit_shifts`)

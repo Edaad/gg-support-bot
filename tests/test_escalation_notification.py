@@ -444,9 +444,9 @@ class EscalationCopyTests(unittest.TestCase):
                 bound_names=[],
             )
         for text in (claimed, timeout):
-            self.assertIn("Names:\nJane Doe\nJason R", text)
+            self.assertIn("*Names:*\n*Jane Doe*\n*Jason R*", text)
             self.assertNotIn("Check:", text)
-        self.assertIn("(none)", empty)
+        self.assertIn("*(none)*", empty)
         self.assertNotIn("Jane Doe", empty)
 
     def test_zelle_slack_check_line_sits_above_names(self):
@@ -470,10 +470,10 @@ class EscalationCopyTests(unittest.TestCase):
                 zelle_bank="Wells Fargo",
             )
         self.assertIn(
-            "`GTO / 3851-7251 / BETABLUFF`\nCheck: PNC\nNames:\nDANIEL SCHOOLS",
+            "`GTO / 3851-7251 / BETABLUFF`\n*Check: PNC*\n*Names:*\n*DANIEL SCHOOLS*",
             text,
         )
-        self.assertIn("Check: Wells Fargo\nNames:\nDANIEL SCHOOLS", timeout)
+        self.assertIn("*Check: Wells Fargo*\n*Names:*\n*DANIEL SCHOOLS*", timeout)
         self.assertEqual(esc.zelle_check_label("starship5vllc@gmail.com"), "Citizens")
         self.assertEqual(esc.zelle_check_label("coachingstarship@gmail.com"), "PNC")
         self.assertEqual(esc.zelle_check_label("213-372-9202"), "Wells Fargo")
