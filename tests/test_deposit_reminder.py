@@ -727,7 +727,10 @@ class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
 
         context.bot.send_message.assert_awaited_once()
         body = context.bot.send_message.await_args.kwargs["text"]
-        self.assertIn("canceling your request", body)
+        self.assertIn("Hey! Just checking in", body)
+        self.assertIn("start a new deposit anytime with /deposit", body)
+        self.assertIn("We offer: Venmo.", body)
+        self.assertNotIn("canceling your request", body)
         self.assertIn("<b>automated feeback</b>", body)
         self.assertIn("just type /earlyrb", body)
         self.assertEqual(
@@ -756,6 +759,9 @@ class DepositTimeoutSkipTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(
                 deposit_module, "_should_skip_deposit_reminder", return_value=False
+            ),
+            patch.object(
+                deposit_module, "get_deposit_method_names", return_value=["Venmo"]
             ),
             patch(
                 "bot.services.group_activity.deposit_sent_watch_armed",

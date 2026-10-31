@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-from telegram.ext import ConversationHandler
+from telegram import Update
+from telegram.ext import ConversationHandler, TypeHandler
 
-from bot.handlers.deposit import TIMEOUT_SECONDS, get_deposit_handler
+from bot.handlers.deposit import TIMEOUT_SECONDS, deposit_timeout, get_deposit_handler
 
 
 class DepositHandlerRegistrationTests(unittest.TestCase):
@@ -16,3 +17,9 @@ class DepositHandlerRegistrationTests(unittest.TestCase):
         self.assertEqual(handler.conversation_timeout, TIMEOUT_SECONDS)
         self.assertEqual(TIMEOUT_SECONDS, 600)
         self.assertIn(ConversationHandler.TIMEOUT, handler.states)
+        timeout_handlers = handler.states[ConversationHandler.TIMEOUT]
+        self.assertEqual(len(timeout_handlers), 1)
+        timeout_handler = timeout_handlers[0]
+        self.assertIsInstance(timeout_handler, TypeHandler)
+        self.assertIs(timeout_handler.callback, deposit_timeout)
+        self.assertIs(timeout_handler.type, Update)

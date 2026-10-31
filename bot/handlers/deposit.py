@@ -18,6 +18,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -1599,6 +1600,22 @@ def _is_rt_cc_club(club_id: int | None) -> bool:
         return False
 
 
+def _deposit_followup_text(club_id: int | None) -> str:
+    """Player check-in after 10 minutes with no next deposit action."""
+    methods = _player_facing_deposit_method_names(club_id)
+    method_list = ", ".join(methods) if methods else ""
+    text = (
+        "Hey! Just checking in \u2014 if you haven\u2019t completed your deposit yet, "
+        "feel free to reach out and we\u2019ll help you get it done!\n\n"
+        "You can also start a new deposit anytime with /deposit.\n\n"
+        "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
+    )
+    if method_list:
+        text += f"\n\nWe offer: {html.escape(method_list)}."
+    text += "\n\nDeposits are available 24/7!"
+    return text
+
+
 def _player_facing_deposit_method_names(club_id: int | None) -> list[str]:
     """Payment methods listed in deposit reminder/timeout copy."""
     methods = _unique_deposit_method_names(
@@ -1674,18 +1691,7 @@ async def _deposit_reminder_callback(context: ContextTypes.DEFAULT_TYPE) -> None
     )
     await _delete_deposit_info_messages(context.bot, chat_id)
 
-    methods = _player_facing_deposit_method_names(club_id)
-    method_list = ", ".join(methods) if methods else ""
-
-    text = (
-        "Hey! Just checking in \u2014 if you haven\u2019t completed your deposit yet, "
-        "feel free to reach out and we\u2019ll help you get it done!\n\n"
-        "You can also start a new deposit anytime with /deposit.\n\n"
-        "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
-    )
-    if method_list:
-        text += f"\n\nWe offer: {html.escape(method_list)}."
-    text += "\n\nDeposits are available 24/7!"
+    text = _deposit_followup_text(club_id)
 
     try:
         await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
@@ -4152,17 +4158,7 @@ async def deposit_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
             return ConversationHandler.END
 
-        methods = _player_facing_deposit_method_names(club_id)
-        method_list = ", ".join(methods) if methods else ""
-
-        text = (
-            "We didn\u2019t hear back from you so we are canceling your request. "
-            "No worries \u2014 whenever you\u2019re ready, just type /deposit to start again!\n\n"
-            "We also have <b>automated feeback</b> \u2014 just type /earlyrb."
-        )
-        if method_list:
-            text += f"\n\nWe offer: {html.escape(method_list)}."
-        text += "\n\nDeposits are available 24/7, so feel free to reach out anytime!"
+        text = _deposit_followup_text(club_id)
 
         try:
             kwargs: dict = {"parse_mode": "HTML"}
@@ -4232,10 +4228,11 @@ def get_deposit_handler() -> ConversationHandler:
                 CallbackQueryHandler(deposit_setup_ack, pattern=r"^depft:\d+$"),
                 _DEPOSIT_CANCEL,
             ],
+            # TypeHandler, not a MessageHandler: the update that started the
+            # wait may be /deposit or a button tap. Those never match
+            # MessageHandler, so the 10-minute check-in would not send.
             ConversationHandler.TIMEOUT: [
-                CommandHandler("deposit", deposit_entry),
-                _DEPOSIT_CANCEL,
-                MessageHandler(filters.ALL & ~filters.COMMAND, deposit_timeout),
+                TypeHandler(Update, deposit_timeout),
             ],
         },
         fallbacks=[_DEPOSIT_CANCEL],
