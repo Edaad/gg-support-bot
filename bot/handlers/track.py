@@ -125,6 +125,10 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 ),
                 chat_id=update.effective_chat.id,
             )
+        if update.effective_chat and gg_player_id_from_title(
+            update.effective_chat.title
+        ):
+            await _consider_bonus_after_title_change(update.effective_chat.id)
         return
     if context.bot and update.effective_chat and res.gg_player_id:
         chat = update.effective_chat
@@ -155,15 +159,19 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             club_id=club_id,
             chat_title=chat.title,
         )
-        try:
-            from bot.services.first_deposit_bonus import consider_title_change
+        await _consider_bonus_after_title_change(chat.id)
 
-            await consider_title_change(telegram_chat_id=int(chat.id))
-        except Exception:
-            logger.exception(
-                "title change: first deposit bonus check failed chat_id=%s",
-                chat.id,
-            )
+
+async def _consider_bonus_after_title_change(chat_id: int) -> None:
+    try:
+        from bot.services.first_deposit_bonus import consider_title_change
+
+        await consider_title_change(telegram_chat_id=int(chat_id))
+    except Exception:
+        logger.exception(
+            "title change: first deposit bonus check failed chat_id=%s",
+            chat_id,
+        )
 
 
 async def override_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

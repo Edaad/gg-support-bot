@@ -29,7 +29,6 @@ from db.models import (
 from notification.chat_id import (
     telegram_chat_id_variants,
     telegram_chat_ids_match,
-    telegram_supergroup_chat_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,17 +91,10 @@ def format_bonus_message(*, pct: int, bonus: Decimal, amount: Decimal) -> str:
 
 
 def format_duplicate_dm(player_id: str, groups: list[GroupView]) -> str:
-    count = len(groups)
-    if count == 2:
-        head = (
-            f"Two support groups for {player_id}. Run /delete confirm in one of them."
-        )
-    else:
-        head = (
-            f"{count} support groups for {player_id}. "
-            "Run /delete confirm in one of them."
-        )
-    lines = [head, ""]
+    lines = [
+        f"Two support groups for {player_id}. Run /delete confirm in one of them.",
+        "",
+    ]
     for group in sorted(groups, key=lambda g: (g.title, g.chat_id)):
         lines.append(group.title)
         if group.link:
@@ -115,25 +107,18 @@ def chat_key_for(chat_ids: list[int]) -> str:
     return ",".join(str(cid) for cid in sorted(int(c) for c in chat_ids))
 
 
-def payment_counts(
+def payment_belongs(
     *,
     title: str | None,
     chat_id: int,
     player_id: str,
     target_chat_id: int,
-    include_gap: bool,
 ) -> bool:
     """True when this bound payment belongs to ``player_id`` for this check."""
     found = player_id_from_title(title)
     if found == player_id:
         return True
-    if (
-        include_gap
-        and found is None
-        and telegram_chat_ids_match(int(chat_id), int(target_chat_id))
-    ):
-        return True
-    return False
+    return found is None and telegram_chat_ids_match(int(chat_id), int(target_chat_id))
 
 
 def decide(
@@ -208,18 +193,9 @@ def _log_task(task: asyncio.Task) -> None:
 
 
 async def consider_bound_payment(*, club_id: int, telegram_chat_id: int) -> None:
-    await _consider(club_id=int(club_id), telegram_chat_id=int(telegram_chat_id))
-
-
-async def consider_title_change(*, telegram_chat_id: int) -> None:
-    club_id = _club_id_for_chat(int(telegram_chat_id))
-    if club_id is None:
-        return
-    await _consider(club_id=club_id, telegram_chat_id=int(telegram_chat_id))
-
-
-async def _consider(*, club_id: int, telegram_chat_id: int) -> None:
-    decision = _load_decision(club_id=club_id, telegram_chat_id=telegram_chat_id)
+    decision = _load_decision(
+        club_id=int(club_id), telegram_chat_id=int(telegram_chat_id)
+    )
     if decision is None:
         return
     if (
@@ -228,14 +204,25 @@ async def _consider(*, club_id: int, telegram_chat_id: int) -> None:
         and decision.chat_key
         and decision.player_id
     ):
-        if _claim_notice(club_id, decision.player_id, decision.chat_key):
+        if _reserve_duplicate_notice(club_id, decision.player_id, decision.chat_key):
             sent = await _send(decision.dm_admin_id, decision.dm_text)
             if not sent:
-                _release_notice(club_id, decision.player_id, decision.chat_key)
+                _release_duplicate_notice(
+                    club_id, decision.player_id, decision.chat_key
+                )
     if decision.announcement and decision.mark_chat_id is not None:
         sent = await _send(decision.mark_chat_id, decision.announcement)
         if sent:
             _mark_claimed(decision.mark_chat_id)
+
+
+async def consider_title_change(*, telegram_chat_id: int) -> None:
+    club_id = _club_id_for_chat(int(telegram_chat_id))
+    if club_id is None:
+        return
+    await consider_bound_payment(
+        club_id=club_id, telegram_chat_id=int(telegram_chat_id)
+    )
 
 
 def _load_decision(*, club_id: int, telegram_chat_id: int) -> BonusDecision | None:
@@ -255,7 +242,6 @@ def _load_decision(*, club_id: int, telegram_chat_id: int) -> BonusDecision | No
             player_id=player_id,
             target_chat_id=int(target_row.chat_id),
             group_chat_ids=[g.chat_id for g in groups],
-            include_gap=True,
         )
         settings = get_first_deposit_settings(int(club_id))
         cfg = get_club_gc_config_by_link_club_id(int(club_id))
@@ -314,14 +300,20 @@ def _group_view(row: Group) -> GroupView:
 
     title = clean_title(row.name) or str(row.chat_id)
     link = fetch_invite_link_for_chat(int(row.chat_id), group_title=row.name)
-    if not link:
-        link = telegram_supergroup_chat_url(int(row.chat_id))
     return GroupView(
         chat_id=int(row.chat_id),
         title=title,
         claimed=bool(row.first_deposit_claimed),
         link=link,
     )
+
+
+def _dollars(amount_cents: int) -> Decimal:
+    return Decimal(int(amount_cents)) / Decimal(100)
+
+
+def _bound_at(row) -> datetime:
+    return _aware(getattr(row, "bound_at", None) or row.created_at)
 
 
 def _payments(
@@ -331,36 +323,33 @@ def _payments(
     player_id: str,
     target_chat_id: int,
     group_chat_ids: list[int],
-    include_gap: bool,
 ) -> list[PaymentView]:
     views: list[PaymentView] = []
     target_ids = list(telegram_chat_id_variants(int(target_chat_id)))
     for model in _RAILS:
-        filters = [
-            model.club_id == int(club_id),
-            model.is_test.is_(False),
-            model.telegram_chat_id.isnot(None),
-        ]
-        title_match = model.bound_group_title_at_bind.ilike(f"%{player_id}%")
-        if include_gap:
-            filters.append(or_(title_match, model.telegram_chat_id.in_(target_ids)))
-        else:
-            filters.append(title_match)
-        rows = session.query(model).filter(*filters).all()
+        rows = (
+            session.query(model)
+            .filter(
+                model.club_id == int(club_id),
+                model.is_test.is_(False),
+                model.telegram_chat_id.isnot(None),
+                or_(
+                    model.bound_group_title_at_bind.ilike(f"%{player_id}%"),
+                    model.telegram_chat_id.in_(target_ids),
+                ),
+            )
+            .all()
+        )
         for row in rows:
-            if not payment_counts(
+            if not payment_belongs(
                 title=row.bound_group_title_at_bind,
                 chat_id=int(row.telegram_chat_id),
                 player_id=player_id,
                 target_chat_id=target_chat_id,
-                include_gap=include_gap,
             ):
                 continue
             views.append(
-                PaymentView(
-                    at=_aware(row.created_at),
-                    amount=(Decimal(int(row.amount_cents)) / Decimal(100)),
-                )
+                PaymentView(at=_bound_at(row), amount=_dollars(row.amount_cents))
             )
 
     stripe_ids: set[int] = set()
@@ -378,17 +367,16 @@ def _payments(
         .all()
     )
     for row in stripe_rows:
-        when = row.completed_at or row.created_at
         views.append(
             PaymentView(
-                at=_aware(when),
-                amount=(Decimal(int(row.amount_cents)) / Decimal(100)),
+                at=_aware(row.completed_at or row.created_at),
+                amount=_dollars(row.amount_cents),
             )
         )
     return views
 
 
-def _claim_notice(club_id: int, player_id: str, chat_key: str) -> bool:
+def _reserve_duplicate_notice(club_id: int, player_id: str, chat_key: str) -> bool:
     from sqlalchemy import text
 
     try:
@@ -412,7 +400,7 @@ def _claim_notice(club_id: int, player_id: str, chat_key: str) -> bool:
         return False
 
 
-def _release_notice(club_id: int, player_id: str, chat_key: str) -> None:
+def _release_duplicate_notice(club_id: int, player_id: str, chat_key: str) -> None:
     from sqlalchemy import text
 
     with get_db() as session:

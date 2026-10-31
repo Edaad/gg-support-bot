@@ -11,7 +11,7 @@ from bot.services.first_deposit_bonus import (
     bonus_amount,
     decide,
     format_bonus_message,
-    payment_counts,
+    payment_belongs,
 )
 
 
@@ -151,43 +151,39 @@ class BonusDecisionTests(unittest.TestCase):
 
     def test_saved_title_counts_after_the_group_is_gone(self):
         self.assertTrue(
-            payment_counts(
+            payment_belongs(
                 title="RT / 1234-5678 / Mayank",
                 chat_id=-100,
                 player_id="1234-5678",
                 target_chat_id=-200,
-                include_gap=False,
             )
         )
 
     def test_gap_payment_counts_only_for_this_group(self):
         self.assertTrue(
-            payment_counts(
+            payment_belongs(
                 title="RT / / Mayank",
                 chat_id=-100,
                 player_id="1234-5678",
                 target_chat_id=-100,
-                include_gap=True,
             )
         )
         self.assertFalse(
-            payment_counts(
+            payment_belongs(
                 title="RT / / Mayank",
                 chat_id=-100,
                 player_id="1234-5678",
-                target_chat_id=-100,
-                include_gap=False,
+                target_chat_id=-200,
             )
         )
 
     def test_other_player_title_does_not_count(self):
         self.assertFalse(
-            payment_counts(
+            payment_belongs(
                 title="RT / 9999-0000 / Mayank",
                 chat_id=-100,
                 player_id="1234-5678",
                 target_chat_id=-100,
-                include_gap=True,
             )
         )
 

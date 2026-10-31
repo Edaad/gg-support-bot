@@ -38,7 +38,6 @@ from bot.services.club import (
     record_activity,
     pick_variant,
     is_first_deposit,
-    is_first_deposit_claimed,
     get_first_deposit_settings,
     update_group_name,
     record_method_deposit,
@@ -2267,8 +2266,7 @@ async def deposit_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return await _ask_deposit_amount(message, context)
 
-    claimed = is_first_deposit_claimed(chat.id)
-    first = False if claimed else is_first_deposit(club_id, user_id)
+    first = is_first_deposit(club_id, user_id)
     settings = get_first_deposit_settings(club_id) if first else None
 
     context.chat_data["deposit_club_id"] = club_id
