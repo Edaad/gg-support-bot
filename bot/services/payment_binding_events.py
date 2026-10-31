@@ -151,6 +151,18 @@ def record_payment_bound(
                 payment_id,
                 exc_info=True,
             )
+    try:
+        from bot.services.first_deposit_bonus import schedule_bound_payment
+
+        schedule_bound_payment(
+            club_id=int(club_id), telegram_chat_id=int(telegram_chat_id)
+        )
+    except Exception:
+        logger.warning(
+            "record_payment_bound: first deposit bonus schedule failed chat_id=%s",
+            telegram_chat_id,
+            exc_info=True,
+        )
     return event_id
 
 

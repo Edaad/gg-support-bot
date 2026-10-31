@@ -3508,18 +3508,6 @@ async def _finish_simple_deposit(message, context):
     except Exception:
         pass
 
-    first = context.chat_data.get("deposit_is_first", False)
-    settings = context.chat_data.get("deposit_fd_settings")
-    if first and settings and settings["bonus_enabled"] and settings["bonus_pct"] > 0:
-        try:
-            await message.reply_text(
-                f"Since this is your first deposit, you will get a "
-                f"{settings['bonus_pct']}% first deposit bonus on us!\n\n"
-                f"This must be your first time depositing in the club to be eligible for this bonus."
-            )
-        except Exception:
-            pass
-
     _schedule_deposit_reminder(context, club_id, chat_id, user_id=user_id)
     _cleanup(context)
     popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
@@ -3583,7 +3571,6 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     _persist_deposit_union(context)
     _persist_aces_join_ack(context)
     await _maybe_rename_group_for_union(context)
-    await _send_bonus_message(chat, context)
     tracks_manual = bool(context.chat_data.get("deposit_tracks_manual_requests"))
     if not tracks_manual:
         _schedule_deposit_reminder(context, club_id, chat_id, user_id=customer_uid)
@@ -3610,36 +3597,6 @@ async def _complete_deposit_flow(chat, context: ContextTypes.DEFAULT_TYPE):
     if not defer_popup:
         popup_keyboard_svc.on_flow_exit_schedule_idle(context, chat_id)
     return ConversationHandler.END
-
-
-async def _send_bonus_message(chat, context):
-    """If this is a first deposit and bonus is enabled, send the bonus announcement."""
-    first = context.chat_data.get("deposit_is_first", False)
-    settings = context.chat_data.get("deposit_fd_settings")
-    if (
-        not first
-        or not settings
-        or not settings["bonus_enabled"]
-        or settings["bonus_pct"] <= 0
-    ):
-        return
-    amount = context.chat_data.get("deposit_amount")
-    if not isinstance(amount, Decimal):
-        return
-    pct = settings["bonus_pct"]
-    bonus = (amount * pct / 100).quantize(Decimal("0.01"))
-    cap = settings.get("bonus_cap")
-    if cap is not None and bonus > cap:
-        bonus = cap.quantize(Decimal("0.01"))
-    try:
-        await chat.send_message(
-            f"Since this is your first deposit, you will get a "
-            f"{pct}% first deposit bonus of ${bonus:,.2f} added to "
-            f"your deposit of ${amount:,.2f} on us!\n\n"
-            f"This must be your first time depositing in the club to be eligible for this bonus."
-        )
-    except Exception:
-        pass
 
 
 def _record_deposit(context):

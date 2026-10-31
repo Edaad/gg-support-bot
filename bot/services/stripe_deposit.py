@@ -655,6 +655,16 @@ async def notify_stripe_payment_completed(checkout_obj: dict[str, Any]) -> None:
         telegram_chat_id=int(chat_id),
         amount_cents=amount_cents,
     )
+    try:
+        from bot.services.first_deposit_bonus import consider_bound_payment
+
+        await consider_bound_payment(
+            club_id=int(club_id), telegram_chat_id=int(chat_id)
+        )
+    except Exception:
+        logger.exception(
+            "stripe: first deposit bonus check failed chat_id=%s", chat_id
+        )
 
     session_id = str(checkout_obj.get("id") or "").strip()
     stripe_payment_id: int | None = None

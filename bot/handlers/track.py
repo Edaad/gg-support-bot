@@ -9,6 +9,8 @@ Triggers:
 
 from __future__ import annotations
 
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -31,6 +33,7 @@ from bot.services.player_details import (
     override_chat_for_player,
 )
 
+logger = logging.getLogger(__name__)
 
 _EXPECTED = "Expected: SHORTHAND / GGPLAYERID / anything (example: GTO / 8190-5287 / ThePirate343)"
 
@@ -152,6 +155,15 @@ async def on_new_chat_title(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             club_id=club_id,
             chat_title=chat.title,
         )
+        try:
+            from bot.services.first_deposit_bonus import consider_title_change
+
+            await consider_title_change(telegram_chat_id=int(chat.id))
+        except Exception:
+            logger.exception(
+                "title change: first deposit bonus check failed chat_id=%s",
+                chat.id,
+            )
 
 
 async def override_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

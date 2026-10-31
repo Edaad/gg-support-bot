@@ -635,6 +635,39 @@ class Group(Base):
     club = relationship("Club", back_populates="groups")
 
 
+class FirstDepositClaimBackfill(Base):
+    """One row after the ship-time bonus-claimed backfill. Re-running it is a no-op."""
+
+    __tablename__ = "first_deposit_claim_backfill"
+
+    id = Column(Integer, primary_key=True)
+
+
+class FirstDepositDuplicateNotice(Base):
+    """A duplicate-group DM already sent for this set of support groups."""
+
+    __tablename__ = "first_deposit_duplicate_notices"
+    __table_args__ = (
+        Index(
+            "uq_fd_dup_notice",
+            "club_id",
+            "gg_player_id",
+            "chat_key",
+            unique=True,
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    club_id = Column(
+        Integer, ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False
+    )
+    gg_player_id = Column(String(255), nullable=False)
+    chat_key = Column(String(512), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PlayerDetails(Base):
     """GG player id scoped to a club; Telegram group chats stored as bigint array (no FK to groups — DB cannot FK array elements)."""
 
