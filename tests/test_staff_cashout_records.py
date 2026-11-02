@@ -1442,6 +1442,9 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                 "cashier.services.complete.complete_job",
                 return_value=job,
             ),
+            patch(
+                "bot.services.cashout_rake_hold.schedule_cashout_rake_check",
+            ) as mock_rake,
         ):
             from cashier.services.complete import complete_cashout_job
 
@@ -1451,6 +1454,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             mock_create.assert_called_once_with(job)
             self.assertEqual(mock_schedule.call_args.kwargs["amount"], Decimal("373"))
             self.assertEqual(mock_schedule.call_args.kwargs["record_id"], 99)
+            mock_rake.assert_called_once_with(99)
 
     async def test_complete_pins_original_amount_when_record_fails(self) -> None:
         job = {
@@ -1475,6 +1479,9 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
             patch("cashier.services.complete.record_activity_for_chat"),
             patch("cashier.services.complete.invalidate_pending_one_time_bypasses"),
             patch("cashier.services.complete.complete_job", return_value=job),
+            patch(
+                "bot.services.cashout_rake_hold.schedule_cashout_rake_check",
+            ) as mock_rake,
         ):
             from cashier.services.complete import complete_cashout_job
 
@@ -1485,6 +1492,7 @@ class CompleteCashoutHookTestCase(unittest.IsolatedAsyncioTestCase):
                 mock_schedule.call_args.kwargs["amount"], Decimal("372.34")
             )
             self.assertIsNone(mock_schedule.call_args.kwargs["record_id"])
+            mock_rake.assert_not_called()
 
 
 class CountDepositsForChatTestCase(unittest.TestCase):

@@ -94,4 +94,16 @@ async def complete_cashout_job(job_id: int) -> tuple[bool, Optional[str]]:
         job.get("method_display_name"),
         job.get("trigger"),
     )
+    if record_id is not None:
+        try:
+            from bot.services.cashout_rake_hold import schedule_cashout_rake_check
+
+            schedule_cashout_rake_check(record_id)
+        except Exception:
+            logger.exception(
+                "complete_cashout_job: rake check schedule failed job_id=%s"
+                " record_id=%s",
+                job_id,
+                record_id,
+            )
     return True, None
