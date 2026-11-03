@@ -204,6 +204,29 @@ _DEPOSIT_SENT_CLAIM_HEADLINES = {
 }
 DEPOSIT_SENT_BUTTON_LABEL = "I have sent the payment"
 DEPOSIT_SENT_CALLBACK_PREFIX = "depsent"
+# Chats that already got the thank-you for the current instructions.
+# Cleared when a new deposit button is offered. The armed watch covers the
+# same case after a worker restart.
+_deposit_sent_claim_acked: set[int] = set()
+
+
+def clear_deposit_sent_claim_acks_for_tests() -> None:
+    _deposit_sent_claim_acked.clear()
+
+
+def _deposit_sent_claim_already_acked(chat_id: int) -> bool:
+    """True when this deposit's button was already claimed.
+
+    Repeat taps otherwise send the thank-you again. The button can stay
+    tappable when removing it fails, which Cash App link previews do.
+    """
+    if int(chat_id) in _deposit_sent_claim_acked:
+        return True
+    return ga.deposit_sent_watch_armed(int(chat_id))
+
+
+def _mark_deposit_sent_claim_acked(chat_id: int) -> None:
+    _deposit_sent_claim_acked.add(int(chat_id))
 
 
 def is_delayed_deposit_sent_chase(method_slug: str | None) -> bool:
@@ -1910,6 +1933,7 @@ def on_deposit_instructions_sent(
     zelle_recipient: str | None = None,
 ) -> None:
     """Mark instructions pending (button shown). Prefer offer_deposit_sent_button."""
+    _deposit_sent_claim_acked.discard(int(chat_id))
     ga.mark_deposit_instructions_pending(
         int(chat_id),
         method_slug=method_slug,
@@ -2277,13 +2301,27 @@ async def handle_deposit_sent_claim(
     await query.answer()
     try:
         await query.edit_message_reply_markup(reply_markup=None)
-    except Exception:
-        logger.debug(
-            "escalation: remove sent button failed chat_id=%s",
-            chat_id,
-            exc_info=True,
-        )
+    except Exception as exc:
+        if "not modified" in str(exc).lower():
+            logger.debug(
+                "escalation: sent button already removed chat_id=%s",
+                chat_id,
+            )
+        else:
+            logger.warning(
+                "escalation: remove sent button failed chat_id=%s",
+                chat_id,
+                exc_info=True,
+            )
 
+    if _deposit_sent_claim_already_acked(chat_id):
+        logger.info(
+            "escalation: deposit sent claim duplicate chat_id=%s",
+            chat_id,
+        )
+        return
+
+    _mark_deposit_sent_claim_acked(chat_id)
     try:
         await context.bot.send_message(
             chat_id=chat_id,

@@ -1261,6 +1261,7 @@ class DepositFollowupIgnoreTests(unittest.TestCase):
 class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         ga.clear_activity_state_for_tests()
+        esc.clear_deposit_sent_claim_acks_for_tests()
 
     def _plain_text(self, text: str):
         return SimpleNamespace(
@@ -1551,6 +1552,93 @@ class DepositSentChaseTests(unittest.IsolatedAsyncioTestCase):
                     context.bot.send_message.await_args.kwargs["text"],
                     esc.DEPOSIT_SENT_ACK_COPY,
                 )
+
+    def _claim_update(self, chat_id: int):
+        query = AsyncMock()
+        query.data = esc.DEPOSIT_SENT_CALLBACK_PREFIX
+        query.message = SimpleNamespace(message_id=1)
+        query.answer = AsyncMock()
+        query.edit_message_reply_markup = AsyncMock()
+        update = SimpleNamespace(
+            callback_query=query,
+            effective_chat=SimpleNamespace(id=chat_id, title="G"),
+        )
+        context = MagicMock()
+        context.bot.send_message = AsyncMock()
+        context.job_queue = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        return update, context
+
+    async def test_repeat_claim_sends_one_ack(self):
+        """A second tap on a still-visible button does not thank the player again."""
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_instructions_pending(21, method_slug="cashapp")
+                update, context = self._claim_update(21)
+                with patch.object(esc, "get_club_for_chat", return_value=1):
+                    with patch.object(
+                        esc, "escalation_notification_eligible", return_value=True
+                    ):
+                        with patch(
+                            "bot.services.payment_method_binding.chat_has_deposit_method_binding",
+                            return_value=True,
+                        ):
+                            with patch.object(
+                                esc, "notify_escalation_slack", new_callable=AsyncMock
+                            ) as notify:
+                                await esc.handle_deposit_sent_claim(update, context)
+                                await esc.handle_deposit_sent_claim(update, context)
+                self.assertEqual(context.bot.send_message.await_count, 1)
+                notify.assert_awaited_once()
+                self.assertEqual(context.job_queue.run_once.call_count, 1)
+
+    async def test_repeat_crypto_claim_sends_one_ack(self):
+        """Crypto clears the watch on the first tap; a second tap still stays quiet."""
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_instructions_pending(22, method_slug="crypto")
+                update, context = self._claim_update(22)
+                with patch.object(esc, "get_club_for_chat", return_value=1):
+                    with patch.object(
+                        esc, "escalation_notification_eligible", return_value=True
+                    ):
+                        with patch.object(
+                            esc, "notify_escalation_slack", new_callable=AsyncMock
+                        ) as notify:
+                            await esc.handle_deposit_sent_claim(update, context)
+                            await esc.handle_deposit_sent_claim(update, context)
+                self.assertEqual(context.bot.send_message.await_count, 1)
+                notify.assert_awaited_once()
+                self.assertFalse(ga.deposit_sent_watch_armed(22))
+
+    async def test_new_instructions_allow_another_ack(self):
+        with patch.object(
+            ga, "fetch_support_group_chat_by_telegram_chat_id", return_value=None
+        ):
+            with patch.object(ga, "_persist_activity_state"):
+                ga.mark_deposit_instructions_pending(23, method_slug="cashapp")
+                update, context = self._claim_update(23)
+                with patch.object(esc, "get_club_for_chat", return_value=1):
+                    with patch.object(
+                        esc, "escalation_notification_eligible", return_value=True
+                    ):
+                        with patch(
+                            "bot.services.payment_method_binding.chat_has_deposit_method_binding",
+                            return_value=True,
+                        ):
+                            with patch.object(
+                                esc, "notify_escalation_slack", new_callable=AsyncMock
+                            ):
+                                await esc.handle_deposit_sent_claim(update, context)
+                                esc.on_deposit_instructions_sent(
+                                    23, method_slug="cashapp"
+                                )
+                                await esc.handle_deposit_sent_claim(update, context)
+                self.assertEqual(context.bot.send_message.await_count, 2)
 
     async def test_claim_crypto_and_zelle_slack_immediately(self):
         """Crypto and Zelle Slack on the tap and do not arm a wait."""
