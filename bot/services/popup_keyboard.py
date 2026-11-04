@@ -39,9 +39,10 @@ BTN_DEPOSIT = "/deposit"
 BTN_CASHOUT = "/cashout"
 BTN_EARLYRB = "/earlyrb"
 BUTTON_LABELS = frozenset({BTN_DEPOSIT, BTN_CASHOUT})
-# Typed cashout alias / transfer / cancel — skip escalate and keyboard strip.
+# Typed cashout alias / transfer — skip escalate and keyboard strip.
+# /cancel is not here: it opens an idle escalation like other player text.
 FLOW_COMMAND_TEXTS = frozenset(
-    {BTN_DEPOSIT, BTN_CASHOUT, BTN_EARLYRB, "/withdraw", "/transfer", "/cancel"}
+    {BTN_DEPOSIT, BTN_CASHOUT, BTN_EARLYRB, "/withdraw", "/transfer"}
 )
 
 INSTALL_COPY = (
@@ -166,7 +167,7 @@ def popup_keyboard_eligible(
 
 
 def is_flow_command_text(text: str | None) -> bool:
-    """True when message text is a deposit/cashout/earlyrb/cancel command (incl. bot_command form)."""
+    """True when message text is a deposit/cashout/earlyrb command (incl. bot_command form)."""
     if not text:
         return False
     raw = text.strip()
