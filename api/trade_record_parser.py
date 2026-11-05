@@ -21,6 +21,7 @@ from api.club_audit_timezone import (
 from api.club_slug import CLUB_LABEL_TO_SLUG, CLUB_SLUG_TO_NAME, slug_for_club_name
 
 SHEET_NAME = "Trade Record"
+HEADER_ROW = 5
 DATA_START_ROW = 6
 _GG_ID_RE = re.compile(r"^[0-9]{1,48}-[0-9]{1,48}$")
 
@@ -410,6 +411,21 @@ def parse_result_from_stored_upload(upload) -> TradeRecordParseResult:
     )
 
 
+# Row 5 labels the columns the parser reads. An empty day still has this row.
+_EXPECTED_HEADER_CELLS: dict[int, str] = {
+    COL_TIME: "Date",
+    COL_AMOUNT: "Amount",
+}
+
+
+def _trade_record_headers_present(ws) -> bool:
+    for col, expected in _EXPECTED_HEADER_CELLS.items():
+        actual = _cell_str(ws.cell(row=HEADER_ROW, column=col).value)
+        if actual.casefold() != expected.casefold():
+            return False
+    return True
+
+
 def _row_is_blank(ws, row: int) -> bool:
     member_id = _cell_str(ws.cell(row=row, column=COL_MEMBER_ID).value)
     amount = ws.cell(row=row, column=COL_AMOUNT).value
@@ -513,11 +529,21 @@ def parse_trade_record_workbook(
         )
         row += 1
 
+    headers_present = _trade_record_headers_present(ws)
     wb.close()
     wb_raw.close()
 
     if not transactions:
-        raise TradeRecordParseError("No transaction rows found from row 6")
+        # A club can have zero trades. Keep the upload when the header row is
+        # the Trade Record layout; reject a sheet that is not that layout, and
+        # reject rows that were present but had no usable amount.
+        if skipped_rows or not headers_present:
+            if skipped_rows:
+                raise TradeRecordParseError("No transaction rows found from row 6")
+            raise TradeRecordParseError(
+                "Trade Record has no transaction rows. Expected header row 5 "
+                'to contain "Date" in column A and "Amount" in column G.'
+            )
 
     return TradeRecordParseResult(
         metadata=metadata,

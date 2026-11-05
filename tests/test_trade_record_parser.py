@@ -178,6 +178,51 @@ class TradeRecordParserTestCase(unittest.TestCase):
             validate_all_clubs_trade_uploads(parses)
         self.assertIn("Duplicate", str(ctx.exception))
 
+    def test_accepts_header_only_trade_record(self):
+        raw = build_sample_trade_record_xlsx(
+            club_label="Creator Club",
+            audit_date=date(2026, 11, 4),
+            period_tz="UTC-4:00",
+            include_transactions=False,
+        )
+        parsed = parse_trade_record_workbook(raw)
+        self.assertEqual(parsed.club_slug, "creator-club")
+        self.assertEqual(parsed.audit_date, date(2026, 11, 4))
+        self.assertEqual(parsed.transactions, [])
+        self.assertEqual(parsed.identities, [])
+
+    def test_rejects_empty_sheet_without_trade_headers(self):
+        from openpyxl import Workbook
+        import io
+
+        from api.trade_record_parser import SHEET_NAME
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = SHEET_NAME
+        ws.cell(row=1, column=1, value="Club Name")
+        ws.cell(row=1, column=2, value="Creator Club")
+        ws.cell(row=3, column=1, value="Period")
+        ws.cell(row=3, column=2, value="2026-11-04 ~ 2026-11-04 (UTC-4:00)")
+        buf = io.BytesIO()
+        wb.save(buf)
+        with self.assertRaises(TradeRecordParseError) as ctx:
+            parse_trade_record_workbook(buf.getvalue())
+        self.assertIn("header row 5", str(ctx.exception))
+
+    def test_validate_all_clubs_accepts_empty_creator_club(self):
+        parses = self._four_club_parses()
+        parses[3] = parse_trade_record_workbook(
+            build_sample_trade_record_xlsx(
+                club_label="Creator Club",
+                audit_date=date(2026, 6, 21),
+                period_tz="UTC-4:00",
+                include_transactions=False,
+            )
+        )
+        by_slug = validate_all_clubs_trade_uploads(parses)
+        self.assertEqual(by_slug["creator-club"].transactions, [])
+
     def test_validate_all_clubs_rejects_mismatched_dates(self):
         parses = self._four_club_parses(gto_date=date(2026, 6, 22))
         with self.assertRaises(TradeRecordValidationError) as ctx:

@@ -27,6 +27,7 @@ def build_sample_trade_record_xlsx(
     club_label: str = "Aces Table",
     audit_date: date | None = None,
     include_second_row: bool = True,
+    include_transactions: bool = True,
     aces_layout: bool = True,
     period_tz: str = "UTC-5:00",
 ) -> bytes:
@@ -52,6 +53,11 @@ def build_sample_trade_record_xlsx(
         ws.cell(row=1, column=2, value=club_label)
         ws.cell(row=2, column=1, value="Date")
         ws.cell(row=2, column=2, value=d.isoformat())
+
+    if not include_transactions:
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
 
     row = DATA_START_ROW
     ws.cell(row=row, column=COL_TIME, value=datetime(d.year, d.month, d.day, 14, 30, 0))
