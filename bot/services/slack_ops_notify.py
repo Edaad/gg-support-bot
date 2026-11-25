@@ -271,6 +271,38 @@ async def notify_slack_ops(text: str, *, source: str) -> bool:
     return False
 
 
+async def notify_slack_ops_channel(
+    text: str, *, source: str, channel_id: str | None
+) -> bool:
+    """Post to ``channel_id`` with the ops bot token; else fall back to ops. Never raises."""
+    token = _slack_bot_token()
+    if not channel_id or not token:
+        return await notify_slack_ops(text, source=source)
+    message = format_slack_ops_message(text, source=source)
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as client:
+            resp = await client.post(
+                SLACK_CHAT_POST_MESSAGE_URL,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json={"channel": channel_id, "text": message, "unfurl_links": False},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        if data.get("ok"):
+            return True
+        logger.warning(
+            "slack_ops: chat.postMessage failed channel=%s error=%s",
+            channel_id,
+            data.get("error"),
+        )
+    except Exception:
+        logger.warning("slack_ops: chat.postMessage request failed", exc_info=True)
+    return await notify_slack_ops(text, source=source)
+
+
 async def notify_slack_escalation(text: str, *, source: str) -> bool:
     """Post escalation alerts to the dedicated Slack channel. Never raises."""
 
