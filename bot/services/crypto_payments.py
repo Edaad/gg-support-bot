@@ -329,8 +329,14 @@ async def ingest_crypto_payment(
     paid_at: Optional[str] = None,
     source_external_id: Optional[str] = None,
     test: bool = False,
+    allow_auto_bind: bool = True,
 ) -> IngestResult:
-    """Create payment row, auto-bind known wallet+scope, send Telegram notification."""
+    """Create payment row, auto-bind known wallet+scope, send Telegram notification.
+
+    ``allow_auto_bind=False`` never binds on its own: every candidate group is
+    shown, even a single match, and staff pick one. QuickNode deposits use it
+    because they carry no exchange label for a shared hot wallet.
+    """
     symbol = (token_symbol or "").strip().upper()
     if not symbol:
         raise ValueError("token_symbol is required")
@@ -432,9 +438,10 @@ async def ingest_crypto_payment(
             "crypto",
             filter_alert_scope=alert_scope,
         )
-        if sender_is_exchange(from_entity_name):
-            # A labeled sender is a shared exchange wallet. Show every known
-            # group, including a single match, and wait for a staff tap.
+        if sender_is_exchange(from_entity_name) or not allow_auto_bind:
+            # A labeled sender is a shared exchange wallet, or the caller cannot
+            # tell. Show every known group, including a single match, and wait
+            # for a staff tap.
             ambiguous_candidates = list(ambiguous_candidates)
         else:
             single = auto_bind_from_candidates(ambiguous_candidates)

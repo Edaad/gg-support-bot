@@ -1,0 +1,31 @@
+{
+ "id": 1,
+ "jsonrpc": "2.0",
+ "result": {
+  "baseFeePerGas": "0x4c4b40",
+  "blobGasUsed": "0x9b55c",
+  "difficulty": "0x0",
+  "excessBlobGas": "0x0",
+  "extraData": "0x01000003e80000000500000000004c4b40",
+  "gasLimit": "0x2625a00",
+  "gasUsed": "0x314c65",
+  "hash": "0x85f4bd9e71ee99979638d8ce9fa9e9e006728f091a401255051888fa2aaf0421",
+  "miner": "0x4200000000000000000000000000000000000011",
+  "mixHash": "0xc1210cdb93e7cf7114a5a00cf8aabbb21813ef214e7945c295206587eba0fdb2",
+  "nonce": "0x0000000000000000",
+  "number": "0x3b5deb5",
+  "parentBeaconBlockRoot": "0xde1b278f476a225f169afb6eed7c63ae9df7e3bb6d0f65013f03b6fc1cadd354",
+  "parentHash": "0xdab6126156c5bd080eb0cc271e6868a21bdbb2a0044a9eab0398f1c0e54267bc",
+  "receiptsRoot": "0x908180b241879569d2130159bbe507cfd5807599e809f612dce330bb5713f9c2",
+  "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+  "size": "0x314c",
+  "stateRoot": "0xdb719f278c16fd887d6366ec34eb34ee2a04d6a79dbe3d66ce922ef7e61d1958",
+  "timestamp": "0x6b074cbf",
+  "timestampMs": "0x1a21483ca18",
+  "transactionsRoot": "0xe07810d76d758c994b68958d788ad00a8b364954df042175ba7c124adfbb1bcb",
+  "uncles": [],
+  "withdrawals": [],
+  "withdrawalsRoot": "0x0e2e1d04453efc95bf5ea19c476bdd2582814a5848b941e23bde583e08e98648"
+ }
+}

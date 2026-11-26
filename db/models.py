@@ -3958,3 +3958,74 @@ class AuditShift(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class QuicknodeTxHint(Base):
+    """A (chain, tx hash) a signed QuickNode webhook named; untrusted until verified."""
+
+    __tablename__ = "quicknode_tx_hints"
+    __table_args__ = (
+        Index("uq_quicknode_tx_hints_chain_tx", "chain", "tx_hash", unique=True),
+        Index("ix_quicknode_tx_hints_due", "state", "next_check_at"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    chain = Column(String(16), nullable=False)
+    tx_hash = Column(String(128), nullable=False)
+    # pending | done | held | rejected
+    state = Column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    reason = Column(Text, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    first_seen_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    next_check_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    alerted_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class QuicknodeTransfer(Base):
+    """One verified on-chain transfer to a tracked wallet, and what was done with it."""
+
+    __tablename__ = "quicknode_transfers"
+    __table_args__ = (
+        Index("ix_quicknode_transfers_chain_tx", "chain", "tx_hash"),
+        Index("ix_quicknode_transfers_state", "state"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    source_external_id = Column(String(255), nullable=False, unique=True)
+    chain = Column(String(16), nullable=False)
+    tx_hash = Column(String(128), nullable=False)
+    owner = Column(String(8), nullable=False)
+    asset_symbol = Column(String(16), nullable=False)
+    contract = Column(String(128), nullable=True)
+    to_address = Column(String(128), nullable=False)
+    from_address = Column(String(128), nullable=True)
+    raw_amount = Column(Text, nullable=False)
+    decimals = Column(Integer, nullable=False)
+    usd_price = Column(Text, nullable=True)
+    price_sources = Column(Text, nullable=True)
+    amount_usd = Column(Text, nullable=True)
+    # shadow | posted | held | rejected | notify_failed
+    state = Column(String(16), nullable=False)
+    reason = Column(Text, nullable=True)
+    explorer_url = Column(Text, nullable=True)
+    block_number = Column(BigInteger, nullable=True)
+    block_hash = Column(String(128), nullable=True)
+    crypto_payment_id = Column(
+        Integer, ForeignKey("crypto_payments.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

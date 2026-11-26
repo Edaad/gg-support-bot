@@ -175,6 +175,7 @@ def create_app() -> FastAPI:
     from api.routes.account_balances import router as account_balances_router
     from api.routes.plaid_items import router as plaid_items_router
     from api.routes.plaid_webhook import router as plaid_webhook_router
+    from api.routes.quicknode_webhook import router as quicknode_webhook_router
     from api.routes.monday_review import router as monday_review_router
     from api.routes.kpis import router as kpis_router
 
@@ -219,6 +220,7 @@ def create_app() -> FastAPI:
     app.include_router(account_balances_router)
     app.include_router(plaid_items_router)
     app.include_router(plaid_webhook_router)
+    app.include_router(quicknode_webhook_router)
     app.include_router(monday_review_router)
     app.include_router(kpis_router)
 
